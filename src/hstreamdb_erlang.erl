@@ -7,9 +7,8 @@
 -export([init/1]).
 
 -export([start_client_channel/2, start_client_channel/3, stop_client_channel/1]).
--export([server_node_to_host_port/1]).
 
--export([list_streams/1, create_stream/4, lookup_stream/3]).
+-export([list_streams/1, create_stream/4, delete_stream/2]).
 -export([append/5]).
 
 -export([list_subscriptions/1]).
@@ -75,6 +74,16 @@ create_stream(Ch, StreamName, ReplicationFactor, BacklogDuration) ->
         R -> R
     end.
 
+delete_stream(Ch, StreamName) ->
+    Ret = hstream_server_h_stream_api_client:delete_stream(
+        #{streamName => StreamName},
+        #{channel => Ch}
+    ),
+    case Ret of
+        {ok, _, _} -> {ok};
+        R -> R
+    end.
+
 lookup_stream(Ch, StreamName, OrderingKey) ->
     Ret = hstream_server_h_stream_api_client:lookup_stream(
         #{
@@ -99,56 +108,71 @@ server_node_to_host_port(ServerNode) ->
     string_format("~s:~p", [Host, Port]).
 
 server_node_to_host_port(ServerNode, Protocol) ->
-    Host = maps:get(host, ServerNode),
-    Port = maps:get(port, ServerNode),
-    string_format("~p://~s:~p", [Protocol, Host, Port]).
+    string_format("~p://~s", [Protocol, server_node_to_host_port(ServerNode)]).
 
 %%--------------------------------------------------------------------
 
-append(Ch, StreamName, OrderingKey, PayloadType, Payload) ->
-    {ok, ServerNode} = lookup_stream(Ch, StreamName, OrderingKey),
-    ServerUrl = server_node_to_host_port(ServerNode, http),
-    logger:notice(
-        "hstreamdb_erlang:append: lookup_stream_server_url = ~s",
-        [ServerUrl]
-    ),
+make_record_header(PayloadType, OrderingKey) ->
     Flag =
         case PayloadType of
             json -> 0;
             raw -> 1
         end,
+
     Timestamp = #{
         seconds => erlang:system_time(second),
         nanos => erlang:system_time(nanosecond)
     },
-    Header = #{
+
+    #{
         flag => Flag,
         publish_time => Timestamp,
         key => OrderingKey
-    },
-    Record = #{
+    }.
+
+make_record(Header, Payload) ->
+    #{
         header => Header,
         payload => Payload
-    },
-    io:format("~p~n", [start_client_channel(innternal_append_ch, ServerUrl)]),
+    }.
 
-    Req = #{
-        streamName => StreamName,
-        records => [Record]
-    },
-    logger:notice(
-        "hstreamdb_erlang:append: request = ~p",
-        [Req]
-    ),
-    Ret = hstream_server_h_stream_api_client:append(
-        Req,
-        #{channel => innternal_append_ch}
-    ),
+make_records(Header, Payload) when is_list(Payload) ->
+    lists:map(
+        fun(X) -> make_record(Header, X) end, Payload
+    );
+make_records(Header, Payload) when is_binary(Payload) ->
+    [
+        make_record(Header, Payload)
+    ].
 
-    % stop_client_channel(innternal_append_ch),
-    case Ret of
-        {ok, Resp, _} ->
-            {ok, maps:get(recordIds, Resp)};
+append(Ch, StreamName, OrderingKey, PayloadType, Payload) ->
+    case lookup_stream(Ch, StreamName, OrderingKey) of
+        {ok, ServerNode} ->
+            ServerUrl = server_node_to_host_port(ServerNode, http),
+            logger:notice(
+                "hstreamdb_erlang:append: lookup_stream_server_url = ~s",
+                [ServerUrl]
+            ),
+
+            Header = make_record_header(PayloadType, OrderingKey),
+            Records = make_records(Header, Payload),
+
+            start_client_channel(innternal_append_ch, ServerUrl),
+            Ret = hstream_server_h_stream_api_client:append(
+                #{
+                    streamName => StreamName,
+                    records => Records
+                },
+                #{channel => innternal_append_ch}
+            ),
+            stop_client_channel(innternal_append_ch),
+
+            case Ret of
+                {ok, Resp, _} ->
+                    {ok, maps:get(recordIds, Resp)};
+                R ->
+                    R
+            end;
         R ->
             R
     end.
@@ -175,7 +199,7 @@ readme() ->
     start_client_channel(ch, "http://127.0.0.1:6570"),
     io:format("~p~n", [list_streams(ch)]),
 
-    % io:format("~p~n", [delete_stream(ch, "test_stream")]),
+    io:format("~p~n", [delete_stream(ch, "test_stream")]),
     io:format("~p~n", [list_streams(ch)]),
 
     io:format("~p~n", [create_stream(ch, "test_stream", 3, 14)]),
@@ -194,6 +218,21 @@ readme() ->
                     "",
                     raw,
                     <<"this_is_a_binary_literal">>
+                )
+            ])
+        end,
+        XS
+    ),
+    lists:foreach(
+        fun(X) ->
+            io:format("~p: ~p~n", [
+                X,
+                append(
+                    ch,
+                    "test_stream",
+                    "",
+                    raw,
+                    lists:duplicate(10, <<"this_is_a_binary_literal">>)
                 )
             ])
         end,
