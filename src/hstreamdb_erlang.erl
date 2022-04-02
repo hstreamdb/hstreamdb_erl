@@ -7,9 +7,8 @@
 -export([init/1]).
 
 -export([start_client_channel/2, start_client_channel/3, stop_client_channel/1]).
--export([server_node_to_host_port/1]).
 
--export([list_streams/1, create_stream/4, lookup_stream/3]).
+-export([list_streams/1, create_stream/4, delete_stream/2]).
 -export([append/5]).
 
 -export([list_subscriptions/1]).
@@ -36,6 +35,19 @@ init([]) ->
     },
     ChildSpecs = [],
     {ok, {SupFlags, ChildSpecs}}.
+
+%%--------------------------------------------------------------------
+
+string_format(Pattern, Values) ->
+    lists:flatten(io_lib:format(Pattern, Values)).
+
+server_node_to_host_port(ServerNode) ->
+    Host = maps:get(host, ServerNode),
+    Port = maps:get(port, ServerNode),
+    string_format("~s:~p", [Host, Port]).
+
+server_node_to_host_port(ServerNode, Protocol) ->
+    string_format("~p://~s", [Protocol, server_node_to_host_port(ServerNode)]).
 
 %%--------------------------------------------------------------------
 
@@ -75,6 +87,16 @@ create_stream(Ch, StreamName, ReplicationFactor, BacklogDuration) ->
         R -> R
     end.
 
+delete_stream(Ch, StreamName) ->
+    Ret = hstream_server_h_stream_api_client:delete_stream(
+        #{streamName => StreamName},
+        #{channel => Ch}
+    ),
+    case Ret of
+        {ok, _, _} -> {ok};
+        R -> R
+    end.
+
 lookup_stream(Ch, StreamName, OrderingKey) ->
     Ret = hstream_server_h_stream_api_client:lookup_stream(
         #{
@@ -90,65 +112,72 @@ lookup_stream(Ch, StreamName, OrderingKey) ->
             R
     end.
 
-string_format(Pattern, Values) ->
-    lists:flatten(io_lib:format(Pattern, Values)).
-
-server_node_to_host_port(ServerNode) ->
-    Host = maps:get(host, ServerNode),
-    Port = maps:get(port, ServerNode),
-    string_format("~s:~p", [Host, Port]).
-
-server_node_to_host_port(ServerNode, Protocol) ->
-    Host = maps:get(host, ServerNode),
-    Port = maps:get(port, ServerNode),
-    string_format("~p://~s:~p", [Protocol, Host, Port]).
-
 %%--------------------------------------------------------------------
 
-append(Ch, StreamName, OrderingKey, PayloadType, Payload) ->
-    {ok, ServerNode} = lookup_stream(Ch, StreamName, OrderingKey),
-    ServerUrl = server_node_to_host_port(ServerNode, http),
-    logger:notice(
-        "hstreamdb_erlang:append: lookup_stream_server_url = ~s",
-        [ServerUrl]
-    ),
+make_record_header(PayloadType, OrderingKey) ->
     Flag =
         case PayloadType of
             json -> 0;
             raw -> 1
         end,
+
     Timestamp = #{
         seconds => erlang:system_time(second),
         nanos => erlang:system_time(nanosecond)
     },
-    Header = #{
+
+    #{
         flag => Flag,
         publish_time => Timestamp,
         key => OrderingKey
-    },
-    Record = #{
+    }.
+
+make_record(Header, Payload) ->
+    #{
         header => Header,
         payload => Payload
-    },
-    io:format("~p~n", [start_client_channel(innternal_append_ch, ServerUrl)]),
+    }.
 
-    Req = #{
-        streamName => StreamName,
-        records => [Record]
-    },
-    logger:notice(
-        "hstreamdb_erlang:append: request = ~p",
-        [Req]
-    ),
-    Ret = hstream_server_h_stream_api_client:append(
-        Req,
-        #{channel => innternal_append_ch}
-    ),
+make_records(Header, Payload) when is_list(Payload) ->
+    lists:map(
+        fun(X) -> make_record(Header, X) end, Payload
+    );
+make_records(Header, Payload) when is_binary(Payload) ->
+    [
+        make_record(Header, Payload)
+    ].
 
-    % stop_client_channel(innternal_append_ch),
-    case Ret of
-        {ok, Resp, _} ->
-            {ok, maps:get(recordIds, Resp)};
+append(Ch, StreamName, OrderingKey, PayloadType, Payload) ->
+    case lookup_stream(Ch, StreamName, OrderingKey) of
+        {ok, ServerNode} ->
+            ServerUrl = server_node_to_host_port(ServerNode, http),
+            logger:notice(
+                "hstreamdb_erlang:append: lookup_stream_server_url = ~s",
+                [ServerUrl]
+            ),
+
+            Header = make_record_header(PayloadType, OrderingKey),
+            Records = make_records(Header, Payload),
+
+            InternalChannelName = string_format("internal-channel-~p-~p", [
+                erlang:system_time(nanosecond), self()
+            ]),
+            start_client_channel(InternalChannelName, ServerUrl),
+            Ret = hstream_server_h_stream_api_client:append(
+                #{
+                    streamName => StreamName,
+                    records => Records
+                },
+                #{channel => InternalChannelName}
+            ),
+            stop_client_channel(InternalChannelName),
+
+            case Ret of
+                {ok, Resp, _} ->
+                    {ok, maps:get(recordIds, Resp)};
+                R ->
+                    R
+            end;
         R ->
             R
     end.
@@ -170,18 +199,18 @@ list_subscriptions(Ch) ->
 %%--------------------------------------------------------------------
 
 readme() ->
+    StreamName = string_format("test_stream-~p", [erlang:system_time(second)]),
+    ChannelName = string_format("test_channel-~p", [erlang:system_time(second)]),
+
     start(normal, []),
 
-    start_client_channel(ch, "http://127.0.0.1:6570"),
-    io:format("~p~n", [list_streams(ch)]),
+    io:format("~p~n", [start_client_channel(ChannelName, "http://127.0.0.1:6570")]),
+    io:format("~p~n", [list_streams(ChannelName)]),
 
-    % io:format("~p~n", [delete_stream(ch, "test_stream")]),
-    io:format("~p~n", [list_streams(ch)]),
+    io:format("~p~n", [create_stream(ChannelName, StreamName, 3, 14)]),
+    io:format("~p~n", [list_streams(ChannelName)]),
 
-    io:format("~p~n", [create_stream(ch, "test_stream", 3, 14)]),
-    io:format("~p~n", [list_streams(ch)]),
-
-    io:format("~p~n", [lookup_stream(ch, "test_stream", "")]),
+    io:format("~p~n", [lookup_stream(ChannelName, StreamName, "")]),
 
     XS = lists:seq(0, 100),
     lists:foreach(
@@ -189,8 +218,8 @@ readme() ->
             io:format("~p: ~p~n", [
                 X,
                 append(
-                    ch,
-                    "test_stream",
+                    ChannelName,
+                    StreamName,
                     "",
                     raw,
                     <<"this_is_a_binary_literal">>
@@ -199,4 +228,25 @@ readme() ->
         end,
         XS
     ),
+    lists:foreach(
+        fun(X) ->
+            io:format("~p: ~p~n", [
+                X,
+                append(
+                    ChannelName,
+                    StreamName,
+                    "",
+                    raw,
+                    lists:duplicate(10, <<"this_is_a_binary_literal">>)
+                )
+            ])
+        end,
+        XS
+    ),
+
+    io:format("~p~n", [delete_stream(ChannelName, StreamName)]),
+    io:format("~p~n", [list_streams(ChannelName)]),
+
+    io:format("~p~n", [stop_client_channel(ChannelName)]),
+
     ok.
