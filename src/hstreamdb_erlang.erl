@@ -6,7 +6,7 @@
 -export([start/2, stop/1]).
 -export([init/1]).
 
--export([start_client_channel/2, start_client_channel/3, stop_client_channel/1]).
+-export([start_client_channel/1, start_client_channel/2, stop_client_channel/1]).
 
 -export([list_streams/1, create_stream/4, delete_stream/2]).
 -export([append/5]).
@@ -41,6 +41,16 @@ init([]) ->
 string_format(Pattern, Values) ->
     lists:flatten(io_lib:format(Pattern, Values)).
 
+uid() ->
+    {X0, X1, X2} = erlang:timestamp(),
+    string_format("~p-~p_~p_~p-~p", [
+        node(),
+        X0,
+        X1,
+        X2,
+        erlang:unique_integer()
+    ]).
+
 server_node_to_host_port(ServerNode) ->
     Host = maps:get(host, ServerNode),
     Port = maps:get(port, ServerNode),
@@ -51,13 +61,17 @@ server_node_to_host_port(ServerNode, Protocol) ->
 
 %%--------------------------------------------------------------------
 
-start_client_channel(ChName, URL) ->
-    hstreamdb_erlang_client:create_channel_pool(ChName, URL).
+start_client_channel(URL) ->
+    start_client_channel(URL, #{}).
 
-start_client_channel(ChName, URL, Opts) ->
-    hstreamdb_erlang_client:create_channel_pool(ChName, URL, Opts).
+start_client_channel(URL, Opts) ->
+    ChName = "hstream_client_channel-" ++ uid(),
+    case hstreamdb_erlang_client:create_channel_pool(ChName, URL, Opts) of
+        {error, _} = E -> E;
+        _ -> {ok, ChName}
+    end.
 
-stop_client_channel(ChName) -> hstreamdb_erlang_client:stop_channel_pool(ChName).
+stop_client_channel(Channel) -> hstreamdb_erlang_client:stop_channel_pool(Channel).
 
 %%--------------------------------------------------------------------
 
@@ -159,10 +173,7 @@ append(Ch, StreamName, OrderingKey, PayloadType, Payload) ->
             Header = make_record_header(PayloadType, OrderingKey),
             Records = make_records(Header, Payload),
 
-            InternalChannelName = string_format("internal-channel-~p-~p", [
-                erlang:system_time(nanosecond), self()
-            ]),
-            start_client_channel(InternalChannelName, ServerUrl),
+            {ok, InternalChannelName} = start_client_channel(ServerUrl),
             Ret = hstream_server_h_stream_api_client:append(
                 #{
                     streamName => StreamName,
@@ -200,11 +211,13 @@ list_subscriptions(Ch) ->
 
 readme() ->
     StreamName = string_format("test_stream-~p", [erlang:system_time(second)]),
-    ChannelName = string_format("test_channel-~p", [erlang:system_time(second)]),
 
     start(normal, []),
 
-    io:format("~p~n", [start_client_channel(ChannelName, "http://127.0.0.1:6570")]),
+    StartClientChannelRet = start_client_channel("http://127.0.0.1:6570"),
+    io:format("~p~n", [StartClientChannelRet]),
+    {ok, ChannelName} = StartClientChannelRet,
+
     io:format("~p~n", [list_streams(ChannelName)]),
 
     io:format("~p~n", [create_stream(ChannelName, StreamName, 3, 14)]),
