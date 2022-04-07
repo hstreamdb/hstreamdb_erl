@@ -4,6 +4,9 @@
 -export([main/1]).
 
 -export([get_bytes/1, get_bytes/2]).
+-export([remove_all_streams/1]).
+
+-export([bench/0, bench/4]).
 
 %%====================================================================
 %% API functions
@@ -37,12 +40,12 @@ readme() ->
 
     StartClientChannelRet = hstreamdb_erlang:start_client_channel("http://127.0.0.1:6570"),
     io:format("~p~n", [StartClientChannelRet]),
-    {ok, ChannelName} = StartClientChannelRet,
+    {ok, Client} = StartClientChannelRet,
 
-    io:format("~p~n", [hstreamdb_erlang:list_streams(ChannelName)]),
+    io:format("~p~n", [hstreamdb_erlang:list_streams(Client)]),
 
-    io:format("~p~n", [hstreamdb_erlang:create_stream(ChannelName, StreamName, 3, 14)]),
-    io:format("~p~n", [hstreamdb_erlang:list_streams(ChannelName)]),
+    io:format("~p~n", [hstreamdb_erlang:create_stream(Client, StreamName, 3, 14)]),
+    io:format("~p~n", [hstreamdb_erlang:list_streams(Client)]),
 
     XS = lists:seq(0, 100),
     lists:foreach(
@@ -50,7 +53,7 @@ readme() ->
             io:format("~p: ~p~n", [
                 X,
                 hstreamdb_erlang:append(
-                    ChannelName,
+                    Client,
                     StreamName,
                     "",
                     raw,
@@ -65,7 +68,7 @@ readme() ->
             io:format("~p: ~p~n", [
                 X,
                 hstreamdb_erlang:append(
-                    ChannelName,
+                    Client,
                     StreamName,
                     "",
                     raw,
@@ -76,10 +79,10 @@ readme() ->
         XS
     ),
 
-    io:format("~p~n", [hstreamdb_erlang:delete_stream(ChannelName, StreamName)]),
-    io:format("~p~n", [hstreamdb_erlang:list_streams(ChannelName)]),
+    io:format("~p~n", [hstreamdb_erlang:delete_stream(Client, StreamName)]),
+    io:format("~p~n", [hstreamdb_erlang:list_streams(Client)]),
 
-    io:format("~p~n", [hstreamdb_erlang:stop_client_channel(ChannelName)]),
+    io:format("~p~n", [hstreamdb_erlang:stop_client_channel(Client)]),
 
     ok.
 
@@ -98,3 +101,75 @@ get_bytes(Size, Unit) ->
         <<"">>,
         lists:duplicate(round(SizeBytes / 128), bit_size_128())
     ).
+
+remove_all_streams(Client) ->
+    {ok, Streams} = hstreamdb_erlang:list_streams(Client),
+    lists:foreach(
+        fun(Stream) ->
+            {ok} = hstreamdb_erlang:delete_stream(Client, Stream)
+        end,
+        lists:map(
+            fun(Stream) -> maps:get(streamName, Stream) end, Streams
+        )
+    ).
+
+bench(ProducerNum, ServerUrl, ReplicationFactor, BacklogDuration) ->
+    hstreamdb_erlang:start(normal, []),
+
+    % {ok, Channel} = hstreamdb_erlang:start_client_channel(ServerUrl),
+    % remove_all_streams(Channel),
+
+    XS =
+        lists:map(
+            fun(X) ->
+                StreamName = string_format("test_stream-~p-~p", [X, erlang:system_time(second)]),
+                {ok, Client} = hstreamdb_erlang:start_client_channel(ServerUrl),
+                {ok} = hstreamdb_erlang:create_stream(
+                    Client, StreamName, ReplicationFactor, BacklogDuration
+                ),
+                {
+                    Client,
+                    StreamName
+                }
+            end,
+            lists:seq(0, ProducerNum)
+        ),
+
+    SuccessAppends = atomics:new(1, [{signed, false}]),
+    FailedAppends = atomics:new(1, [{signed, false}]),
+
+    SuccessAppendsIncr = fun() -> atomics:add(SuccessAppends, 1, 1) end,
+    FailedAppendsIncr = fun() -> atomics:add(FailedAppends, 1, 1) end,
+    SuccessAppendsReset = fun() -> atomics:put(SuccessAppends, 1, 0) end,
+    FailedAppendsReset = fun() -> atomics:put(FailedAppends, 1, 0) end,
+    SuccessAppendsGet = fun() -> atomics:get(SuccessAppends, 1) end,
+    FailedAppendsGet = fun() -> atomics:get(FailedAppends, 1) end,
+
+    LastSuccessAppends = atomics:new(1, [{signed, false}]),
+    LastFailedAppends = atomics:new(1, [{signed, false}]),
+
+    LastSuccessAppendsPut = fun(X) -> atomics:put(LastSuccessAppends, 1, X) end,
+    LastFailedAppendsPut = fun(X) -> atomics:put(LastFailedAppends, 1, X) end,
+    LastSuccessAppendsReset = fun() -> atomics:put(LastSuccessAppends, 1, 0) end,
+    LastFailedAppendsReset = fun() -> atomics:put(LastFailedAppends, 1, 0) end,
+    LastSuccessAppendsGet = fun() -> atomics:get(LastSuccessAppends, 1) end,
+    LastFailedAppendsGet = fun() -> atomics:get(LastFailedAppends, 1) end,
+
+    Append = fun(XS, X) ->
+        {Client, StreamName} = X,
+        case hstreamdb_erlang:append(Client, StreamName, "", raw, X) of
+            {ok, _} -> SuccessAppendsIncr();
+            {err, _} -> FailedAppendsIncr()
+        end
+    end,
+
+    lists:foreach(
+        fun(X) ->
+            {Client, StreamName} = X,
+            {ok} = hstreamdb_erlang:delete_stream(Client, StreamName),
+            ok = hstreamdb_erlang:stop_client_channel(Client)
+        end,
+        XS
+    ).
+
+bench() -> bench(100, "http://127.0.0.1:6570", 1, 60 * 30).
