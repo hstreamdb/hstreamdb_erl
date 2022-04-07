@@ -119,6 +119,7 @@ bench(Opts) ->
     ServerUrl = maps:get(serverUrl, Opts),
     ReplicationFactor = maps:get(replicationFactor, Opts),
     BacklogDuration = maps:get(backlogDuration, Opts),
+    ReportIntervalSeconds = maps:get(reportIntervalSeconds, Opts),
 
     hstreamdb_erlang:start(normal, []),
 
@@ -186,17 +187,35 @@ bench(Opts) ->
         XS
     ),
 
-    io:format("[DEBUG]: SuccessAppends=~p, FailedAppends=~p~n", [
-        SuccessAppendsGet(), FailedAppendsGet()
-    ]),
-    ok = timer:sleep(10 * 1000),
-    io:format("[DEBUG]: SuccessAppends=~p, FailedAppends=~p~n", [
-        SuccessAppendsGet(), FailedAppendsGet()
-    ]),
-    ok = timer:sleep(10 * 1000),
-    io:format("[DEBUG]: SuccessAppends=~p, FailedAppends=~p~n", [
-        SuccessAppendsGet(), FailedAppendsGet()
-    ]),
+    lists:foreach(
+        fun(_) ->
+            Success = SuccessAppendsGet(),
+            Failed = FailedAppendsGet(),
+            LastSuccessAppendsPut(Success),
+            LastFailedAppendsPut(Failed),
+
+            timer:sleep(ReportIntervalSeconds * 1000),
+
+            io:format("[BENCH]: SuccessAppends=~p, FailedAppends=~p~n", [
+                (Success - LastSuccessAppendsGet()) / ReportIntervalSeconds,
+                (Failed - LastFailedAppendsGet()) / ReportIntervalSeconds
+            ]),
+            io:format(
+                "[DEBUG]: " ++
+                    "SuccessAppends=~p, " ++
+                    "FailedAppends=~p, " ++
+                    "LastSuccessAppends=~p, " ++
+                    "LastFailedAppends=~p~n",
+                [
+                    SuccessAppendsGet(),
+                    FailedAppendsGet(),
+                    LastSuccessAppendsGet(),
+                    LastFailedAppendsGet()
+                ]
+            )
+        end,
+        lists:seq(0, 100)
+    ),
 
     lists:foreach(
         fun(X) ->
@@ -205,11 +224,7 @@ bench(Opts) ->
             ok = hstreamdb_erlang:stop_client_channel(Client)
         end,
         XS
-    ),
-
-    io:format("[DEBUG]: SuccessAppends=~p, FailedAppends=~p~n", [
-        SuccessAppendsGet(), FailedAppendsGet()
-    ]).
+    ).
 
 bench() ->
     bench(
@@ -218,6 +233,7 @@ bench() ->
             payloadSize => 1,
             serverUrl => "http://127.0.0.1:6570",
             replicationFactor => 1,
-            backlogDuration => 60 * 30
+            backlogDuration => 60 * 30,
+            reportIntervalSeconds => 3
         }
     ).
