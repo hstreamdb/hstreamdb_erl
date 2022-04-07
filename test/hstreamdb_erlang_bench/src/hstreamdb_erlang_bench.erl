@@ -30,11 +30,13 @@ string_format(Pattern, Values) ->
 
 readme() ->
     StreamName = string_format("test_stream-~p", [erlang:system_time(second)]),
-    ChannelName = string_format("test_channel-~p", [erlang:system_time(second)]),
 
     hstreamdb_erlang:start(normal, []),
 
-    io:format("~p~n", [hstreamdb_erlang:start_client_channel(ChannelName, "http://127.0.0.1:6570")]),
+    StartClientChannelRet = hstreamdb_erlang:start_client_channel("http://127.0.0.1:6570"),
+    io:format("~p~n", [StartClientChannelRet]),
+    {ok, ChannelName} = StartClientChannelRet,
+
     io:format("~p~n", [hstreamdb_erlang:list_streams(ChannelName)]),
 
     io:format("~p~n", [hstreamdb_erlang:create_stream(ChannelName, StreamName, 3, 14)]),
