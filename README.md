@@ -9,29 +9,32 @@ Build
     $ rebar3 compile
 
 
-Example usage (without lib module prefix):
+Example usage:
 
 ```erl
+string_format(Pattern, Values) ->
+    lists:flatten(io_lib:format(Pattern, Values)).
+
 readme() ->
     StreamName = string_format("test_stream-~p", [erlang:system_time(second)]),
-    ChannelName = string_format("test_channel-~p", [erlang:system_time(second)]),
 
-    start(normal, []),
+    hstreamdb_erlang:start(normal, []),
 
-    io:format("~p~n", [start_client_channel(ChannelName, "http://127.0.0.1:6570")]),
-    io:format("~p~n", [list_streams(ChannelName)]),
+    StartClientChannelRet = hstreamdb_erlang:start_client_channel("http://127.0.0.1:6570"),
+    io:format("~p~n", [StartClientChannelRet]),
+    {ok, ChannelName} = StartClientChannelRet,
 
-    io:format("~p~n", [create_stream(ChannelName, StreamName, 3, 14)]),
-    io:format("~p~n", [list_streams(ChannelName)]),
+    io:format("~p~n", [hstreamdb_erlang:list_streams(ChannelName)]),
 
-    io:format("~p~n", [lookup_stream(ChannelName, StreamName, "")]),
+    io:format("~p~n", [hstreamdb_erlang:create_stream(ChannelName, StreamName, 3, 14)]),
+    io:format("~p~n", [hstreamdb_erlang:list_streams(ChannelName)]),
 
     XS = lists:seq(0, 100),
     lists:foreach(
         fun(X) ->
             io:format("~p: ~p~n", [
                 X,
-                append(
+                hstreamdb_erlang:append(
                     ChannelName,
                     StreamName,
                     "",
@@ -46,7 +49,7 @@ readme() ->
         fun(X) ->
             io:format("~p: ~p~n", [
                 X,
-                append(
+                hstreamdb_erlang:append(
                     ChannelName,
                     StreamName,
                     "",
@@ -58,10 +61,10 @@ readme() ->
         XS
     ),
 
-    io:format("~p~n", [delete_stream(ChannelName, StreamName)]),
-    io:format("~p~n", [list_streams(ChannelName)]),
+    io:format("~p~n", [hstreamdb_erlang:delete_stream(ChannelName, StreamName)]),
+    io:format("~p~n", [hstreamdb_erlang:list_streams(ChannelName)]),
 
-    io:format("~p~n", [stop_client_channel(ChannelName)]),
+    io:format("~p~n", [hstreamdb_erlang:stop_client_channel(ChannelName)]),
 
     ok.
 ```
