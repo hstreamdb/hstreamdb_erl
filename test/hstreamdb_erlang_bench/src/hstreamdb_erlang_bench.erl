@@ -6,7 +6,7 @@
 -export([get_bytes/1, get_bytes/2]).
 -export([remove_all_streams/1]).
 
--export([bench/0, bench/5]).
+-export([bench/0, bench/1]).
 
 %%====================================================================
 %% API functions
@@ -113,7 +113,13 @@ remove_all_streams(Client) ->
         )
     ).
 
-bench(ProducerNum, PayloadSize, ServerUrl, ReplicationFactor, BacklogDuration) ->
+bench(Opts) ->
+    ProducerNum = maps:get(producerNum, Opts),
+    PayloadSize = maps:get(payloadSize, Opts),
+    ServerUrl = maps:get(serverUrl, Opts),
+    ReplicationFactor = maps:get(replicationFactor, Opts),
+    BacklogDuration = maps:get(backlogDuration, Opts),
+
     hstreamdb_erlang:start(normal, []),
 
     % {ok, Channel} = hstreamdb_erlang:start_client_channel(ServerUrl),
@@ -205,4 +211,13 @@ bench(ProducerNum, PayloadSize, ServerUrl, ReplicationFactor, BacklogDuration) -
         SuccessAppendsGet(), FailedAppendsGet()
     ]).
 
-bench() -> bench(1000, 1, "http://127.0.0.1:6570", 1, 60 * 30).
+bench() ->
+    bench(
+        #{
+            producerNum => 100,
+            payloadSize => 1,
+            serverUrl => "http://127.0.0.1:6570",
+            replicationFactor => 1,
+            backlogDuration => 60 * 30
+        }
+    ).
