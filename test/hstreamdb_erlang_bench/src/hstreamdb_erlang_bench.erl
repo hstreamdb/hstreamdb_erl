@@ -197,22 +197,22 @@ bench(Opts) ->
             timer:sleep(ReportIntervalSeconds * 1000),
 
             io:format("[BENCH]: SuccessAppends=~p, FailedAppends=~p~n", [
-                (Success - LastSuccessAppendsGet()) / ReportIntervalSeconds,
-                (Failed - LastFailedAppendsGet()) / ReportIntervalSeconds
-            ]),
-            io:format(
-                "[DEBUG]: " ++
-                    "SuccessAppends=~p, " ++
-                    "FailedAppends=~p, " ++
-                    "LastSuccessAppends=~p, " ++
-                    "LastFailedAppends=~p~n",
-                [
-                    SuccessAppendsGet(),
-                    FailedAppendsGet(),
-                    LastSuccessAppendsGet(),
-                    LastFailedAppendsGet()
-                ]
-            )
+                (SuccessAppendsGet() - LastSuccessAppendsGet()) / ReportIntervalSeconds,
+                (FailedAppendsGet() - LastFailedAppendsGet()) / ReportIntervalSeconds
+            ])
+        % io:format(
+        %     "[DEBUG]: " ++
+        %         "SuccessAppends=~p, " ++
+        %         "FailedAppends=~p, " ++
+        %         "LastSuccessAppends=~p, " ++
+        %         "LastFailedAppends=~p~n",
+        %     [
+        %         SuccessAppendsGet(),
+        %         FailedAppendsGet(),
+        %         LastSuccessAppendsGet(),
+        %         LastFailedAppendsGet()
+        %     ]
+        % )
         end,
         lists:seq(0, 100)
     ),

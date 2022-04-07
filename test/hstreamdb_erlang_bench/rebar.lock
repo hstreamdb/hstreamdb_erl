@@ -18,7 +18,7 @@
   {git,"https://github.com/emqx/gun",
        {ref,"4faea40b9a8ca1eac5288355f8202e0cea379d50"}},
   2},
- {<<"hstreamdb_erlang">>,{path,"../..",{mtime,<<"2022-04-07T16:43:18Z">>}},0},
+ {<<"hstreamdb_erlang">>,{path,"../..",{mtime,<<"2022-04-07T16:47:13Z">>}},0},
  {<<"ranch">>,
   {git,"https://github.com/ninenines/ranch",
        {ref,"a692f44567034dacf5efcaa24a24183788594eb7"}},
