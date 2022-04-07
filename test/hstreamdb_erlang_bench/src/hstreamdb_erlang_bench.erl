@@ -6,7 +6,7 @@
 -export([get_bytes/1, get_bytes/2]).
 -export([remove_all_streams/1]).
 
--export([bench/0, bench/4]).
+-export([bench/0, bench/5]).
 
 %%====================================================================
 %% API functions
@@ -113,7 +113,7 @@ remove_all_streams(Client) ->
         )
     ).
 
-bench(ProducerNum, ServerUrl, ReplicationFactor, BacklogDuration) ->
+bench(ProducerNum, PayloadSize, ServerUrl, ReplicationFactor, BacklogDuration) ->
     hstreamdb_erlang:start(normal, []),
 
     % {ok, Channel} = hstreamdb_erlang:start_client_channel(ServerUrl),
@@ -155,13 +155,42 @@ bench(ProducerNum, ServerUrl, ReplicationFactor, BacklogDuration) ->
     LastSuccessAppendsGet = fun() -> atomics:get(LastSuccessAppends, 1) end,
     LastFailedAppendsGet = fun() -> atomics:get(LastFailedAppends, 1) end,
 
-    Append = fun(XS, X) ->
-        {Client, StreamName} = X,
+    Append = fun({Client, StreamName}, X) ->
         case hstreamdb_erlang:append(Client, StreamName, "", raw, X) of
             {ok, _} -> SuccessAppendsIncr();
             {err, _} -> FailedAppendsIncr()
         end
     end,
+
+    Payload = get_bytes(PayloadSize),
+
+    lists:foreach(
+        fun(X) ->
+            spawn(
+                fun() ->
+                    lists:foreach(
+                        fun(_) ->
+                            Append(X, Payload)
+                        end,
+                        lists:seq(0, 100)
+                    )
+                end
+            )
+        end,
+        XS
+    ),
+
+    io:format("[DEBUG]: SuccessAppends=~p, FailedAppends=~p~n", [
+        SuccessAppendsGet(), FailedAppendsGet()
+    ]),
+    ok = timer:sleep(10 * 1000),
+    io:format("[DEBUG]: SuccessAppends=~p, FailedAppends=~p~n", [
+        SuccessAppendsGet(), FailedAppendsGet()
+    ]),
+    ok = timer:sleep(10 * 1000),
+    io:format("[DEBUG]: SuccessAppends=~p, FailedAppends=~p~n", [
+        SuccessAppendsGet(), FailedAppendsGet()
+    ]),
 
     lists:foreach(
         fun(X) ->
@@ -170,6 +199,10 @@ bench(ProducerNum, ServerUrl, ReplicationFactor, BacklogDuration) ->
             ok = hstreamdb_erlang:stop_client_channel(Client)
         end,
         XS
-    ).
+    ),
 
-bench() -> bench(100, "http://127.0.0.1:6570", 1, 60 * 30).
+    io:format("[DEBUG]: SuccessAppends=~p, FailedAppends=~p~n", [
+        SuccessAppendsGet(), FailedAppendsGet()
+    ]).
+
+bench() -> bench(1000, 1, "http://127.0.0.1:6570", 1, 60 * 30).
