@@ -3,6 +3,8 @@
 %% API exports
 -export([main/1]).
 
+-export([get_bytes/1, get_bytes/2]).
+
 %%====================================================================
 %% API functions
 %%====================================================================
@@ -83,10 +85,16 @@ readme() ->
 
 bit_size_128() -> (<<"___hstream.io___">>).
 
+get_bytes(Size) -> get_bytes(Size, k).
+
 get_bytes(Size, Unit) ->
     SizeBytes =
         case Unit of
             k -> Size * 1024;
             m -> Size * 1024 * 1024
         end,
-    lists:replicate(SizeBytes / 128, bit_size_128()).
+    lists:foldl(
+        fun(X, Acc) -> <<X/binary, Acc/binary>> end,
+        <<"">>,
+        lists:duplicate(round(SizeBytes / 128), bit_size_128())
+    ).
