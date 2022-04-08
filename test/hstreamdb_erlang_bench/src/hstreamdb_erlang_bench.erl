@@ -189,10 +189,8 @@ bench(Opts) ->
 
     lists:foreach(
         fun(_) ->
-            Success = SuccessAppendsGet(),
-            Failed = FailedAppendsGet(),
-            LastSuccessAppendsPut(Success),
-            LastFailedAppendsPut(Failed),
+            LastSuccessAppendsPut(SuccessAppendsGet()),
+            LastFailedAppendsPut(FailedAppendsGet()),
 
             timer:sleep(ReportIntervalSeconds * 1000),
 
