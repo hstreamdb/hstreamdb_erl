@@ -97,7 +97,7 @@ create_stream(Ch, StreamName, ReplicationFactor, BacklogDuration) ->
         #{channel => Ch}
     ),
     case Ret of
-        {ok, _, _} -> {ok};
+        {ok, _, _} -> ok;
         R -> R
     end.
 
@@ -116,7 +116,7 @@ delete_stream(Ch, StreamName, Opts) ->
         #{channel => Ch}
     ),
     case Ret of
-        {ok, _, _} -> {ok};
+        {ok, _, _} -> ok;
         R -> R
     end.
 

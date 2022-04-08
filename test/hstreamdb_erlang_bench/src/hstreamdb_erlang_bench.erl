@@ -106,7 +106,7 @@ remove_all_streams(Client) ->
     {ok, Streams} = hstreamdb_erlang:list_streams(Client),
     lists:foreach(
         fun(Stream) ->
-            {ok} = hstreamdb_erlang:delete_stream(Client, Stream, #{force => true})
+            ok = hstreamdb_erlang:delete_stream(Client, Stream, #{force => true})
         end,
         lists:map(
             fun(Stream) -> maps:get(streamName, Stream) end, Streams
@@ -131,7 +131,7 @@ bench(Opts) ->
             fun(X) ->
                 StreamName = string_format("test_stream-~p-~p", [X, erlang:system_time(second)]),
                 {ok, Client} = hstreamdb_erlang:start_client_channel(ServerUrl),
-                {ok} = hstreamdb_erlang:create_stream(
+                ok = hstreamdb_erlang:create_stream(
                     Client, StreamName, ReplicationFactor, BacklogDuration
                 ),
                 {
@@ -219,7 +219,7 @@ bench(Opts) ->
     lists:foreach(
         fun(X) ->
             {Client, StreamName} = X,
-            {ok} = hstreamdb_erlang:delete_stream(Client, StreamName, #{force => true}),
+            ok = hstreamdb_erlang:delete_stream(Client, StreamName, #{force => true}),
             ok = hstreamdb_erlang:stop_client_channel(Client)
         end,
         XS
