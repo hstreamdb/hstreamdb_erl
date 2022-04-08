@@ -106,7 +106,7 @@ remove_all_streams(Client) ->
     {ok, Streams} = hstreamdb_erlang:list_streams(Client),
     lists:foreach(
         fun(Stream) ->
-            {ok} = hstreamdb_erlang:delete_stream(Client, Stream)
+            {ok} = hstreamdb_erlang:delete_stream(Client, Stream, #{force => true})
         end,
         lists:map(
             fun(Stream) -> maps:get(streamName, Stream) end, Streams
@@ -123,8 +123,8 @@ bench(Opts) ->
 
     hstreamdb_erlang:start(normal, []),
 
-    % {ok, Channel} = hstreamdb_erlang:start_client_channel(ServerUrl),
-    % remove_all_streams(Channel),
+    {ok, Channel} = hstreamdb_erlang:start_client_channel(ServerUrl),
+    remove_all_streams(Channel),
 
     XS =
         lists:map(
@@ -218,7 +218,7 @@ bench(Opts) ->
     lists:foreach(
         fun(X) ->
             {Client, StreamName} = X,
-            {ok} = hstreamdb_erlang:delete_stream(Client, StreamName),
+            {ok} = hstreamdb_erlang:delete_stream(Client, StreamName, #{force => true}),
             ok = hstreamdb_erlang:stop_client_channel(Client)
         end,
         XS
