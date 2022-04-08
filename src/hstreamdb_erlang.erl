@@ -8,7 +8,7 @@
 
 -export([start_client_channel/1, start_client_channel/2, stop_client_channel/1]).
 
--export([list_streams/1, create_stream/4, delete_stream/2]).
+-export([list_streams/1, create_stream/4, delete_stream/2, delete_stream/3]).
 -export([append/5]).
 
 -export([list_subscriptions/1]).
@@ -101,9 +101,18 @@ create_stream(Ch, StreamName, ReplicationFactor, BacklogDuration) ->
         R -> R
     end.
 
-delete_stream(Ch, StreamName) ->
+delete_stream(Ch, StreamName) -> delete_stream(Ch, StreamName, #{}).
+
+delete_stream(Ch, StreamName, Opts) ->
+    IgnoreNonExist = maps:get(ignoreNonExist, Opts, false),
+    Force = maps:get(force, Opts, false),
+
     Ret = hstream_server_h_stream_api_client:delete_stream(
-        #{streamName => StreamName},
+        #{
+            streamName => StreamName,
+            ignoreNonExist => IgnoreNonExist,
+            force => Force
+        },
         #{channel => Ch}
     ),
     case Ret of

@@ -106,7 +106,7 @@ remove_all_streams(Client) ->
     {ok, Streams} = hstreamdb_erlang:list_streams(Client),
     lists:foreach(
         fun(Stream) ->
-            {ok} = hstreamdb_erlang:delete_stream(Client, Stream)
+            {ok} = hstreamdb_erlang:delete_stream(Client, Stream, #{force => true})
         end,
         lists:map(
             fun(Stream) -> maps:get(streamName, Stream) end, Streams
@@ -123,8 +123,8 @@ bench(Opts) ->
 
     hstreamdb_erlang:start(normal, []),
 
-    % {ok, Channel} = hstreamdb_erlang:start_client_channel(ServerUrl),
-    % remove_all_streams(Channel),
+    {ok, Channel} = hstreamdb_erlang:start_client_channel(ServerUrl),
+    remove_all_streams(Channel),
 
     XS =
         lists:map(
@@ -147,8 +147,8 @@ bench(Opts) ->
 
     SuccessAppendsIncr = fun() -> atomics:add(SuccessAppends, 1, 1) end,
     FailedAppendsIncr = fun() -> atomics:add(FailedAppends, 1, 1) end,
-    SuccessAppendsReset = fun() -> atomics:put(SuccessAppends, 1, 0) end,
-    FailedAppendsReset = fun() -> atomics:put(FailedAppends, 1, 0) end,
+    % SuccessAppendsReset = fun() -> atomics:put(SuccessAppends, 1, 0) end,
+    % FailedAppendsReset = fun() -> atomics:put(FailedAppends, 1, 0) end,
     SuccessAppendsGet = fun() -> atomics:get(SuccessAppends, 1) end,
     FailedAppendsGet = fun() -> atomics:get(FailedAppends, 1) end,
 
@@ -157,8 +157,8 @@ bench(Opts) ->
 
     LastSuccessAppendsPut = fun(X) -> atomics:put(LastSuccessAppends, 1, X) end,
     LastFailedAppendsPut = fun(X) -> atomics:put(LastFailedAppends, 1, X) end,
-    LastSuccessAppendsReset = fun() -> atomics:put(LastSuccessAppends, 1, 0) end,
-    LastFailedAppendsReset = fun() -> atomics:put(LastFailedAppends, 1, 0) end,
+    % LastSuccessAppendsReset = fun() -> atomics:put(LastSuccessAppends, 1, 0) end,
+    % LastFailedAppendsReset = fun() -> atomics:put(LastFailedAppends, 1, 0) end,
     LastSuccessAppendsGet = fun() -> atomics:get(LastSuccessAppends, 1) end,
     LastFailedAppendsGet = fun() -> atomics:get(LastFailedAppends, 1) end,
 
@@ -171,56 +171,55 @@ bench(Opts) ->
 
     Payload = get_bytes(PayloadSize),
 
+    Pid = self(),
+    Countdown = spawn(fun() -> countdown(length(XS), Pid) end),
+
     lists:foreach(
         fun(X) ->
             spawn(
                 fun() ->
                     lists:foreach(
                         fun(_) ->
-                            Append(X, Payload)
+                            try
+                                Append(X, Payload)
+                            catch
+                                _ -> FailedAppendsIncr()
+                            end
                         end,
                         lists:seq(0, 100)
-                    )
+                    ),
+                    Countdown ! finished
                 end
             )
         end,
         XS
     ),
 
-    lists:foreach(
-        fun(_) ->
-            Success = SuccessAppendsGet(),
-            Failed = FailedAppendsGet(),
-            LastSuccessAppendsPut(Success),
-            LastFailedAppendsPut(Failed),
+    Report = spawn(
+        fun Report() ->
+            LastSuccessAppendsPut(SuccessAppendsGet()),
+            LastFailedAppendsPut(FailedAppendsGet()),
 
             timer:sleep(ReportIntervalSeconds * 1000),
 
             io:format("[BENCH]: SuccessAppends=~p, FailedAppends=~p~n", [
                 (SuccessAppendsGet() - LastSuccessAppendsGet()) / ReportIntervalSeconds,
                 (FailedAppendsGet() - LastFailedAppendsGet()) / ReportIntervalSeconds
-            ])
-        % io:format(
-        %     "[DEBUG]: " ++
-        %         "SuccessAppends=~p, " ++
-        %         "FailedAppends=~p, " ++
-        %         "LastSuccessAppends=~p, " ++
-        %         "LastFailedAppends=~p~n",
-        %     [
-        %         SuccessAppendsGet(),
-        %         FailedAppendsGet(),
-        %         LastSuccessAppendsGet(),
-        %         LastFailedAppendsGet()
-        %     ]
-        % )
-        end,
-        lists:seq(0, 100)
+            ]),
+            Report()
+        end
     ),
+
+    receive
+        finished ->
+            % io:format("[BENCH]: finished"),
+            exit(Report, finished)
+    end,
 
     lists:foreach(
         fun(X) ->
             {Client, StreamName} = X,
-            {ok} = hstreamdb_erlang:delete_stream(Client, StreamName),
+            {ok} = hstreamdb_erlang:delete_stream(Client, StreamName, #{force => true}),
             ok = hstreamdb_erlang:stop_client_channel(Client)
         end,
         XS
@@ -237,3 +236,16 @@ bench() ->
             reportIntervalSeconds => 3
         }
     ).
+
+countdown(N, Pid) ->
+    case N of
+        0 ->
+            % logger:notice("countdown: finished"),
+            Pid ! finished;
+        _ ->
+            receive
+                finished ->
+                    % logger:notice("countdown: receive finished, left ~p", [N - 1]),
+                    countdown(N - 1, Pid)
+            end
+    end.
