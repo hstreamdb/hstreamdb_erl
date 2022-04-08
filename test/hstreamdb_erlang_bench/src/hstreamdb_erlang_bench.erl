@@ -114,8 +114,11 @@ remove_all_streams(Client) ->
     ).
 
 bench(Opts) ->
+    io:format("Opts: ~p~n", [Opts]),
+
     ProducerNum = maps:get(producerNum, Opts),
     PayloadSize = maps:get(payloadSize, Opts),
+    BatchNum = maps:get(batchNum, Opts),
     ServerUrl = maps:get(serverUrl, Opts),
     ReplicationFactor = maps:get(replicationFactor, Opts),
     BacklogDuration = maps:get(backlogDuration, Opts),
@@ -169,7 +172,7 @@ bench(Opts) ->
         end
     end,
 
-    Payload = get_bytes(PayloadSize),
+    Payload = lists:duplicate(BatchNum, get_bytes(PayloadSize)),
 
     Pid = self(),
     Countdown = spawn(fun() -> countdown(length(XS), Pid) end),
@@ -202,9 +205,13 @@ bench(Opts) ->
 
             timer:sleep(ReportIntervalSeconds * 1000),
 
-            io:format("[BENCH]: SuccessAppends=~p, FailedAppends=~p~n", [
+            ReportSuccessAppends =
                 (SuccessAppendsGet() - LastSuccessAppendsGet()) / ReportIntervalSeconds,
-                (FailedAppendsGet() - LastFailedAppendsGet()) / ReportIntervalSeconds
+            ReportFailedAppends =
+                (FailedAppendsGet() - LastFailedAppendsGet()) / ReportIntervalSeconds,
+            ReportThroughput = ReportSuccessAppends * (PayloadSize * BatchNum) / 1024,
+            io:format("[BENCH]: SuccessAppends=~p, FailedAppends=~p, throughput=~p~n", [
+                ReportSuccessAppends, ReportFailedAppends, ReportThroughput
             ]),
             Report()
         end
@@ -212,7 +219,6 @@ bench(Opts) ->
 
     receive
         finished ->
-            % io:format("[BENCH]: finished"),
             exit(Report, finished)
     end,
 
@@ -230,6 +236,7 @@ bench() ->
         #{
             producerNum => 100,
             payloadSize => 1,
+            batchNum => 400,
             serverUrl => "http://127.0.0.1:6570",
             replicationFactor => 1,
             backlogDuration => 60 * 30,
@@ -240,12 +247,10 @@ bench() ->
 countdown(N, Pid) ->
     case N of
         0 ->
-            % logger:notice("countdown: finished"),
             Pid ! finished;
         _ ->
             receive
                 finished ->
-                    % logger:notice("countdown: receive finished, left ~p", [N - 1]),
                     countdown(N - 1, Pid)
             end
     end.
