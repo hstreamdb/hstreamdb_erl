@@ -174,11 +174,6 @@ append(Ch, StreamName, OrderingKey, PayloadType, Payload) ->
     case lookup_stream(Ch, StreamName, OrderingKey) of
         {ok, ServerNode} ->
             ServerUrl = server_node_to_host_port(ServerNode, http),
-            % logger:notice(
-            %     "hstreamdb_erlang:append: lookup_stream_server_url = ~s",
-            %     [ServerUrl]
-            % ),
-
             Header = make_record_header(PayloadType, OrderingKey),
             Records = make_records(Header, Payload),
 
