@@ -3,8 +3,7 @@
 -behaviour(gen_statem).
 
 -export([callback_mode/0]).
--export([start_link/0, init/1]).
--export([start/0]).
+-export([start/0, start/1, start_link/0, start_link/1, init/1]).
 
 -export([wait_for_append/3, appending/3]).
 
@@ -15,46 +14,35 @@ callback_mode() ->
     state_functions.
 
 start_link() ->
-    gen_statem:start_link(
-        ?MODULE,
-        % Args
-        [],
-        % Opts
-        []
-    ).
+    start_link([]).
 
 start_link(Args) ->
     gen_statem:start_link(
         ?MODULE,
-        % Args
         Args,
-        % Opts
         []
     ).
 
 start() ->
+    start([]).
+
+start(Args) ->
     gen_statem:start(
         ?MODULE,
-        % Args
-        [],
-        % Opts
+        Args,
         []
     ).
 
 init(ProducerOptions) ->
-    {ok,
-        % State
-        wait_for_append,
-        % Data
-        #{
-            recordBuffer =>
-                #{
-                    length => 0,
-                    byte_size => 0,
-                    records => []
-                },
-            options => ProducerOptions
-        }}.
+    {ok, wait_for_append, #{
+        recordBuffer =>
+            #{
+                length => 0,
+                byte_size => 0,
+                records => []
+            },
+        options => ProducerOptions
+    }}.
 
 %%--------------------------------------------------------------------
 
@@ -111,12 +99,24 @@ check_ready_for_append(
         val => ProducerOptions
     }),
 
+    % FIXME
     RecordCountLimit = maps:get(recordCountLimit, BatchSetting, undefined),
+    BytesLimit = maps:get(bytesLimit, BatchSetting, undefined),
+    AgeLimit = maps:get(ageLimit, BatchSetting, undefined),
 
-    case RecordCountLimit of
-        undefined -> true;
-        X when is_integer(X) -> X == RecordCount
-    end.
+    % FIXME
+    (case RecordCountLimit of
+        undefined -> false;
+        X when is_integer(X) -> X >= RecordCount
+    end) orelse
+        (case BytesLimit of
+            undefined -> false;
+            Y when is_integer(Y) -> Y >= RecordCount
+        end) orelse
+        (case AgeLimit of
+            undefined -> false;
+            Z when is_integer(Z) -> Z >= RecordCount
+        end).
 
 add_record_to_buffer(Record, Buffer) ->
     Buffer0 = maps:update_with(
