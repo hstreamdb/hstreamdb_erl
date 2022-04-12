@@ -38,10 +38,12 @@ init(ProducerOptions) ->
         wait_for_append,
         % Data
         #{
-            recordBuffer => {
-                0,
-                array:new()
-            },
+            recordBuffer =>
+                #{
+                    length => 0,
+                    byte_size => 0,
+                    records => []
+                },
             options => ProducerOptions
         }}.
 
@@ -49,7 +51,7 @@ init(ProducerOptions) ->
 
 wait_for_append(
     {call, From},
-    EventContent,
+    {_, EventContentMap} = EventContent,
     #{
         recordBuffer := RecordBuffer,
         options := ProducerOptions
@@ -59,6 +61,9 @@ wait_for_append(
         msg => "producer: do wait_for_append",
         val => EventContent
     }),
+
+    Record = maps:get(record, EventContentMap),
+    add_record_to_buffer(Record, RecordBuffer),
 
     gen_statem:reply(From, ok),
     case check_ready_for_append(ProducerOptions) of
@@ -91,14 +96,26 @@ check_ready_for_append(
 ) ->
     true.
 
+add_record_to_buffer(Record, Buffer) ->
+    Buffer0 = maps:update_with(
+        length, fun(X) -> X + 1 end, Buffer
+    ),
+    Buffer1 = maps:update_with(
+        byte_size, fun(X) -> X + 1 end, Buffer0
+    ),
+    Buffer2 = maps:update_with(
+        records, fun(XS) -> [Record | XS] end, Buffer1
+    ),
+    Buffer2.
+
 %%--------------------------------------------------------------------
 
 readme() ->
     {ok, Pid} = start_link(),
     gen_statem:call(
-        Pid, {payload, []}
+        Pid, {append, #{record => <<"00">>}}
     ),
     gen_statem:call(
-        Pid, {payload, []}
+        Pid, {append, #{record => <<"01">>}}
     ),
     ok.
