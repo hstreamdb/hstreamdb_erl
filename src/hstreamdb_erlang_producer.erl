@@ -101,7 +101,7 @@ add_record_to_buffer(Record, Buffer) ->
         length, fun(X) -> X + 1 end, Buffer
     ),
     Buffer1 = maps:update_with(
-        byte_size, fun(X) -> X + 1 end, Buffer0
+        byte_size, fun(X) -> X + byte_size(Record) end, Buffer0
     ),
     Buffer2 = maps:update_with(
         records, fun(XS) -> [Record | XS] end, Buffer1
