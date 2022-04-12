@@ -37,8 +37,11 @@ init(ProducerOptions) ->
     {ok, wait_for_append, #{
         recordBuffer =>
             #{
-                length => 0,
-                byte_size => 0,
+                batchInfo => #{
+                    recordCount => 0,
+                    bytes => 0,
+                    age => 0
+                },
                 records => []
             },
         options => ProducerOptions
@@ -56,14 +59,14 @@ wait_for_append(
 ) ->
     logger:notice(#{
         msg => "producer: do wait_for_append",
-        val => EventContent
+        val => [EventContent, RecordBuffer]
     }),
 
     Record = maps:get(record, EventContentMap),
     add_record_to_buffer(Record, RecordBuffer),
 
     gen_statem:reply(From, ok),
-    case check_ready_for_append(get_producer_info(RecordBuffer), ProducerOptions) of
+    case check_ready_for_append(RecordBuffer, ProducerOptions) of
         true ->
             logger:notice(#{
                 msg => "producer: wait_for_append -> appending"
@@ -88,42 +91,59 @@ appending(
 
 %%--------------------------------------------------------------------
 
-get_producer_info(XS) -> XS.
-
 check_ready_for_append(
-    #{length := RecordCount} = ProducerInfo,
-    #{batchSetting := BatchSetting} = ProducerOptions
+    #{
+        batchInfo := #{
+            recordCount := RecordCount,
+            bytes := Bytes,
+            age := Age
+        }
+    } = ProducerInfo,
+    #{
+        batchSetting := BatchSetting
+    } = ProducerOptions
 ) ->
     logger:notice(#{
         msg => "producer: check_ready_for_append",
-        val => ProducerOptions
+        val => [ProducerInfo, ProducerOptions]
     }),
 
-    % FIXME
-    RecordCountLimit = maps:get(recordCountLimit, BatchSetting, undefined),
-    BytesLimit = maps:get(bytesLimit, BatchSetting, undefined),
-    AgeLimit = maps:get(ageLimit, BatchSetting, undefined),
+    BatchSettings = lists:map(
+        fun(X) ->
+            maps:get(X, BatchSetting, undefined)
+        end,
+        [
+            recordCountLimit,
+            bytesLimit,
+            ageLimit
+        ]
+    ),
+    true = lists:any(fun(X) -> X =/= undefined end, BatchSettings),
 
-    % FIXME
-    (case RecordCountLimit of
-        undefined -> false;
-        X when is_integer(X) -> X >= RecordCount
-    end) orelse
-        (case BytesLimit of
-            undefined -> false;
-            Y when is_integer(Y) -> Y >= RecordCount
-        end) orelse
-        (case AgeLimit of
-            undefined -> false;
-            Z when is_integer(Z) -> Z >= RecordCount
-        end).
+    lists:any(
+        fun({X, XLimit}) ->
+            case XLimit of
+                undefined -> false;
+                Limit when is_integer(Limit) -> X >= Limit
+            end
+        end,
+        lists:zip(
+            [RecordCount, Bytes, Age], BatchSettings
+        )
+    ).
 
-add_record_to_buffer(Record, Buffer) ->
+add_record_to_buffer(
+    Record,
+    #{
+        batchInfo := BatchInfo,
+        records := Records
+    } = Buffer
+) ->
     Buffer0 = maps:update_with(
-        length, fun(X) -> X + 1 end, Buffer
+        recordCount, fun(X) -> X + 1 end, Buffer
     ),
     Buffer1 = maps:update_with(
-        byte_size, fun(X) -> X + byte_size(Record) end, Buffer0
+        bytes, fun(X) -> X + byte_size(Record) end, Buffer0
     ),
     Buffer2 = maps:update_with(
         records, fun(XS) -> [Record | XS] end, Buffer1
