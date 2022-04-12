@@ -23,6 +23,15 @@ start_link() ->
         []
     ).
 
+start_link(Args) ->
+    gen_statem:start_link(
+        ?MODULE,
+        % Args
+        Args,
+        % Opts
+        []
+    ).
+
 start() ->
     gen_statem:start(
         ?MODULE,
@@ -66,7 +75,7 @@ wait_for_append(
     add_record_to_buffer(Record, RecordBuffer),
 
     gen_statem:reply(From, ok),
-    case check_ready_for_append(ProducerOptions) of
+    case check_ready_for_append(get_producer_info(RecordBuffer), ProducerOptions) of
         true ->
             logger:notice(#{
                 msg => "producer: wait_for_append -> appending"
@@ -91,10 +100,23 @@ appending(
 
 %%--------------------------------------------------------------------
 
+get_producer_info(XS) -> XS.
+
 check_ready_for_append(
-    ProducerOptions
+    #{length := RecordCount} = ProducerInfo,
+    #{batchSetting := BatchSetting} = ProducerOptions
 ) ->
-    true.
+    logger:notice(#{
+        msg => "producer: check_ready_for_append",
+        val => ProducerOptions
+    }),
+
+    RecordCountLimit = maps:get(recordCountLimit, BatchSetting, undefined),
+
+    case RecordCountLimit of
+        undefined -> true;
+        X when is_integer(X) -> X == RecordCount
+    end.
 
 add_record_to_buffer(Record, Buffer) ->
     Buffer0 = maps:update_with(
@@ -111,11 +133,18 @@ add_record_to_buffer(Record, Buffer) ->
 %%--------------------------------------------------------------------
 
 readme() ->
-    {ok, Pid} = start_link(),
+    {ok, Pid} = start_link(#{
+        batchSetting => #{
+            recordCountLimit => 2
+        }
+    }),
     gen_statem:call(
         Pid, {append, #{record => <<"00">>}}
     ),
     gen_statem:call(
         Pid, {append, #{record => <<"01">>}}
+    ),
+    gen_statem:call(
+        Pid, {append, #{record => <<"02">>}}
     ),
     ok.
