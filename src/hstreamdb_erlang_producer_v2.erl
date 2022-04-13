@@ -96,3 +96,36 @@ neutral_producer_status() ->
     build_producer_status([], neutral_batch_status()).
 
 % --------------------------------------------------------------------------------
+
+add_to_buffer(
+    Record,
+    #{
+        producer_status := ProducerStatus,
+        producer_option := ProducerOption
+    } = _State
+) when is_binary(Record) ->
+    #{
+        records := Records,
+        batch_status := BatchStatus
+    } = ProducerStatus,
+    #{
+        record_count := RecordCount,
+        bytes := Bytes
+    } = BatchStatus,
+
+    NewRecords = [Record | Records],
+    NewRecordCount = RecordCount + 1,
+    NewBytes = Bytes + byte_size(Record),
+    NewBatchStatus = build_batch_status(NewRecordCount, NewBytes),
+
+    NewProducerStatus = build_producer_status(NewRecords, NewBatchStatus),
+    build_producer_state(NewProducerStatus, ProducerOption).
+
+% --------------------------------------------------------------------------------
+
+handle_call({Method, Body} = Request, From, State) ->
+    case Method of
+        _ -> throw(hstreamdb_exception)
+    end,
+
+    {reply, ok, State}.
