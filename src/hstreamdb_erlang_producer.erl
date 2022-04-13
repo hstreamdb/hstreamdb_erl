@@ -70,10 +70,10 @@ wait_for_append(
         streamName := StreamName
     } = Data
 ) ->
-    logger:notice(#{
-        msg => "producer: do wait_for_append",
-        val => [EventContent, RecordBuffer]
-    }),
+    % logger:notice(#{
+    %     msg => "producer: do wait_for_append",
+    %     val => [EventContent, RecordBuffer]
+    % }),
 
     Record = maps:get(record, EventContentMap),
     ProcessedBuffer = add_record_to_buffer(Record, RecordBuffer),
@@ -100,10 +100,10 @@ appending(
         options := ProducerOptions
     } = Data
 ) ->
-    logger:notice(#{
-        msg => "producer: do appending",
-        val => EventContent
-    }),
+    % logger:notice(#{
+    %     msg => "producer: do appending",
+    %     val => EventContent
+    % }),
 
     ProcessedBatchInfo = #{
         recordCount => 0,
@@ -133,10 +133,10 @@ check_ready_for_append(
         batchSetting := BatchSetting
     } = ProducerOptions
 ) ->
-    logger:notice(#{
-        msg => "producer: check_ready_for_append",
-        val => [ProducerInfo, ProducerOptions]
-    }),
+    % logger:notice(#{
+    %     msg => "producer: check_ready_for_append",
+    %     val => [ProducerInfo, ProducerOptions]
+    % }),
 
     [
         RecordCountLimit,
@@ -186,10 +186,10 @@ add_record_to_buffer(
         records, fun(XS) -> [Record | XS] end, Buffer0
     ),
 
-    logger:notice(#{
-        msg => "producer: do add_record_to_buffer",
-        val => [Buffer, Buffer1]
-    }),
+    % logger:notice(#{
+    %     msg => "producer: do add_record_to_buffer",
+    %     val => [Buffer, Buffer1]
+    % }),
 
     Buffer1.
 
@@ -199,7 +199,7 @@ empty_buffer() ->
             recordCount => 0,
             bytes => 0
         },
-        records => 0
+        records => []
     }.
 
 exec_append(
@@ -247,5 +247,14 @@ readme() ->
     ),
     gen_statem:call(
         Pid, {append, #{record => <<"04">>}}
+    ),
+    gen_statem:call(
+        Pid, {append, #{record => <<"05">>}}
+    ),
+    gen_statem:call(
+        Pid, {append, #{record => <<"06">>}}
+    ),
+    gen_statem:call(
+        Pid, {append, #{record => <<"07">>}}
     ),
     ok.
