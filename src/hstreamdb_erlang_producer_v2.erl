@@ -3,6 +3,9 @@
 -behaviour(gen_server).
 
 -export([init/1]).
+-export([handle_call/3]).
+
+-export([start/1, start_link/1]).
 
 % --------------------------------------------------------------------------------
 
@@ -120,6 +123,35 @@ add_to_buffer(
 
     NewProducerStatus = build_producer_status(NewRecords, NewBatchStatus),
     build_producer_state(NewProducerStatus, ProducerOption).
+
+check_buffer_limit(
+    #{
+        producer_status := ProducerStatus,
+        producer_option := ProducerOption
+    } = _State
+) ->
+    #{
+        batch_status := #{
+            record_count := RecordCount,
+            bytes := Bytes
+        }
+    } = ProducerStatus,
+    #{
+        batch_setting := #{
+            record_count_limit := RecordCountLimit,
+            bytes_limit := BytesLimit
+        }
+    } = ProducerOption,
+
+    CheckLimit = fun({X, XS}) ->
+        case XS of
+            undefined -> false;
+            XLimit when is_integer(XLimit) -> X >= XLimit
+        end
+    end,
+
+    CheckLimit({RecordCount, RecordCountLimit}) orelse
+        CheckLimit({Bytes, BytesLimit}).
 
 % --------------------------------------------------------------------------------
 
