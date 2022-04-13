@@ -34,6 +34,7 @@ start(Args) ->
     ).
 
 init(ProducerOptions) ->
+    % TODO: spawn for ageLimit
     {ok, wait_for_append, #{
         recordBuffer =>
             #{
@@ -62,7 +63,10 @@ wait_for_append(
     }),
 
     Record = maps:get(record, EventContentMap),
-    add_record_to_buffer(Record, RecordBuffer),
+    ProcessedBuffer = add_record_to_buffer(Record, RecordBuffer),
+    ProcessedData = maps:update(
+        recordBuffer, ProcessedBuffer, Data
+    ),
 
     gen_statem:reply(From, ok),
     case check_ready_for_append(RecordBuffer, ProducerOptions) of
@@ -70,9 +74,9 @@ wait_for_append(
             logger:notice(#{
                 msg => "producer: wait_for_append -> appending"
             }),
-            {next_state, appending, Data};
+            {next_state, appending, ProcessedData};
         false ->
-            {next_state, wait_for_append, Data}
+            {next_state, wait_for_append, ProcessedData}
     end.
 
 appending(
@@ -153,6 +157,12 @@ add_record_to_buffer(
     Buffer1 = maps:update_with(
         records, fun(XS) -> [Record | XS] end, Buffer0
     ),
+
+    logger:notice(#{
+        msg => "producer: do add_record_to_buffer",
+        val => [Buffer, Buffer1]
+    }),
+
     Buffer1.
 
 %%--------------------------------------------------------------------
@@ -160,7 +170,7 @@ add_record_to_buffer(
 readme() ->
     {ok, Pid} = start_link(#{
         batchSetting => #{
-            recordCountLimit => 2
+            recordCountLimit => 3
         }
     }),
     gen_statem:call(
@@ -171,5 +181,11 @@ readme() ->
     ),
     gen_statem:call(
         Pid, {append, #{record => <<"02">>}}
+    ),
+    gen_statem:call(
+        Pid, {append, #{record => <<"03">>}}
+    ),
+    gen_statem:call(
+        Pid, {append, #{record => <<"04">>}}
     ),
     ok.
