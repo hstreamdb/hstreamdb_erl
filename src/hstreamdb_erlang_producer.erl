@@ -39,8 +39,7 @@ init(ProducerOptions) ->
             #{
                 batchInfo => #{
                     recordCount => 0,
-                    bytes => 0,
-                    age => 0
+                    bytes => 0
                 },
                 records => []
             },
@@ -95,8 +94,7 @@ check_ready_for_append(
     #{
         batchInfo := #{
             recordCount := RecordCount,
-            bytes := Bytes,
-            age := Age
+            bytes := Bytes
         }
     } = ProducerInfo,
     #{
@@ -108,16 +106,19 @@ check_ready_for_append(
         val => [ProducerInfo, ProducerOptions]
     }),
 
-    BatchSettings = lists:map(
-        fun(X) ->
-            maps:get(X, BatchSetting, undefined)
-        end,
-        [
-            recordCountLimit,
-            bytesLimit,
-            ageLimit
-        ]
-    ),
+    [
+        RecordCountLimit,
+        BytesLimit
+    ] =
+        BatchSettings = lists:map(
+            fun(X) ->
+                maps:get(X, BatchSetting, undefined)
+            end,
+            [
+                recordCountLimit,
+                bytesLimit
+            ]
+        ),
     true = lists:any(fun(X) -> X =/= undefined end, BatchSettings),
 
     lists:any(
@@ -127,28 +128,32 @@ check_ready_for_append(
                 Limit when is_integer(Limit) -> X >= Limit
             end
         end,
-        lists:zip(
-            [RecordCount, Bytes, Age], BatchSettings
-        )
+        [
+            {RecordCount, RecordCountLimit},
+            {Bytes, BytesLimit}
+        ]
     ).
 
 add_record_to_buffer(
     Record,
     #{
         batchInfo := BatchInfo,
-        records := Records
+        records := _
     } = Buffer
 ) ->
-    Buffer0 = maps:update_with(
-        recordCount, fun(X) -> X + 1 end, Buffer
+    BatchInfo0 = maps:update_with(
+        recordCount, fun(X) -> X + 1 end, BatchInfo
+    ),
+    BatchInfo1 = maps:update_with(
+        bytes, fun(X) -> X + byte_size(Record) end, BatchInfo0
+    ),
+    Buffer0 = maps:update(
+        batchInfo, BatchInfo1, Buffer
     ),
     Buffer1 = maps:update_with(
-        bytes, fun(X) -> X + byte_size(Record) end, Buffer0
+        records, fun(XS) -> [Record | XS] end, Buffer0
     ),
-    Buffer2 = maps:update_with(
-        records, fun(XS) -> [Record | XS] end, Buffer1
-    ),
-    Buffer2.
+    Buffer1.
 
 %%--------------------------------------------------------------------
 
