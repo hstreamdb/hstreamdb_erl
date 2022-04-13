@@ -1,5 +1,36 @@
 -module(hstreamdb_erlang_producer_v2).
 
+-behaviour(gen_server).
+
+-export([init/1]).
+
+% --------------------------------------------------------------------------------
+
+init(
+    #{
+        producer_option := ProducerOption
+    } = _Args
+) ->
+    ProducerStatus = neutral_producer_status(),
+    State = build_producer_state(ProducerStatus, ProducerOption),
+    {ok, State}.
+
+% --------------------------------------------------------------------------------
+
+start(
+    #{
+        producer_option := _ProducerOption
+    } = Args
+) ->
+    gen_server:start(?MODULE, Args, []).
+
+start_link(
+    #{
+        producer_option := _ProducerOption
+    } = Args
+) ->
+    gen_server:start_link(?MODULE, Args, []).
+
 % --------------------------------------------------------------------------------
 
 build_batch_setting(BatchSetting) when is_tuple(BatchSetting) ->
