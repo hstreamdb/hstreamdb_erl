@@ -82,15 +82,30 @@ wait_for_append(
 appending(
     {call, From},
     EventContent,
-    Data
+    #{
+        recordBuffer := RecordBuffer,
+        options := ProducerOptions
+    } = Data
 ) ->
     logger:notice(#{
         msg => "producer: do appending",
         val => EventContent
     }),
 
+    ProcessedBatchInfo = #{
+        recordCount => 0,
+        byte => 0
+    },
+    ProcessedBuffer = #{
+        batchInfo => ProcessedBatchInfo,
+        records => []
+    },
+    ProcessedData = maps:update(
+        recordBuffer, ProcessedBuffer, Data
+    ),
+
     gen_statem:reply(From, ok),
-    {next_state, wait_for_append, Data}.
+    {next_state, wait_for_append, ProcessedData}.
 
 %%--------------------------------------------------------------------
 
