@@ -43,7 +43,19 @@ init(
     init(ProducerOptions, ServerUrl, StreamName).
 
 init(ProducerOptions, ServerUrl, StreamName) ->
-    % TODO: spawn for ageLimit
+    SelfPid = self(),
+    WorkerPid = spawn(
+        fun() ->
+            receive
+                flush ->
+                    gen_statem:call(
+                        SelfPid, {append, #{record => [], flush => true}}
+                    )
+            end
+        end
+    ),
+    timer:send_interval(5000, WorkerPid, flush),
+
     {ok, wait_for_append, #{
         recordBuffer =>
             #{
@@ -81,8 +93,10 @@ wait_for_append(
         recordBuffer, ProcessedBuffer, Data
     ),
 
+    DoFlush = maps:get(doFlush, EventContentMap, false),
+
     gen_statem:reply(From, ok),
-    case check_ready_for_append(ProcessedBuffer, ProducerOptions) of
+    case DoFlush orelse check_ready_for_append(ProcessedBuffer, ProducerOptions) of
         true ->
             Records = maps:get(records, ProcessedBuffer),
             io:format("~n~p~n", [exec_append(ServerUrl, Records, StreamName)]),
