@@ -33,7 +33,16 @@ start(Args) ->
         []
     ).
 
-init(ProducerOptions) ->
+init(
+    #{
+        producerOptions := ProducerOptions,
+        serverUrl := ServerUrl,
+        streamName := StreamName
+    } = Opts
+) ->
+    init(ProducerOptions, ServerUrl, StreamName).
+
+init(ProducerOptions, ServerUrl, StreamName) ->
     % TODO: spawn for ageLimit
     {ok, wait_for_append, #{
         recordBuffer =>
@@ -44,7 +53,9 @@ init(ProducerOptions) ->
                 },
                 records => []
             },
-        options => ProducerOptions
+        options => ProducerOptions,
+        serverUrl => ServerUrl,
+        streamName => StreamName
     }}.
 
 %%--------------------------------------------------------------------
@@ -54,9 +65,9 @@ wait_for_append(
     {_, EventContentMap} = EventContent,
     #{
         recordBuffer := RecordBuffer,
-        options := ProducerOptions
-        % serverUrl := ServerUrl,
-        % streamName := StreamName
+        options := ProducerOptions,
+        serverUrl := ServerUrl,
+        streamName := StreamName
     } = Data
 ) ->
     logger:notice(#{
@@ -74,11 +85,9 @@ wait_for_append(
     case check_ready_for_append(ProcessedBuffer, ProducerOptions) of
         true ->
             Records = maps:get(records, ProcessedBuffer),
-            % io:format("~n~p~n", [exec_append(ServerUrl, Records, StreamName)]),
+            io:format("~n~p~n", [exec_append(ServerUrl, Records, StreamName)]),
 
-            {next_state, wait_for_append, #{
-                recordBuffer => empty_buffer(), options => ProducerOptions
-            }};
+            {next_state, wait_for_append, maps:update(recordBuffer, empty_buffer(), Data)};
         false ->
             {next_state, wait_for_append, ProcessedData}
     end.
@@ -205,16 +214,25 @@ exec_append(
         Ch, StreamName, OrderingKey, PayloadType, Payload
     ]),
     {ok, Ret} = rpc:yield(Key),
+    hstreamdb_erlang:stop_client_channel(Ch),
     Ret.
 
 %%--------------------------------------------------------------------
 
 readme() ->
     {ok, Pid} = start_link(#{
-        batchSetting => #{
-            recordCountLimit => 3
+        streamName => "xxxx",
+        serverUrl => "http://127.0.0.1:6570",
+        producerOptions => #{
+            batchSetting => #{
+                recordCountLimit => 3
+            }
         }
     }),
+
+    % {ok, Ch} = hstreamdb_erlang:start_client_channel("http://127.0.0.1:6570"),
+    % hstreamdb_erlang:create_stream(Ch, "xxxx", 3, 15),
+
     gen_statem:call(
         Pid, {append, #{record => <<"00">>}}
     ),
