@@ -55,6 +55,8 @@ wait_for_append(
     #{
         recordBuffer := RecordBuffer,
         options := ProducerOptions
+        % serverUrl := ServerUrl,
+        % streamName := StreamName
     } = Data
 ) ->
     logger:notice(#{
@@ -69,12 +71,14 @@ wait_for_append(
     ),
 
     gen_statem:reply(From, ok),
-    case check_ready_for_append(RecordBuffer, ProducerOptions) of
+    case check_ready_for_append(ProcessedBuffer, ProducerOptions) of
         true ->
-            logger:notice(#{
-                msg => "producer: wait_for_append -> appending"
-            }),
-            {next_state, appending, ProcessedData};
+            Records = maps:get(records, ProcessedBuffer),
+            % io:format("~n~p~n", [exec_append(ServerUrl, Records, StreamName)]),
+
+            {next_state, wait_for_append, #{
+                recordBuffer => empty_buffer(), options => ProducerOptions
+            }};
         false ->
             {next_state, wait_for_append, ProcessedData}
     end.
@@ -179,6 +183,29 @@ add_record_to_buffer(
     }),
 
     Buffer1.
+
+empty_buffer() ->
+    #{
+        batchInfo => #{
+            recordCount => 0,
+            bytes => 0
+        },
+        records => 0
+    }.
+
+exec_append(
+    ServerUrl, Records, StreamName
+) ->
+    {ok, Ch} = hstreamdb_erlang:start_client_channel(ServerUrl),
+    OrderingKey = "",
+    PayloadType = raw,
+    Payload = Records,
+
+    Key = rpc:async_call(node(), hstreamdb_erlang, append, [
+        Ch, StreamName, OrderingKey, PayloadType, Payload
+    ]),
+    {ok, Ret} = rpc:yield(Key),
+    Ret.
 
 %%--------------------------------------------------------------------
 
