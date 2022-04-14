@@ -15,7 +15,34 @@ init(
     } = _Args
 ) ->
     ProducerStatus = neutral_producer_status(),
-    State = build_producer_state(ProducerStatus, ProducerOption),
+
+    #{age_limit := AgeLimit} = ProducerOption,
+
+    ProducerResource =
+        case AgeLimit of
+            undefined ->
+                AgeLimitWorker = undefined,
+                build_producer_resource(AgeLimitWorker);
+            _ ->
+                SelfPid = self(),
+                _ = spawn(
+                    fun() ->
+                        {ok, TRef} =
+                            timer:send_interval(AgeLimit, SelfPid, flush),
+                        SelfPid ! {t_ref, TRef}
+                    end
+                ),
+
+                receive
+                    {t_ref, AgeLimitWorker} ->
+                        Ret = build_producer_resource(AgeLimitWorker)
+                end,
+                Ret
+        end,
+
+    State = build_producer_state(
+        ProducerStatus, ProducerOption, ProducerResource
+    ),
     {ok, State}.
 
 % --------------------------------------------------------------------------------
@@ -86,10 +113,16 @@ build_producer_status(Records, BatchStatus) ->
         batch_status => BatchStatus
     }.
 
-build_producer_state(ProducerStatus, ProducerOption) ->
+build_producer_resource(AgeLimitWorker) ->
+    #{
+        age_limit_worker => AgeLimitWorker
+    }.
+
+build_producer_state(ProducerStatus, ProducerOption, ProducerResource) ->
     #{
         producer_status => ProducerStatus,
-        producer_option => ProducerOption
+        producer_option => ProducerOption,
+        producer_resource => ProducerResource
     }.
 
 neutral_batch_status() ->
@@ -104,7 +137,8 @@ add_to_buffer(
     Record,
     #{
         producer_status := ProducerStatus,
-        producer_option := ProducerOption
+        producer_option := ProducerOption,
+        producer_resource := ProducerResource
     } = _State
 ) when is_binary(Record) ->
     #{
@@ -122,7 +156,9 @@ add_to_buffer(
     NewBatchStatus = build_batch_status(NewRecordCount, NewBytes),
 
     NewProducerStatus = build_producer_status(NewRecords, NewBatchStatus),
-    build_producer_state(NewProducerStatus, ProducerOption).
+    build_producer_state(
+        NewProducerStatus, ProducerOption, ProducerResource
+    ).
 
 check_buffer_limit(
     #{
@@ -155,11 +191,14 @@ check_buffer_limit(
 
 clear_buffer(
     #{
-        producer_option := ProducerOption
+        producer_option := ProducerOption,
+        producer_resource := ProducerResource
     } = _State
 ) ->
     ProducerStatus = neutral_producer_status(),
-    build_producer_state(ProducerStatus, ProducerOption).
+    build_producer_state(
+        ProducerStatus, ProducerOption, ProducerResource
+    ).
 
 % --------------------------------------------------------------------------------
 
