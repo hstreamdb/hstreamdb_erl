@@ -163,7 +163,8 @@ clear_buffer(
 
 handle_call({Method, Body} = Request, From, State) ->
     case Method of
-        flush -> exec_flush(State);
+        flush -> exec_flush(Body, State);
+        append -> exec_append(Body, State);
         _ -> throw(hstreamdb_exception)
     end.
 
@@ -189,10 +190,11 @@ append(Records, ServerUrl, StreamName) ->
     hstreamdb_erlang:append(Channel, StreamName, OrderingKey, PayloadType, Records).
 
 exec_flush(
+    _FlushRequest,
     #{
         producer_status := ProducerStatus,
         producer_option := ProducerOption
-    } = _State
+    } = State
 ) ->
     #{
         records := Records
@@ -204,6 +206,22 @@ exec_flush(
 
     Reply = append(Records, ServerUrl, StreamName),
 
-    NewProducerStatus = neutral_producer_status(),
-    NewState = build_producer_state(NewProducerStatus, ProducerOption),
+    NewState = clear_buffer(State),
     {reply, Reply, NewState}.
+
+exec_append(
+    #{
+        record := Record
+    } = _AppendRequest,
+    State
+) ->
+    State0 = add_to_buffer(Record, State),
+    case check_buffer_limit(State0) of
+        true ->
+            FlushRequest = build_flush_request(),
+            exec_flush(FlushRequest, State0);
+        false ->
+            Reply = ok,
+            NewState = State0,
+            {reply, Reply, NewState}
+    end.
