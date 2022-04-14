@@ -5,6 +5,8 @@
 
 -export([start/1, start_link/1]).
 
+-export([readme/0]).
+
 % --------------------------------------------------------------------------------
 
 init(
@@ -235,10 +237,11 @@ exec_append(
 
 readme() ->
     ServerUrl = "http://127.0.0.1:6570",
-    StreamName = "v2_test",
+    StreamName = "___v2_test___",
     BatchSetting = build_batch_setting({record_count_limit, 3}),
 
-    Channel = hstreamdb_erlang:start_client_channel(ServerUrl),
+    % {ok, _} = hstreamdb_erlang:start(normal, []),
+    {ok, Channel} = hstreamdb_erlang:start_client_channel(ServerUrl),
     _ = hstreamdb_erlang:delete_stream(Channel, StreamName, #{
         ignoreNonExist => true,
         force => true
@@ -253,7 +256,7 @@ readme() ->
     StartArgs = #{
         producer_option => build_producer_option(ServerUrl, StreamName, BatchSetting)
     },
-    ProducerPid = start_link(StartArgs),
+    {ok, ProducerPid} = start_link(StartArgs),
 
     io:format("StartArgs: ~p~n", [StartArgs]),
     io:format("~p~n", [
