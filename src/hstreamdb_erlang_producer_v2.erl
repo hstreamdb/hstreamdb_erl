@@ -187,7 +187,12 @@ append(Records, ServerUrl, StreamName) ->
     {ok, Channel} = hstreamdb_erlang:start_client_channel(ServerUrl),
     OrderingKey = "",
     PayloadType = raw,
-    hstreamdb_erlang:append(Channel, StreamName, OrderingKey, PayloadType, Records).
+    Ret =
+        hstreamdb_erlang:append(
+            Channel, StreamName, OrderingKey, PayloadType, Records
+        ),
+    _ = hstreamdb_erlang:stop_client_channel(Channel),
+    Ret.
 
 exec_flush(
     _FlushRequest,
@@ -225,3 +230,61 @@ exec_append(
             NewState = State0,
             {reply, Reply, NewState}
     end.
+
+% --------------------------------------------------------------------------------
+
+readme() ->
+    ServerUrl = "http://127.0.0.1:6570",
+    StreamName = "v2_test",
+    BatchSetting = build_batch_setting({record_count_limit, 3}),
+
+    Channel = hstreamdb_erlang:start_client_channel(ServerUrl),
+    _ = hstreamdb_erlang:delete_stream(Channel, StreamName, #{
+        ignoreNonExist => true,
+        force => true
+    }),
+    ReplicationFactor = 3,
+    BacklogDuration = 60 * 30,
+    ok = hstreamdb_erlang:create_stream(
+        Channel, StreamName, ReplicationFactor, BacklogDuration
+    ),
+    _ = hstreamdb_erlang:stop_client_channel(Channel),
+
+    StartArgs = #{
+        producer_option => build_producer_option(ServerUrl, StreamName, BatchSetting)
+    },
+    ProducerPid = start_link(StartArgs),
+
+    io:format("StartArgs: ~p~n", [StartArgs]),
+    io:format("~p~n", [
+        gen_server:call(
+            ProducerPid,
+            build_append_request(<<"00">>)
+        )
+    ]),
+    io:format("~p~n", [
+        gen_server:call(
+            ProducerPid,
+            build_append_request(<<"01">>)
+        )
+    ]),
+    io:format("~p~n", [
+        gen_server:call(
+            ProducerPid,
+            build_append_request(<<"02">>)
+        )
+    ]),
+    io:format("~p~n", [
+        gen_server:call(
+            ProducerPid,
+            build_append_request(<<"03">>)
+        )
+    ]),
+    io:format("~p~n", [
+        gen_server:call(
+            ProducerPid,
+            build_append_request(<<"04">>)
+        )
+    ]),
+
+    ok.
