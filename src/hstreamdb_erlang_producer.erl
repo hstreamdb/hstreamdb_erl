@@ -1,7 +1,7 @@
 -module(hstreamdb_erlang_producer).
 
 -behaviour(gen_server).
--export([init/1, handle_call/3, handle_cast/2]).
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2]).
 
 -export([start/1, start_link/1]).
 
@@ -172,6 +172,16 @@ handle_call({Method, Body} = Request, From, State) ->
 
 handle_cast(_, _) ->
     throw(hstreamdb_exception).
+
+handle_info(Info, State) ->
+    case Info of
+        flush ->
+            FlushRequest = build_flush_request(),
+            {reply, {ok, _}, NewState} = exec_flush(FlushRequest, State),
+            {noreply, NewState};
+        _ ->
+            throw(hstreamdb_exception)
+    end.
 
 % --------------------------------------------------------------------------------
 
