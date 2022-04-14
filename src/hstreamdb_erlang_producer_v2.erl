@@ -151,6 +151,14 @@ check_buffer_limit(
     CheckLimit({RecordCount, RecordCountLimit}) orelse
         CheckLimit({Bytes, BytesLimit}).
 
+clear_buffer(
+    #{
+        producer_option := ProducerOption
+    } = _State
+) ->
+    ProducerStatus = neutral_producer_status(),
+    build_producer_state(ProducerStatus, ProducerOption).
+
 % --------------------------------------------------------------------------------
 
 handle_call({Method, Body} = Request, From, State) ->
@@ -162,3 +170,15 @@ handle_call({Method, Body} = Request, From, State) ->
 
 handle_cast(_, _) ->
     throw(hstreamdb_exception).
+
+% --------------------------------------------------------------------------------
+
+build_append_request(Record) ->
+    {append, #{
+        record => Record
+    }}.
+
+build_flush_request() ->
+    {flush, #{}}.
+
+% --------------------------------------------------------------------------------
