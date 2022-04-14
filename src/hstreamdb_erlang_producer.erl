@@ -16,7 +16,8 @@ init(
 ) ->
     ProducerStatus = neutral_producer_status(),
 
-    #{age_limit := AgeLimit} = ProducerOption,
+    #{batch_setting := BatchSetting} = ProducerOption,
+    #{age_limit := AgeLimit} = BatchSetting,
 
     ProducerResource =
         case AgeLimit of
@@ -138,13 +139,13 @@ neutral_producer_status() ->
 % --------------------------------------------------------------------------------
 
 add_to_buffer(
-    Record,
+    {_PayloadType, Payload, OrderingKey} = _Record,
     #{
         producer_status := ProducerStatus,
         producer_option := ProducerOption,
         producer_resource := ProducerResource
     } = _State
-) when is_binary(Record) ->
+) when is_binary(Payload) ->
     #{
         records := Records,
         batch_status := BatchStatus
@@ -154,7 +155,6 @@ add_to_buffer(
         bytes := Bytes
     } = BatchStatus,
 
-    {_PayloadType, Payload, OrderingKey} = Record,
     NewRecords =
         case maps:is_key(OrderingKey, Records) of
             false ->
@@ -168,7 +168,7 @@ add_to_buffer(
         end,
 
     NewRecordCount = RecordCount + 1,
-    NewBytes = Bytes + byte_size(Record),
+    NewBytes = Bytes + byte_size(Payload),
     NewBatchStatus = build_batch_status(NewRecordCount, NewBytes),
 
     NewProducerStatus = build_producer_status(NewRecords, NewBatchStatus),
@@ -314,7 +314,9 @@ exec_append(
 
 readme() ->
     ServerUrl = "http://127.0.0.1:6570",
-    StreamName = "___v2_test___",
+    StreamName = hstreamdb_erlang_utils:string_format("~s-~p", [
+        "___v2_test___", erlang:unique_integer()
+    ]),
     BatchSetting = build_batch_setting({record_count_limit, 3}),
 
     % {ok, _} = hstreamdb_erlang:start(normal, []),
