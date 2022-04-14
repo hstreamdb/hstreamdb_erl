@@ -3,7 +3,7 @@
 -behaviour(supervisor).
 -behaviour(application).
 
--export([start/2, stop/1]).
+-export([start/0, stop/0, start/2, stop/1]).
 -export([init/1]).
 
 -export([start_client_channel/1, start_client_channel/2, stop_client_channel/1]).
@@ -18,8 +18,14 @@
 %%--------------------------------------------------------------------
 %% APIs for application
 
+start() ->
+    start(normal, []).
+
 start(_StartType, _StartArgs) ->
     supervisor:start_link({local, ?MODULE}, ?MODULE, []).
+
+stop() ->
+    stop(normal).
 
 stop(_State) ->
     ok.
