@@ -126,10 +126,14 @@ build_producer_state(ProducerStatus, ProducerOption, ProducerResource) ->
     }.
 
 neutral_batch_status() ->
-    build_batch_status(0, 0).
+    RecordCount = 0,
+    Bytes = 0,
+    build_batch_status(RecordCount, Bytes).
 
 neutral_producer_status() ->
-    build_producer_status([], neutral_batch_status()).
+    Records = #{},
+    BatchStatus = neutral_batch_status(),
+    build_producer_status(Records, BatchStatus).
 
 % --------------------------------------------------------------------------------
 
@@ -150,7 +154,19 @@ add_to_buffer(
         bytes := Bytes
     } = BatchStatus,
 
-    NewRecords = [Record | Records],
+    {_PayloadType, Payload, OrderingKey} = Record,
+    NewRecords =
+        case maps:is_key(OrderingKey, Records) of
+            false ->
+                maps:put(OrderingKey, [Payload], Records);
+            true ->
+                maps:update_with(
+                    OrderingKey,
+                    fun(XS) -> [Payload | XS] end,
+                    Records
+                )
+        end,
+
     NewRecordCount = RecordCount + 1,
     NewBytes = Bytes + byte_size(Record),
     NewBatchStatus = build_batch_status(NewRecordCount, NewBytes),
@@ -223,6 +239,15 @@ handle_info(Info, State) ->
     end.
 
 % --------------------------------------------------------------------------------
+
+build_record(Payload) when is_binary(Payload) ->
+    build_record(raw, Payload, "").
+
+build_record(PayloadType, Payload) ->
+    build_record(PayloadType, Payload, "").
+
+build_record(PayloadType, Payload, OrderingKey) ->
+    {PayloadType, Payload, OrderingKey}.
 
 build_append_request(Record) ->
     {append, #{
