@@ -139,7 +139,7 @@ neutral_producer_status() ->
 % --------------------------------------------------------------------------------
 
 add_to_buffer(
-    {_PayloadType, Payload, OrderingKey} = _Record,
+    {PayloadType, Payload, OrderingKey} = _Record,
     #{
         producer_status := ProducerStatus,
         producer_option := ProducerOption,
@@ -155,14 +155,15 @@ add_to_buffer(
         bytes := Bytes
     } = BatchStatus,
 
+    X = {PayloadType, Payload},
     NewRecords =
         case maps:is_key(OrderingKey, Records) of
             false ->
-                maps:put(OrderingKey, [Payload], Records);
+                maps:put(OrderingKey, [X], Records);
             true ->
                 maps:update_with(
                     OrderingKey,
-                    fun(XS) -> [Payload | XS] end,
+                    fun(XS) -> [X | XS] end,
                     Records
                 )
         end,
@@ -259,15 +260,53 @@ build_flush_request() ->
 
 % --------------------------------------------------------------------------------
 
+build_record_header(PayloadType, OrderingKey) ->
+    Flag =
+        case PayloadType of
+            json -> 0;
+            raw -> 1
+        end,
+
+    Timestamp = #{
+        seconds => erlang:system_time(second),
+        nanos => erlang:system_time(nanosecond)
+    },
+
+    #{
+        flag => Flag,
+        publish_time => Timestamp,
+        key => OrderingKey
+    }.
+
 append(Records, ServerUrl, StreamName) ->
     Fun = fun(OrderingKey, Payloads) ->
         spawn(fun() ->
+            AppendRecords = lists:map(
+                fun({PayloadType, Payload}) ->
+                    RecordHeader = build_record_header(PayloadType, OrderingKey),
+                    #{
+                        header => RecordHeader,
+                        payload => Payload
+                    }
+                end,
+                Payloads
+            ),
+
             {ok, Channel} = hstreamdb_erlang:start_client_channel(ServerUrl),
-            PayloadType = raw,
-            {ok, _} =
-                hstreamdb_erlang:append(
-                    Channel, StreamName, OrderingKey, PayloadType, Payloads
-                ),
+            {ok, ServerNode} = hstreamdb_erlang:lookup_stream(Channel, StreamName, OrderingKey),
+
+            AppendServerUrl = hstreamdb_erlang:server_node_to_host_port(ServerNode, http),
+            {ok, InternalChannel} = hstreamdb_erlang:start_client_channel(AppendServerUrl),
+
+            hstream_server_h_stream_api_client:append(
+                #{
+                    streamName => StreamName,
+                    records => AppendRecords
+                },
+                #{channel => InternalChannel}
+            ),
+
+            _ = hstreamdb_erlang:stop_client_channel(InternalChannel),
             _ = hstreamdb_erlang:stop_client_channel(Channel)
         end)
     end,
