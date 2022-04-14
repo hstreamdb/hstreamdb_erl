@@ -260,15 +260,18 @@ build_flush_request() ->
 % --------------------------------------------------------------------------------
 
 append(Records, ServerUrl, StreamName) ->
-    {ok, Channel} = hstreamdb_erlang:start_client_channel(ServerUrl),
-    OrderingKey = "",
-    PayloadType = raw,
-    Ret =
-        hstreamdb_erlang:append(
-            Channel, StreamName, OrderingKey, PayloadType, Records
-        ),
-    _ = hstreamdb_erlang:stop_client_channel(Channel),
-    Ret.
+    Fun = fun(OrderingKey, Payloads) ->
+        spawn(fun() ->
+            {ok, Channel} = hstreamdb_erlang:start_client_channel(ServerUrl),
+            PayloadType = raw,
+            {ok, _} =
+                hstreamdb_erlang:append(
+                    Channel, StreamName, OrderingKey, PayloadType, Payloads
+                ),
+            _ = hstreamdb_erlang:stop_client_channel(Channel)
+        end)
+    end,
+    maps:foreach(Fun, Records).
 
 exec_flush(
     _FlushRequest,
@@ -336,31 +339,41 @@ readme() ->
     io:format("~p~n", [
         gen_server:call(
             ProducerPid,
-            build_append_request(<<"00">>)
+            build_append_request(
+                build_record(<<"00">>)
+            )
         )
     ]),
     io:format("~p~n", [
         gen_server:call(
             ProducerPid,
-            build_append_request(<<"01">>)
+            build_append_request(
+                build_record(<<"01">>)
+            )
         )
     ]),
     io:format("~p~n", [
         gen_server:call(
             ProducerPid,
-            build_append_request(<<"02">>)
+            build_append_request(
+                build_record(<<"02">>)
+            )
         )
     ]),
     io:format("~p~n", [
         gen_server:call(
             ProducerPid,
-            build_append_request(<<"03">>)
+            build_append_request(
+                build_record(<<"03">>)
+            )
         )
     ]),
     io:format("~p~n", [
         gen_server:call(
             ProducerPid,
-            build_append_request(<<"04">>)
+            build_append_request(
+                build_record(<<"04">>)
+            )
         )
     ]),
 
