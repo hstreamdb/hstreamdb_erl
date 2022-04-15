@@ -35,12 +35,12 @@ start_client_channel(ServerUrl) ->
 
 start_client_channel(ServerUrl, Opts) ->
     ChannelName = "hstream_client_channel-" ++ uid(),
-    case hstreamdb_erlang_client:create_channel_pool(ChannelName, ServerUrl, Opts) of
+    case grpc_client_sup:create_channel_pool(ChannelName, ServerUrl, Opts) of
         {error, _} = E -> E;
         _ -> {ok, ChannelName}
     end.
 
-stop_client_channel(Channel) -> hstreamdb_erlang_client:stop_channel_pool(Channel).
+stop_client_channel(Channel) -> grpc_client_sup:stop_channel_pool(Channel).
 
 % --------------------------------------------------------------------------------
 
