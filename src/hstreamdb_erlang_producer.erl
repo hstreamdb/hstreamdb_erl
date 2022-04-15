@@ -171,7 +171,6 @@ neutral_producer_status() ->
 % --------------------------------------------------------------------------------
 
 add_to_buffer(
-    FutureRecordId,
     FuturePid,
     {PayloadType, Payload, OrderingKey} = _Record,
     #{
@@ -205,12 +204,10 @@ add_to_buffer(
     NewRecordCount = RecordCount + 1,
     NewBytes = Bytes + byte_size(Payload),
     NewBatchStatus = build_batch_status(NewRecordCount, NewBytes),
-
     NewProducerStatus = build_producer_status(NewRecords, NewBatchStatus),
-    {FutureRecordId,
-        build_producer_state(
-            NewProducerStatus, ProducerOption, ProducerResource
-        )}.
+    build_producer_state(
+        NewProducerStatus, ProducerOption, ProducerResource
+    ).
 
 check_buffer_limit(
     #{
@@ -388,7 +385,7 @@ exec_append(
     } = _AppendRequest,
     State
 ) ->
-    {FutureRecordId, State0} = add_to_buffer(FutureRecordId, FuturePid, Record, State),
+    State0 = add_to_buffer(FuturePid, Record, State),
     Reply = {ok, FutureRecordId},
     case check_buffer_limit(State0) of
         true ->
