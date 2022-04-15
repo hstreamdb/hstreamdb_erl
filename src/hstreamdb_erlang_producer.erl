@@ -10,7 +10,7 @@
     build_record/1, build_record/2, build_record/3
 ]).
 
-% -export([readme/0]).
+-export([readme/0]).
 
 % --------------------------------------------------------------------------------
 
@@ -174,7 +174,32 @@ add_to_buffer(
         bytes := Bytes
     } = BatchStatus,
 
-    X = {PayloadType, Payload},
+    SelfPid = self(),
+    FutureRecordId = rpc:async_call(
+        node(),
+        erlang,
+        apply,
+        [
+            fun() ->
+                SelfPid ! {future_pid, self()},
+
+                receive
+                    {ok, RecordId} -> {ok, RecordId};
+                    _ -> throw(hstreamdb_exception)
+                end
+            end,
+
+            []
+        ]
+    ),
+
+    FuturePid =
+        receive
+            {future_pid, Pid} -> Pid
+        after 100 -> throw(hstreamdb_exception)
+        end,
+
+    X = {PayloadType, Payload, FuturePid},
     NewRecords =
         case maps:is_key(OrderingKey, Records) of
             false ->
@@ -192,9 +217,10 @@ add_to_buffer(
     NewBatchStatus = build_batch_status(NewRecordCount, NewBytes),
 
     NewProducerStatus = build_producer_status(NewRecords, NewBatchStatus),
-    build_producer_state(
-        NewProducerStatus, ProducerOption, ProducerResource
-    ).
+    {FutureRecordId,
+        build_producer_state(
+            NewProducerStatus, ProducerOption, ProducerResource
+        )}.
 
 check_buffer_limit(
     #{
@@ -301,7 +327,7 @@ do_append(Records, ServerUrl, StreamName) ->
     Fun = fun(OrderingKey, Payloads) ->
         spawn(fun() ->
             AppendRecords = lists:map(
-                fun({PayloadType, Payload}) ->
+                fun({PayloadType, Payload, FuturePid}) ->
                     RecordHeader = build_record_header(PayloadType, OrderingKey),
                     #{
                         header => RecordHeader,
@@ -317,12 +343,23 @@ do_append(Records, ServerUrl, StreamName) ->
             AppendServerUrl = hstreamdb_erlang:server_node_to_host_port(ServerNode, http),
             {ok, InternalChannel} = hstreamdb_erlang:start_client_channel(AppendServerUrl),
 
-            hstream_server_h_stream_api_client:append(
+            {ok, #{recordIds := RecordIds}, _} = hstream_server_h_stream_api_client:append(
                 #{
                     streamName => StreamName,
                     records => AppendRecords
                 },
                 #{channel => InternalChannel}
+            ),
+
+            FuturePids = lists:map(fun({_, _, FuturePid}) -> FuturePid end, Records),
+            true = length(FuturePids) == length(RecordIds),
+            lists:foreach(
+                fun(
+                    {FuturePid, RecordId}
+                ) ->
+                    FuturePid ! {ok, RecordId}
+                end,
+                lists:zip(FuturePids, RecordIds)
             ),
 
             _ = hstreamdb_erlang:stop_client_channel(InternalChannel),
@@ -357,7 +394,7 @@ exec_append(
     } = _AppendRequest,
     State
 ) ->
-    State0 = add_to_buffer(Record, State),
+    {FutureRecordId, State0} = add_to_buffer(Record, State),
     case check_buffer_limit(State0) of
         true ->
             FlushRequest = build_flush_request(),
@@ -366,74 +403,55 @@ exec_append(
             Reply = ok,
             NewState = State0,
             {reply, Reply, NewState}
-    end.
+    end,
+    {ok, FutureRecordId}.
 
-% % --------------------------------------------------------------------------------
+% --------------------------------------------------------------------------------
 
-% readme() ->
-%     ServerUrl = "http://127.0.0.1:6570",
-%     StreamName = hstreamdb_erlang_utils:string_format("~s-~p", [
-%         "___v2_test___", erlang:time()
-%     ]),
-%     BatchSetting = build_batch_setting({record_count_limit, 3}),
+readme() ->
+    ServerUrl = "http://127.0.0.1:6570",
+    StreamName = hstreamdb_erlang_utils:string_format("~s-~p", [
+        "___v2_test___", erlang:time()
+    ]),
+    BatchSetting = build_batch_setting({record_count_limit, 3}),
 
-%     {ok, Channel} = hstreamdb_erlang:start_client_channel(ServerUrl),
-%     _ = hstreamdb_erlang:delete_stream(Channel, StreamName, #{
-%         ignoreNonExist => true,
-%         force => true
-%     }),
-%     ReplicationFactor = 3,
-%     BacklogDuration = 60 * 30,
-%     ok = hstreamdb_erlang:create_stream(
-%         Channel, StreamName, ReplicationFactor, BacklogDuration
-%     ),
-%     _ = hstreamdb_erlang:stop_client_channel(Channel),
+    {ok, Channel} = hstreamdb_erlang:start_client_channel(ServerUrl),
+    _ = hstreamdb_erlang:delete_stream(Channel, StreamName, #{
+        ignoreNonExist => true,
+        force => true
+    }),
+    ReplicationFactor = 3,
+    BacklogDuration = 60 * 30,
+    ok = hstreamdb_erlang:create_stream(
+        Channel, StreamName, ReplicationFactor, BacklogDuration
+    ),
+    _ = hstreamdb_erlang:stop_client_channel(Channel),
 
-%     StartArgs = #{
-%         producer_option => build_producer_option(ServerUrl, StreamName, BatchSetting)
-%     },
-%     {ok, ProducerPid} = start_link(StartArgs),
+    StartArgs = #{
+        producer_option => build_producer_option(ServerUrl, StreamName, BatchSetting)
+    },
+    {ok, Producer} = start_link(StartArgs),
 
-%     io:format("StartArgs: ~p~n", [StartArgs]),
-%     io:format("~p~n", [
-%         gen_server:call(
-%             ProducerPid,
-%             build_append_request(
-%                 build_record(<<"00">>)
-%             )
-%         )
-%     ]),
-%     io:format("~p~n", [
-%         gen_server:call(
-%             ProducerPid,
-%             build_append_request(
-%                 build_record(<<"01">>)
-%             )
-%         )
-%     ]),
-%     io:format("~p~n", [
-%         gen_server:call(
-%             ProducerPid,
-%             build_append_request(
-%                 build_record(<<"02">>)
-%             )
-%         )
-%     ]),
-%     io:format("~p~n", [
-%         gen_server:call(
-%             ProducerPid,
-%             build_append_request(
-%                 build_record(<<"03">>)
-%             )
-%         )
-%     ]),
-%     io:format("~p~n", [
-%         gen_server:call(
-%             ProducerPid,
-%             build_append_request(
-%                 build_record(<<"04">>)
-%             )
-%         )
-%     ]),
+    io:format("StartArgs: ~p~n", [StartArgs]),
 
-%     ok.
+    RecordIds = lists:map(
+        fun(_) ->
+            Record = build_record(<<"_">>),
+            append(Producer, Record)
+        end,
+        lists:seq(0, 100)
+    ),
+
+    flush(Producer),
+
+    timer:sleep(1000),
+
+    lists:foreach(
+        fun({ok, FutureRecordId}) ->
+            RecordId = rpc:yield(FutureRecordId),
+            io:format("~p~n", [RecordId])
+        end,
+        RecordIds
+    ),
+
+    ok.
