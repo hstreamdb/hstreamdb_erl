@@ -60,9 +60,35 @@ start_link(Args) ->
     gen_server:start_link(?MODULE, Args, []).
 
 append(Producer, Record) ->
+    SelfPid = self(),
+    FutureRecordId = rpc:async_call(
+        node(),
+        erlang,
+        apply,
+        [
+            fun() ->
+                SelfPid ! {future_pid, self()},
+
+                receive
+                    {ok, RecordId} -> {ok, RecordId}
+                end
+            end,
+
+            []
+        ]
+    ),
+
+    FuturePid =
+        receive
+            {future_pid, Pid} -> Pid
+        after 100 -> throw(hstreamdb_exception)
+        end,
+
     gen_server:call(
         Producer,
         build_append_request(
+            FutureRecordId,
+            FuturePid,
             Record
         )
     ).
@@ -145,6 +171,8 @@ neutral_producer_status() ->
 % --------------------------------------------------------------------------------
 
 add_to_buffer(
+    FutureRecordId,
+    FuturePid,
     {PayloadType, Payload, OrderingKey} = _Record,
     #{
         producer_status := ProducerStatus,
@@ -160,30 +188,6 @@ add_to_buffer(
         record_count := RecordCount,
         bytes := Bytes
     } = BatchStatus,
-
-    SelfPid = self(),
-    FutureRecordId = rpc:async_call(
-        node(),
-        erlang,
-        apply,
-        [
-            fun() ->
-                SelfPid ! {future_pid, self()},
-
-                receive
-                    {ok, RecordId} -> {ok, RecordId}
-                end
-            end,
-
-            []
-        ]
-    ),
-
-    FuturePid =
-        receive
-            {future_pid, Pid} -> Pid
-        after 100 -> throw(hstreamdb_exception)
-        end,
 
     X = {PayloadType, Payload, FuturePid},
     NewRecords =
@@ -281,8 +285,10 @@ build_record(PayloadType, Payload) ->
 build_record(PayloadType, Payload, OrderingKey) ->
     {PayloadType, Payload, OrderingKey}.
 
-build_append_request(Record) ->
+build_append_request(FutureRecordId, FuturePid, Record) ->
     {append, #{
+        future_record_id => FutureRecordId,
+        future_pid => FuturePid,
         record => Record
     }}.
 
@@ -376,11 +382,13 @@ exec_flush(
 
 exec_append(
     #{
+        future_record_id := FutureRecordId,
+        future_pid := FuturePid,
         record := Record
     } = _AppendRequest,
     State
 ) ->
-    {FutureRecordId, State0} = add_to_buffer(Record, State),
+    {FutureRecordId, State0} = add_to_buffer(FutureRecordId, FuturePid, Record, State),
     Reply = {ok, FutureRecordId},
     case check_buffer_limit(State0) of
         true ->
@@ -420,7 +428,7 @@ readme() ->
 
     io:format("StartArgs: ~p~n", [StartArgs]),
 
-    _RecordIds = lists:map(
+    RecordIds = lists:map(
         fun(_) ->
             Record = build_record(<<"_">>),
             append(Producer, Record)
@@ -432,12 +440,12 @@ readme() ->
 
     timer:sleep(1000),
 
-    % lists:foreach(
-    %     fun({ok, FutureRecordId}) ->
-    %         RecordId = rpc:yield(FutureRecordId),
-    %         io:format("~p~n", [RecordId])
-    %     end,
-    %     RecordIds
-    % ),
+    lists:foreach(
+        fun({ok, FutureRecordId}) ->
+            RecordId = rpc:yield(FutureRecordId),
+            io:format("~p~n", [RecordId])
+        end,
+        RecordIds
+    ),
 
     ok.
