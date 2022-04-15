@@ -53,18 +53,10 @@ init(
 
 % --------------------------------------------------------------------------------
 
-start(
-    #{
-        producer_option := _ProducerOption
-    } = Args
-) ->
+start(Args) ->
     gen_server:start(?MODULE, Args, []).
 
-start_link(
-    #{
-        producer_option := _ProducerOption
-    } = Args
-) ->
+start_link(Args) ->
     gen_server:start_link(?MODULE, Args, []).
 
 append(Producer, Record) ->
