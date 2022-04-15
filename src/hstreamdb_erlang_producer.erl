@@ -1,11 +1,16 @@
 -module(hstreamdb_erlang_producer).
 
 -behaviour(gen_server).
--export([init/1, handle_call/3, handle_cast/2]).
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2]).
 
--export([start/1, start_link/1]).
+-export([start/1, start_link/1, append/2, flush/1]).
+-export([
+    build_batch_setting/1, build_batch_setting/3,
+    build_producer_option/3,
+    build_record/1, build_record/2, build_record/3
+]).
 
--export([readme/0]).
+% -export([readme/0]).
 
 % --------------------------------------------------------------------------------
 
@@ -15,7 +20,35 @@ init(
     } = _Args
 ) ->
     ProducerStatus = neutral_producer_status(),
-    State = build_producer_state(ProducerStatus, ProducerOption),
+
+    #{batch_setting := BatchSetting} = ProducerOption,
+    #{age_limit := AgeLimit} = BatchSetting,
+
+    ProducerResource =
+        case AgeLimit of
+            undefined ->
+                AgeLimitWorker = undefined,
+                build_producer_resource(AgeLimitWorker);
+            _ ->
+                SelfPid = self(),
+                _ = spawn(
+                    fun() ->
+                        {ok, TRef} =
+                            timer:send_interval(AgeLimit, SelfPid, flush),
+                        SelfPid ! {t_ref, TRef}
+                    end
+                ),
+
+                receive
+                    {t_ref, AgeLimitWorker} ->
+                        Ret = build_producer_resource(AgeLimitWorker)
+                end,
+                Ret
+        end,
+
+    State = build_producer_state(
+        ProducerStatus, ProducerOption, ProducerResource
+    ),
     {ok, State}.
 
 % --------------------------------------------------------------------------------
@@ -33,6 +66,20 @@ start_link(
     } = Args
 ) ->
     gen_server:start_link(?MODULE, Args, []).
+
+append(Producer, Record) ->
+    gen_server:call(
+        Producer,
+        build_append_request(
+            Record
+        )
+    ).
+
+flush(Producer) ->
+    gen_server:call(
+        Producer,
+        build_flush_request()
+    ).
 
 % --------------------------------------------------------------------------------
 
@@ -86,27 +133,38 @@ build_producer_status(Records, BatchStatus) ->
         batch_status => BatchStatus
     }.
 
-build_producer_state(ProducerStatus, ProducerOption) ->
+build_producer_resource(AgeLimitWorker) ->
+    #{
+        age_limit_worker => AgeLimitWorker
+    }.
+
+build_producer_state(ProducerStatus, ProducerOption, ProducerResource) ->
     #{
         producer_status => ProducerStatus,
-        producer_option => ProducerOption
+        producer_option => ProducerOption,
+        producer_resource => ProducerResource
     }.
 
 neutral_batch_status() ->
-    build_batch_status(0, 0).
+    RecordCount = 0,
+    Bytes = 0,
+    build_batch_status(RecordCount, Bytes).
 
 neutral_producer_status() ->
-    build_producer_status([], neutral_batch_status()).
+    Records = #{},
+    BatchStatus = neutral_batch_status(),
+    build_producer_status(Records, BatchStatus).
 
 % --------------------------------------------------------------------------------
 
 add_to_buffer(
-    Record,
+    {PayloadType, Payload, OrderingKey} = _Record,
     #{
         producer_status := ProducerStatus,
-        producer_option := ProducerOption
+        producer_option := ProducerOption,
+        producer_resource := ProducerResource
     } = _State
-) when is_binary(Record) ->
+) when is_binary(Payload) ->
     #{
         records := Records,
         batch_status := BatchStatus
@@ -116,13 +174,27 @@ add_to_buffer(
         bytes := Bytes
     } = BatchStatus,
 
-    NewRecords = [Record | Records],
+    X = {PayloadType, Payload},
+    NewRecords =
+        case maps:is_key(OrderingKey, Records) of
+            false ->
+                maps:put(OrderingKey, [X], Records);
+            true ->
+                maps:update_with(
+                    OrderingKey,
+                    fun(XS) -> [X | XS] end,
+                    Records
+                )
+        end,
+
     NewRecordCount = RecordCount + 1,
-    NewBytes = Bytes + byte_size(Record),
+    NewBytes = Bytes + byte_size(Payload),
     NewBatchStatus = build_batch_status(NewRecordCount, NewBytes),
 
     NewProducerStatus = build_producer_status(NewRecords, NewBatchStatus),
-    build_producer_state(NewProducerStatus, ProducerOption).
+    build_producer_state(
+        NewProducerStatus, ProducerOption, ProducerResource
+    ).
 
 check_buffer_limit(
     #{
@@ -155,15 +227,18 @@ check_buffer_limit(
 
 clear_buffer(
     #{
-        producer_option := ProducerOption
+        producer_option := ProducerOption,
+        producer_resource := ProducerResource
     } = _State
 ) ->
     ProducerStatus = neutral_producer_status(),
-    build_producer_state(ProducerStatus, ProducerOption).
+    build_producer_state(
+        ProducerStatus, ProducerOption, ProducerResource
+    ).
 
 % --------------------------------------------------------------------------------
 
-handle_call({Method, Body} = Request, From, State) ->
+handle_call({Method, Body} = _Request, _From, State) ->
     case Method of
         flush -> exec_flush(Body, State);
         append -> exec_append(Body, State);
@@ -173,7 +248,26 @@ handle_call({Method, Body} = Request, From, State) ->
 handle_cast(_, _) ->
     throw(hstreamdb_exception).
 
+handle_info(Info, State) ->
+    case Info of
+        flush ->
+            FlushRequest = build_flush_request(),
+            {reply, {ok, _}, NewState} = exec_flush(FlushRequest, State),
+            {noreply, NewState};
+        _ ->
+            throw(hstreamdb_exception)
+    end.
+
 % --------------------------------------------------------------------------------
+
+build_record(Payload) when is_binary(Payload) ->
+    build_record(raw, Payload, "").
+
+build_record(PayloadType, Payload) ->
+    build_record(PayloadType, Payload, "").
+
+build_record(PayloadType, Payload, OrderingKey) ->
+    {PayloadType, Payload, OrderingKey}.
 
 build_append_request(Record) ->
     {append, #{
@@ -185,16 +279,57 @@ build_flush_request() ->
 
 % --------------------------------------------------------------------------------
 
-append(Records, ServerUrl, StreamName) ->
-    {ok, Channel} = hstreamdb_erlang:start_client_channel(ServerUrl),
-    OrderingKey = "",
-    PayloadType = raw,
-    Ret =
-        hstreamdb_erlang:append(
-            Channel, StreamName, OrderingKey, PayloadType, Records
-        ),
-    _ = hstreamdb_erlang:stop_client_channel(Channel),
-    Ret.
+build_record_header(PayloadType, OrderingKey) ->
+    Flag =
+        case PayloadType of
+            json -> 0;
+            raw -> 1
+        end,
+
+    Timestamp = #{
+        seconds => erlang:system_time(second),
+        nanos => erlang:system_time(nanosecond)
+    },
+
+    #{
+        flag => Flag,
+        publish_time => Timestamp,
+        key => OrderingKey
+    }.
+
+do_append(Records, ServerUrl, StreamName) ->
+    Fun = fun(OrderingKey, Payloads) ->
+        spawn(fun() ->
+            AppendRecords = lists:map(
+                fun({PayloadType, Payload}) ->
+                    RecordHeader = build_record_header(PayloadType, OrderingKey),
+                    #{
+                        header => RecordHeader,
+                        payload => Payload
+                    }
+                end,
+                Payloads
+            ),
+
+            {ok, Channel} = hstreamdb_erlang:start_client_channel(ServerUrl),
+            {ok, ServerNode} = hstreamdb_erlang:lookup_stream(Channel, StreamName, OrderingKey),
+
+            AppendServerUrl = hstreamdb_erlang:server_node_to_host_port(ServerNode, http),
+            {ok, InternalChannel} = hstreamdb_erlang:start_client_channel(AppendServerUrl),
+
+            hstream_server_h_stream_api_client:append(
+                #{
+                    streamName => StreamName,
+                    records => AppendRecords
+                },
+                #{channel => InternalChannel}
+            ),
+
+            _ = hstreamdb_erlang:stop_client_channel(InternalChannel),
+            _ = hstreamdb_erlang:stop_client_channel(Channel)
+        end)
+    end,
+    maps:foreach(Fun, Records).
 
 exec_flush(
     _FlushRequest,
@@ -211,7 +346,7 @@ exec_flush(
         stream_name := StreamName
     } = ProducerOption,
 
-    Reply = append(Records, ServerUrl, StreamName),
+    Reply = do_append(Records, ServerUrl, StreamName),
 
     NewState = clear_buffer(State),
     {reply, Reply, NewState}.
@@ -233,61 +368,72 @@ exec_append(
             {reply, Reply, NewState}
     end.
 
-% --------------------------------------------------------------------------------
+% % --------------------------------------------------------------------------------
 
-readme() ->
-    ServerUrl = "http://127.0.0.1:6570",
-    StreamName = "___v2_test___",
-    BatchSetting = build_batch_setting({record_count_limit, 3}),
+% readme() ->
+%     ServerUrl = "http://127.0.0.1:6570",
+%     StreamName = hstreamdb_erlang_utils:string_format("~s-~p", [
+%         "___v2_test___", erlang:time()
+%     ]),
+%     BatchSetting = build_batch_setting({record_count_limit, 3}),
 
-    % {ok, _} = hstreamdb_erlang:start(normal, []),
-    {ok, Channel} = hstreamdb_erlang:start_client_channel(ServerUrl),
-    _ = hstreamdb_erlang:delete_stream(Channel, StreamName, #{
-        ignoreNonExist => true,
-        force => true
-    }),
-    ReplicationFactor = 3,
-    BacklogDuration = 60 * 30,
-    ok = hstreamdb_erlang:create_stream(
-        Channel, StreamName, ReplicationFactor, BacklogDuration
-    ),
-    _ = hstreamdb_erlang:stop_client_channel(Channel),
+%     {ok, Channel} = hstreamdb_erlang:start_client_channel(ServerUrl),
+%     _ = hstreamdb_erlang:delete_stream(Channel, StreamName, #{
+%         ignoreNonExist => true,
+%         force => true
+%     }),
+%     ReplicationFactor = 3,
+%     BacklogDuration = 60 * 30,
+%     ok = hstreamdb_erlang:create_stream(
+%         Channel, StreamName, ReplicationFactor, BacklogDuration
+%     ),
+%     _ = hstreamdb_erlang:stop_client_channel(Channel),
 
-    StartArgs = #{
-        producer_option => build_producer_option(ServerUrl, StreamName, BatchSetting)
-    },
-    {ok, ProducerPid} = start_link(StartArgs),
+%     StartArgs = #{
+%         producer_option => build_producer_option(ServerUrl, StreamName, BatchSetting)
+%     },
+%     {ok, ProducerPid} = start_link(StartArgs),
 
-    io:format("StartArgs: ~p~n", [StartArgs]),
-    io:format("~p~n", [
-        gen_server:call(
-            ProducerPid,
-            build_append_request(<<"00">>)
-        )
-    ]),
-    io:format("~p~n", [
-        gen_server:call(
-            ProducerPid,
-            build_append_request(<<"01">>)
-        )
-    ]),
-    io:format("~p~n", [
-        gen_server:call(
-            ProducerPid,
-            build_append_request(<<"02">>)
-        )
-    ]),
-    io:format("~p~n", [
-        gen_server:call(
-            ProducerPid,
-            build_append_request(<<"03">>)
-        )
-    ]),
-    io:format("~p~n", [
-        gen_server:call(
-            ProducerPid,
-            build_append_request(<<"04">>)
-        )
-    ]),
+%     io:format("StartArgs: ~p~n", [StartArgs]),
+%     io:format("~p~n", [
+%         gen_server:call(
+%             ProducerPid,
+%             build_append_request(
+%                 build_record(<<"00">>)
+%             )
+%         )
+%     ]),
+%     io:format("~p~n", [
+%         gen_server:call(
+%             ProducerPid,
+%             build_append_request(
+%                 build_record(<<"01">>)
+%             )
+%         )
+%     ]),
+%     io:format("~p~n", [
+%         gen_server:call(
+%             ProducerPid,
+%             build_append_request(
+%                 build_record(<<"02">>)
+%             )
+%         )
+%     ]),
+%     io:format("~p~n", [
+%         gen_server:call(
+%             ProducerPid,
+%             build_append_request(
+%                 build_record(<<"03">>)
+%             )
+%         )
+%     ]),
+%     io:format("~p~n", [
+%         gen_server:call(
+%             ProducerPid,
+%             build_append_request(
+%                 build_record(<<"04">>)
+%             )
+%         )
+%     ]),
 
-    ok.
+%     ok.

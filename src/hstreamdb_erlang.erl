@@ -15,6 +15,9 @@
 
 -export([readme/0]).
 
+-export([server_node_to_host_port/1, server_node_to_host_port/2]).
+-export([lookup_stream/3]).
+
 %%--------------------------------------------------------------------
 %% APIs for application
 
