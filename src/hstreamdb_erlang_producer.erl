@@ -327,7 +327,7 @@ do_append(Records, ServerUrl, StreamName) ->
     Fun = fun(OrderingKey, Payloads) ->
         spawn(fun() ->
             AppendRecords = lists:map(
-                fun({PayloadType, Payload, FuturePid}) ->
+                fun({PayloadType, Payload, _}) ->
                     RecordHeader = build_record_header(PayloadType, OrderingKey),
                     #{
                         header => RecordHeader,
@@ -351,7 +351,7 @@ do_append(Records, ServerUrl, StreamName) ->
                 #{channel => InternalChannel}
             ),
 
-            FuturePids = lists:map(fun({_, _, FuturePid}) -> FuturePid end, Records),
+            FuturePids = lists:map(fun({_, _, FuturePid}) -> FuturePid end, Payloads),
             true = length(FuturePids) == length(RecordIds),
             lists:foreach(
                 fun(
@@ -395,16 +395,16 @@ exec_append(
     State
 ) ->
     {FutureRecordId, State0} = add_to_buffer(Record, State),
+    Reply = {ok, FutureRecordId},
     case check_buffer_limit(State0) of
         true ->
             FlushRequest = build_flush_request(),
-            exec_flush(FlushRequest, State0);
+            {reply, _, NewState} = exec_flush(FlushRequest, State0),
+            {reply, Reply, NewState};
         false ->
-            Reply = ok,
             NewState = State0,
             {reply, Reply, NewState}
-    end,
-    {ok, FutureRecordId}.
+    end.
 
 % --------------------------------------------------------------------------------
 
@@ -446,12 +446,12 @@ readme() ->
 
     timer:sleep(1000),
 
-    lists:foreach(
-        fun({ok, FutureRecordId}) ->
-            RecordId = rpc:yield(FutureRecordId),
-            io:format("~p~n", [RecordId])
-        end,
-        RecordIds
-    ),
+    % lists:foreach(
+    %     fun({ok, FutureRecordId}) ->
+    %         RecordId = rpc:yield(FutureRecordId),
+    %         io:format("~p~n", [RecordId])
+    %     end,
+    %     RecordIds
+    % ),
 
     ok.
