@@ -62,5 +62,3 @@ readme() ->
 
     ok.
 ```
-
-which can be load from `rebar3 shell` `hstreamdb_erlang:readme()`.
