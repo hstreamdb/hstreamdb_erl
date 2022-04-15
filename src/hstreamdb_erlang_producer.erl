@@ -354,11 +354,10 @@ exec_append(
 readme() ->
     ServerUrl = "http://127.0.0.1:6570",
     StreamName = hstreamdb_erlang_utils:string_format("~s-~p", [
-        "___v2_test___", erlang:unique_integer()
+        "___v2_test___", erlang:time()
     ]),
     BatchSetting = build_batch_setting({record_count_limit, 3}),
 
-    % {ok, _} = hstreamdb_erlang:start(normal, []),
     {ok, Channel} = hstreamdb_erlang:start_client_channel(ServerUrl),
     _ = hstreamdb_erlang:delete_stream(Channel, StreamName, #{
         ignoreNonExist => true,
