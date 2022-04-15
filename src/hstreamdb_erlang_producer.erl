@@ -99,12 +99,7 @@ build_batch_setting(BatchSetting) when is_map(BatchSetting) ->
 
 check_batch_setting(RecordCountLimit, BytesLimit, AgeLimit) ->
     BatchSettingList = [RecordCountLimit, BytesLimit, AgeLimit],
-    try
-        true = lists:any(fun(X) -> X /= undefined end, BatchSettingList)
-    catch
-        error:_ ->
-            throw(hstreamdb_exception)
-    end.
+    true = lists:any(fun(X) -> X /= undefined end, BatchSettingList).
 
 build_batch_setting(RecordCountLimit, BytesLimit, AgeLimit) ->
     check_batch_setting(RecordCountLimit, BytesLimit, AgeLimit),
@@ -184,8 +179,7 @@ add_to_buffer(
                 SelfPid ! {future_pid, self()},
 
                 receive
-                    {ok, RecordId} -> {ok, RecordId};
-                    _ -> throw(hstreamdb_exception)
+                    {ok, RecordId} -> {ok, RecordId}
                 end
             end,
 
@@ -267,8 +261,7 @@ clear_buffer(
 handle_call({Method, Body} = _Request, _From, State) ->
     case Method of
         flush -> exec_flush(Body, State);
-        append -> exec_append(Body, State);
-        _ -> throw(hstreamdb_exception)
+        append -> exec_append(Body, State)
     end.
 
 handle_cast(_, _) ->
@@ -281,7 +274,8 @@ handle_info(Info, State) ->
             {reply, {ok, _}, NewState} = exec_flush(FlushRequest, State),
             {noreply, NewState};
         _ ->
-            throw(hstreamdb_exception)
+            NewState = State,
+            {noreply, NewState}
     end.
 
 % --------------------------------------------------------------------------------
@@ -434,7 +428,7 @@ readme() ->
 
     io:format("StartArgs: ~p~n", [StartArgs]),
 
-    RecordIds = lists:map(
+    _RecordIds = lists:map(
         fun(_) ->
             Record = build_record(<<"_">>),
             append(Producer, Record)
