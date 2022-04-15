@@ -12,59 +12,53 @@ Build
 Example usage:
 
 ```erl
-string_format(Pattern, Values) ->
-    lists:flatten(io_lib:format(Pattern, Values)).
-
 readme() ->
-    StreamName = string_format("test_stream-~p", [erlang:system_time(second)]),
+    ServerUrl = "http://127.0.0.1:6570",
+    StreamName = hstreamdb_erlang_utils:string_format("~s-~p", [
+        "___v2_test___", erlang:time()
+    ]),
+    BatchSetting = hstreamdb_erlang_producer:build_batch_setting({record_count_limit, 3}),
 
-    hstreamdb_erlang:start(normal, []),
-
-    StartClientChannelRet = hstreamdb_erlang:start_client_channel("http://127.0.0.1:6570"),
-    io:format("~p~n", [StartClientChannelRet]),
-    {ok, ChannelName} = StartClientChannelRet,
-
-    io:format("~p~n", [hstreamdb_erlang:list_streams(ChannelName)]),
-
-    io:format("~p~n", [hstreamdb_erlang:create_stream(ChannelName, StreamName, 3, 14)]),
-    io:format("~p~n", [hstreamdb_erlang:list_streams(ChannelName)]),
-
-    XS = lists:seq(0, 100),
-    lists:foreach(
-        fun(X) ->
-            io:format("~p: ~p~n", [
-                X,
-                hstreamdb_erlang:append(
-                    ChannelName,
-                    StreamName,
-                    "",
-                    raw,
-                    <<"this_is_a_binary_literal">>
-                )
-            ])
-        end,
-        XS
+    {ok, Channel} = hstreamdb_erlang:start_client_channel(ServerUrl),
+    _ = hstreamdb_erlang:delete_stream(Channel, StreamName, #{
+        ignoreNonExist => true,
+        force => true
+    }),
+    ReplicationFactor = 3,
+    BacklogDuration = 60 * 30,
+    ok = hstreamdb_erlang:create_stream(
+        Channel, StreamName, ReplicationFactor, BacklogDuration
     ),
-    lists:foreach(
-        fun(X) ->
-            io:format("~p: ~p~n", [
-                X,
-                hstreamdb_erlang:append(
-                    ChannelName,
-                    StreamName,
-                    "",
-                    raw,
-                    lists:duplicate(10, <<"this_is_a_binary_literal">>)
-                )
-            ])
+    _ = hstreamdb_erlang:stop_client_channel(Channel),
+
+    StartArgs = #{
+        producer_option => hstreamdb_erlang_producer:build_producer_option(
+            ServerUrl, StreamName, BatchSetting
+        )
+    },
+    {ok, Producer} = hstreamdb_erlang_producer:start_link(StartArgs),
+
+    io:format("StartArgs: ~p~n", [StartArgs]),
+
+    RecordIds = lists:map(
+        fun(_) ->
+            Record = hstreamdb_erlang_producer:build_record(<<"_">>),
+            hstreamdb_erlang_producer:append(Producer, Record)
         end,
-        XS
+        lists:seq(0, 100)
     ),
 
-    io:format("~p~n", [hstreamdb_erlang:delete_stream(ChannelName, StreamName)]),
-    io:format("~p~n", [hstreamdb_erlang:list_streams(ChannelName)]),
+    hstreamdb_erlang_producer:flush(Producer),
 
-    io:format("~p~n", [hstreamdb_erlang:stop_client_channel(ChannelName)]),
+    timer:sleep(1000),
+
+    lists:foreach(
+        fun({ok, FutureRecordId}) ->
+            RecordId = rpc:yield(FutureRecordId),
+            io:format("~p~n", [RecordId])
+        end,
+        RecordIds
+    ),
 
     ok.
 ```
