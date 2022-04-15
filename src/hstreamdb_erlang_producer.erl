@@ -87,8 +87,8 @@ append(Producer, Record) ->
     gen_server:call(
         Producer,
         build_append_request(
-            FutureRecordId,
             FuturePid,
+            FutureRecordId,
             Record
         )
     ).
@@ -282,10 +282,10 @@ build_record(PayloadType, Payload) ->
 build_record(PayloadType, Payload, OrderingKey) ->
     {PayloadType, Payload, OrderingKey}.
 
-build_append_request(FutureRecordId, FuturePid, Record) ->
+build_append_request(FuturePid, FutureRecordId, Record) ->
     {append, #{
-        future_record_id => FutureRecordId,
         future_pid => FuturePid,
+        future_record_id => FutureRecordId,
         record => Record
     }}.
 
@@ -379,8 +379,8 @@ exec_flush(
 
 exec_append(
     #{
-        future_record_id := FutureRecordId,
         future_pid := FuturePid,
+        future_record_id := FutureRecordId,
         record := Record
     } = _AppendRequest,
     State
