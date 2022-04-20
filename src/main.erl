@@ -1,6 +1,7 @@
 -module(main).
 
 -export([bench/0]).
+-export([remove_all_streams/1]).
 
 remove_all_streams(Channel) ->
     {ok, Streams} = hstreamdb_erlang:list_streams(Channel),
@@ -69,10 +70,35 @@ bench(Opts) ->
 
     Countdown = spawn(fun() -> countdown(length(Producers), SelfPid) end),
 
+    Append = fun(Producer, Record) ->
+        {ok, FutureRecordId} =
+            try
+                hstreamdb_erlang_producer:append(Producer, Record)
+            catch
+                _:_ -> FailedAppendsIncr()
+            end,
+        FutureRecordId
+    end,
+
+    Record = hstreamdb_erlang_producer:build_record(Payload),
     lists:foreach(
-        fun(Producer) ->
-            Countdown ! finished
-        end,
+        spawn(fun() ->
+            fun(Producer) ->
+                FutureRecordIds = lists:map(
+                    Append(Producer, Record),
+                    lists:seq(1, 100)
+                ),
+                hstreamdb_erlang_producer:flush(Producer),
+                lists:foreach(
+                    fun(X) ->
+                        rpc:yield(X),
+                        SuccessAppendsIncr()
+                    end,
+                    FutureRecordIds
+                ),
+                Countdown ! finished
+            end
+        end),
         Producers
     ),
 
