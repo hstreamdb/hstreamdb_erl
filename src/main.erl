@@ -2,11 +2,13 @@
 
 -export([bench/0]).
 
-remove_all_streams(Client) ->
-    {ok, Streams} = hstreamdb_erlang:list_streams(Client),
+remove_all_streams(Channel) ->
+    {ok, Streams} = hstreamdb_erlang:list_streams(Channel),
     lists:foreach(
         fun(Stream) ->
-            ok = hstreamdb_erlang:delete_stream(Client, Stream, #{force => true})
+            ok = hstreamdb_erlang:delete_stream(Channel, Stream, #{
+                ignoreNonExist => true, force => true
+            })
         end,
         lists:map(fun(Stream) -> maps:get(streamName, Stream) end, Streams)
     ).
@@ -20,29 +22,32 @@ bench(Opts) ->
         serverUrl := ServerUrl,
         replicationFactor := ReplicationFactor,
         backlogDuration := BacklogDuration,
-        reportIntervalSeconds := ReportIntervalSeconds
+        reportIntervalSeconds := ReportIntervalSeconds,
+        batchSetting := BatchSetting
     } =
         Opts,
 
     {ok, Channel} = hstreamdb_erlang:start_client_channel(ServerUrl),
-    remove_all_streams(Channel),
-
-    XS = lists:map(
+    Producers = lists:map(
         fun(X) ->
             StreamName =
                 hstreamdb_erlang_utils:string_format(
-                    "test_stream-~p-~p",
-                    [X, erlang:system_time(second)]
+                    "test_stream-~p-~p-~p",
+                    [X, erlang:system_time(second), erlang:unique_integer()]
                 ),
-            {ok, Client} = hstreamdb_erlang:start_client_channel(ServerUrl),
             ok =
                 hstreamdb_erlang:create_stream(
-                    Client,
+                    Channel,
                     StreamName,
                     ReplicationFactor,
                     BacklogDuration
                 ),
-            {Client, StreamName}
+            ProducerOption = hstreamdb_erlang_producer:build_producer_option(
+                ServerUrl, StreamName, BatchSetting
+            ),
+            ProducerStartArgs = hstreamdb_erlang_producer:build_start_args(ProducerOption),
+            {ok, Producer} = hstreamdb_erlang_producer:start_link(ProducerStartArgs),
+            Producer
         end,
         lists:seq(1, ProducerNum)
     ),
@@ -73,8 +78,8 @@ bench(Opts) ->
 
     Payload = lists:duplicate(BatchNum, get_bytes(PayloadSize)),
 
-    Pid = self(),
-    Countdown = spawn(fun() -> countdown(length(XS), Pid) end),
+    SelfPid = self(),
+    Countdown = spawn(fun() -> countdown(length(XS), SelfPid) end),
 
     lists:foreach(
         fun(X) ->
@@ -136,7 +141,8 @@ bench() ->
         serverUrl => "http://127.0.0.1:6570",
         replicationFactor => 1,
         backlogDuration => 60 * 30,
-        reportIntervalSeconds => 3
+        reportIntervalSeconds => 3,
+        batchSetting => undefined
     }).
 
 countdown(N, Pid) ->
