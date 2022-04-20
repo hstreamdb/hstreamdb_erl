@@ -5,12 +5,18 @@
 
 -export([start/1, start_link/1, append/2, flush/1]).
 -export([
+    build_start_args/1,
     build_batch_setting/1, build_batch_setting/3,
     build_producer_option/3,
     build_record/1, build_record/2, build_record/3
 ]).
 
 % --------------------------------------------------------------------------------
+
+build_start_args(ProducerOption) ->
+    #{
+        producer_option => ProducerOption
+    }.
 
 init(
     #{

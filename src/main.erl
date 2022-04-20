@@ -8,44 +8,44 @@ remove_all_streams(Client) ->
         fun(Stream) ->
             ok = hstreamdb_erlang:delete_stream(Client, Stream, #{force => true})
         end,
-        lists:map(
-            fun(Stream) -> maps:get(streamName, Stream) end, Streams
-        )
+        lists:map(fun(Stream) -> maps:get(streamName, Stream) end, Streams)
     ).
 
 bench(Opts) ->
     io:format("Opts: ~p~n", [Opts]),
-
-    ProducerNum = maps:get(producerNum, Opts),
-    PayloadSize = maps:get(payloadSize, Opts),
-    BatchNum = maps:get(batchNum, Opts),
-    ServerUrl = maps:get(serverUrl, Opts),
-    ReplicationFactor = maps:get(replicationFactor, Opts),
-    BacklogDuration = maps:get(backlogDuration, Opts),
-    ReportIntervalSeconds = maps:get(reportIntervalSeconds, Opts),
-
-    hstreamdb_erlang:start(normal, []),
+    #{
+        producerNum := ProducerNum,
+        payloadSize := PayloadSize,
+        batchNum := BatchNum,
+        serverUrl := ServerUrl,
+        replicationFactor := ReplicationFactor,
+        backlogDuration := BacklogDuration,
+        reportIntervalSeconds := ReportIntervalSeconds
+    } =
+        Opts,
 
     {ok, Channel} = hstreamdb_erlang:start_client_channel(ServerUrl),
     remove_all_streams(Channel),
 
-    XS =
-        lists:map(
-            fun(X) ->
-                StreamName = hstreamdb_erlang_utils:string_format("test_stream-~p-~p", [
-                    X, erlang:system_time(second)
-                ]),
-                {ok, Client} = hstreamdb_erlang:start_client_channel(ServerUrl),
-                ok = hstreamdb_erlang:create_stream(
-                    Client, StreamName, ReplicationFactor, BacklogDuration
+    XS = lists:map(
+        fun(X) ->
+            StreamName =
+                hstreamdb_erlang_utils:string_format(
+                    "test_stream-~p-~p",
+                    [X, erlang:system_time(second)]
                 ),
-                {
+            {ok, Client} = hstreamdb_erlang:start_client_channel(ServerUrl),
+            ok =
+                hstreamdb_erlang:create_stream(
                     Client,
-                    StreamName
-                }
-            end,
-            lists:seq(0, ProducerNum)
-        ),
+                    StreamName,
+                    ReplicationFactor,
+                    BacklogDuration
+                ),
+            {Client, StreamName}
+        end,
+        lists:seq(1, ProducerNum)
+    ),
 
     SuccessAppends = atomics:new(1, [{signed, false}]),
     FailedAppends = atomics:new(1, [{signed, false}]),
@@ -63,12 +63,13 @@ bench(Opts) ->
     LastSuccessAppendsGet = fun() -> atomics:get(LastSuccessAppends, 1) end,
     LastFailedAppendsGet = fun() -> atomics:get(LastFailedAppends, 1) end,
 
-    Append = fun({Client, StreamName}, X) ->
-        case hstreamdb_erlang:append(Client, StreamName, "", raw, X) of
-            {ok, _} -> SuccessAppendsIncr();
-            {err, _} -> FailedAppendsIncr()
-        end
-    end,
+    Append =
+        fun({Client, StreamName}, X) ->
+            case hstreamdb_erlang:append(Client, StreamName, "", raw, X) of
+                {ok, _} -> SuccessAppendsIncr();
+                {err, _} -> FailedAppendsIncr()
+            end
+        end,
 
     Payload = lists:duplicate(BatchNum, get_bytes(PayloadSize)),
 
@@ -77,27 +78,25 @@ bench(Opts) ->
 
     lists:foreach(
         fun(X) ->
-            spawn(
-                fun() ->
-                    lists:foreach(
-                        fun(_) ->
-                            try
-                                Append(X, Payload)
-                            catch
-                                _ -> FailedAppendsIncr()
-                            end
-                        end,
-                        lists:seq(0, 100)
-                    ),
-                    Countdown ! finished
-                end
-            )
+            spawn(fun() ->
+                lists:foreach(
+                    fun(_) ->
+                        try
+                            Append(X, Payload)
+                        catch
+                            _ -> FailedAppendsIncr()
+                        end
+                    end,
+                    lists:seq(1, 100)
+                ),
+                Countdown ! finished
+            end)
         end,
         XS
     ),
 
-    Report = spawn(
-        fun Report() ->
+    Report =
+        spawn(fun Report() ->
             LastSuccessAppendsPut(SuccessAppendsGet()),
             LastFailedAppendsPut(FailedAppendsGet()),
 
@@ -108,12 +107,12 @@ bench(Opts) ->
             ReportFailedAppends =
                 (FailedAppendsGet() - LastFailedAppendsGet()) / ReportIntervalSeconds,
             ReportThroughput = ReportSuccessAppends * (PayloadSize * BatchNum) / 1024,
-            io:format("[BENCH]: SuccessAppends=~p, FailedAppends=~p, throughput=~p~n", [
-                ReportSuccessAppends, ReportFailedAppends, ReportThroughput
-            ]),
+            io:format(
+                "[BENCH]: SuccessAppends=~p, FailedAppends=~p, throughput=~p~n",
+                [ReportSuccessAppends, ReportFailedAppends, ReportThroughput]
+            ),
             Report()
-        end
-    ),
+        end),
 
     receive
         finished ->
@@ -130,17 +129,15 @@ bench(Opts) ->
     ).
 
 bench() ->
-    bench(
-        #{
-            producerNum => 100,
-            payloadSize => 1,
-            batchNum => 400,
-            serverUrl => "http://127.0.0.1:6570",
-            replicationFactor => 1,
-            backlogDuration => 60 * 30,
-            reportIntervalSeconds => 3
-        }
-    ).
+    bench(#{
+        producerNum => 100,
+        payloadSize => 1,
+        batchNum => 400,
+        serverUrl => "http://127.0.0.1:6570",
+        replicationFactor => 1,
+        backlogDuration => 60 * 30,
+        reportIntervalSeconds => 3
+    }).
 
 countdown(N, Pid) ->
     case N of
@@ -153,15 +150,19 @@ countdown(N, Pid) ->
             end
     end.
 
-bit_size_128() -> (<<"___hstream.io___">>).
+bit_size_128() ->
+    <<"___hstream.io___">>.
 
-get_bytes(Size) -> get_bytes(Size, k).
+get_bytes(Size) ->
+    get_bytes(Size, k).
 
 get_bytes(Size, Unit) ->
     SizeBytes =
         case Unit of
-            k -> Size * 1024;
-            m -> Size * 1024 * 1024
+            k ->
+                Size * 1024;
+            m ->
+                Size * 1024 * 1024
         end,
     lists:foldl(
         fun(X, Acc) -> <<X/binary, Acc/binary>> end,
