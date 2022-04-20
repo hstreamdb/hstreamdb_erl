@@ -26,6 +26,8 @@ bench(Opts) ->
         batchSetting := BatchSetting
     } =
         Opts,
+    Payload = lists:duplicate(BatchNum, get_bytes(PayloadSize)),
+    SelfPid = self(),
 
     {ok, Channel} = hstreamdb_erlang:start_client_channel(ServerUrl),
     Producers = lists:map(
@@ -54,57 +56,30 @@ bench(Opts) ->
 
     SuccessAppends = atomics:new(1, [{signed, false}]),
     FailedAppends = atomics:new(1, [{signed, false}]),
-
     SuccessAppendsIncr = fun() -> atomics:add(SuccessAppends, 1, 1) end,
     FailedAppendsIncr = fun() -> atomics:add(FailedAppends, 1, 1) end,
     SuccessAppendsGet = fun() -> atomics:get(SuccessAppends, 1) end,
     FailedAppendsGet = fun() -> atomics:get(FailedAppends, 1) end,
-
     LastSuccessAppends = atomics:new(1, [{signed, false}]),
     LastFailedAppends = atomics:new(1, [{signed, false}]),
-
     LastSuccessAppendsPut = fun(X) -> atomics:put(LastSuccessAppends, 1, X) end,
     LastFailedAppendsPut = fun(X) -> atomics:put(LastFailedAppends, 1, X) end,
     LastSuccessAppendsGet = fun() -> atomics:get(LastSuccessAppends, 1) end,
     LastFailedAppendsGet = fun() -> atomics:get(LastFailedAppends, 1) end,
 
-    Append =
-        fun({Client, StreamName}, X) ->
-            case hstreamdb_erlang:append(Client, StreamName, "", raw, X) of
-                {ok, _} -> SuccessAppendsIncr();
-                {err, _} -> FailedAppendsIncr()
-            end
-        end,
-
-    Payload = lists:duplicate(BatchNum, get_bytes(PayloadSize)),
-
-    SelfPid = self(),
-    Countdown = spawn(fun() -> countdown(length(XS), SelfPid) end),
+    Countdown = spawn(fun() -> countdown(length(Producers), SelfPid) end),
 
     lists:foreach(
-        fun(X) ->
-            spawn(fun() ->
-                lists:foreach(
-                    fun(_) ->
-                        try
-                            Append(X, Payload)
-                        catch
-                            _ -> FailedAppendsIncr()
-                        end
-                    end,
-                    lists:seq(1, 100)
-                ),
-                Countdown ! finished
-            end)
+        fun(Producer) ->
+            Countdown ! finished
         end,
-        XS
+        Producers
     ),
 
-    Report =
-        spawn(fun Report() ->
+    ReportLoop =
+        spawn(fun ReportLoop() ->
             LastSuccessAppendsPut(SuccessAppendsGet()),
             LastFailedAppendsPut(FailedAppendsGet()),
-
             timer:sleep(ReportIntervalSeconds * 1000),
 
             ReportSuccessAppends =
@@ -116,22 +91,16 @@ bench(Opts) ->
                 "[BENCH]: SuccessAppends=~p, FailedAppends=~p, throughput=~p~n",
                 [ReportSuccessAppends, ReportFailedAppends, ReportThroughput]
             ),
-            Report()
+            ReportLoop()
         end),
 
     receive
         finished ->
-            exit(Report, finished)
+            exit(ReportLoop, finished)
     end,
 
-    lists:foreach(
-        fun(X) ->
-            {Client, StreamName} = X,
-            ok = hstreamdb_erlang:delete_stream(Client, StreamName, #{force => true}),
-            ok = hstreamdb_erlang:stop_client_channel(Client)
-        end,
-        XS
-    ).
+    % TODO: clean up
+    ok.
 
 bench() ->
     bench(#{
