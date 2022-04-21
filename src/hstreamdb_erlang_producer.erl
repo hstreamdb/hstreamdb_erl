@@ -85,7 +85,7 @@ append(Producer, Record) ->
     FuturePid =
         receive
             {future_pid, Pid} -> Pid
-        after 100 -> throw(hstreamdb_exception)
+        after 100 -> throw(timeout)
         end,
 
     gen_server:call(
