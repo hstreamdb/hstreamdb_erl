@@ -5,12 +5,18 @@
 
 -export([start/1, start_link/1, append/2, flush/1]).
 -export([
+    build_start_args/1,
     build_batch_setting/1, build_batch_setting/3,
     build_producer_option/3,
     build_record/1, build_record/2, build_record/3
 ]).
 
 % --------------------------------------------------------------------------------
+
+build_start_args(ProducerOption) ->
+    #{
+        producer_option => ProducerOption
+    }.
 
 init(
     #{
@@ -79,7 +85,7 @@ append(Producer, Record) ->
     FuturePid =
         receive
             {future_pid, Pid} -> Pid
-        after 100 -> throw(hstreamdb_exception)
+        after 100 -> throw(timeout)
         end,
 
     gen_server:call(
@@ -94,7 +100,7 @@ append(Producer, Record) ->
 flush(Producer) ->
     gen_server:call(
         Producer,
-        build_flush_request()
+        build_flush_request({blocking, false})
     ).
 
 % --------------------------------------------------------------------------------
@@ -251,8 +257,10 @@ clear_buffer(
 
 handle_call({Method, Body} = _Request, _From, State) ->
     case Method of
-        flush -> exec_flush(Body, State);
-        append -> exec_append(Body, State)
+        flush ->
+            exec_flush(Body, State);
+        append ->
+            exec_append(Body, State)
     end.
 
 handle_cast(_, _) ->
@@ -261,7 +269,7 @@ handle_cast(_, _) ->
 handle_info(Info, State) ->
     case Info of
         flush ->
-            FlushRequest = build_flush_request(),
+            {_, FlushRequest} = build_flush_request({blocking, false}),
             {reply, {ok, _}, NewState} = exec_flush(FlushRequest, State),
             {noreply, NewState};
         _ ->
@@ -287,8 +295,12 @@ build_append_request(FuturePid, FutureRecordId, Record) ->
         record => Record
     }}.
 
-build_flush_request() ->
-    {flush, #{}}.
+build_flush_request({blocking, Blocking}) ->
+    build_flush_request(Blocking);
+build_flush_request(Blocking) when is_boolean(Blocking) ->
+    {flush, #{
+        blocking => Blocking
+    }}.
 
 % --------------------------------------------------------------------------------
 
@@ -310,53 +322,69 @@ build_record_header(PayloadType, OrderingKey) ->
         key => OrderingKey
     }.
 
-do_append(Records, ServerUrl, StreamName) ->
+do_append(Records, ServerUrl, StreamName, Blocking) ->
+    SelfPid = self(),
+    Countdown = hstreamdb_erlang_utils:countdown(length(maps:keys(Records)), SelfPid),
+
     Fun = fun(OrderingKey, Payloads) ->
-        spawn(fun() ->
-            AppendRecords = lists:map(
-                fun({PayloadType, Payload, _}) ->
-                    RecordHeader = build_record_header(PayloadType, OrderingKey),
+        spawn(
+            fun() ->
+                AppendRecords = lists:map(
+                    fun({PayloadType, Payload, _}) ->
+                        RecordHeader = build_record_header(PayloadType, OrderingKey),
+                        #{
+                            header => RecordHeader,
+                            payload => Payload
+                        }
+                    end,
+                    Payloads
+                ),
+
+                {ok, Channel} = hstreamdb_erlang:start_client_channel(ServerUrl),
+                {ok, ServerNode} = hstreamdb_erlang:lookup_stream(Channel, StreamName, OrderingKey),
+
+                AppendServerUrl = hstreamdb_erlang:server_node_to_host_port(ServerNode, http),
+                {ok, InternalChannel} = hstreamdb_erlang:start_client_channel(AppendServerUrl),
+
+                {ok, #{recordIds := RecordIds}, _} = hstream_server_h_stream_api_client:append(
                     #{
-                        header => RecordHeader,
-                        payload => Payload
-                    }
-                end,
-                Payloads
-            ),
+                        streamName => StreamName,
+                        records => AppendRecords
+                    },
+                    #{channel => InternalChannel}
+                ),
 
-            {ok, Channel} = hstreamdb_erlang:start_client_channel(ServerUrl),
-            {ok, ServerNode} = hstreamdb_erlang:lookup_stream(Channel, StreamName, OrderingKey),
-
-            AppendServerUrl = hstreamdb_erlang:server_node_to_host_port(ServerNode, http),
-            {ok, InternalChannel} = hstreamdb_erlang:start_client_channel(AppendServerUrl),
-
-            {ok, #{recordIds := RecordIds}, _} = hstream_server_h_stream_api_client:append(
-                #{
-                    streamName => StreamName,
-                    records => AppendRecords
-                },
-                #{channel => InternalChannel}
-            ),
-
-            FuturePids = lists:map(fun({_, _, FuturePid}) -> FuturePid end, Payloads),
-            true = length(FuturePids) == length(RecordIds),
-            lists:foreach(
-                fun(
-                    {FuturePid, RecordId}
-                ) ->
-                    FuturePid ! {ok, RecordId}
-                end,
-                lists:zip(FuturePids, RecordIds)
-            ),
-
-            _ = hstreamdb_erlang:stop_client_channel(InternalChannel),
-            _ = hstreamdb_erlang:stop_client_channel(Channel)
-        end)
+                FuturePids = lists:map(fun({_, _, FuturePid}) -> FuturePid end, Payloads),
+                true = length(FuturePids) == length(RecordIds),
+                lists:foreach(
+                    fun(
+                        {FuturePid, RecordId}
+                    ) ->
+                        FuturePid ! {ok, RecordId}
+                    end,
+                    lists:zip(FuturePids, RecordIds)
+                ),
+                Countdown ! finished,
+                _ = hstreamdb_erlang:stop_client_channel(InternalChannel),
+                _ = hstreamdb_erlang:stop_client_channel(Channel)
+            end
+        )
     end,
-    maps:foreach(Fun, Records).
+    Ret = maps:foreach(Fun, Records),
+
+    case Blocking of
+        true ->
+            receive
+                finished -> Ret
+            end;
+        false ->
+            Ret
+    end.
 
 exec_flush(
-    _FlushRequest,
+    #{
+        blocking := Blocking
+    } = _FlushRequest,
     #{
         producer_status := ProducerStatus,
         producer_option := ProducerOption
@@ -370,7 +398,9 @@ exec_flush(
         stream_name := StreamName
     } = ProducerOption,
 
-    Reply = do_append(Records, ServerUrl, StreamName),
+    true = is_boolean(Blocking),
+
+    Reply = do_append(Records, ServerUrl, StreamName, Blocking),
 
     NewState = clear_buffer(State),
     {reply, Reply, NewState}.
@@ -387,7 +417,7 @@ exec_append(
     Reply = {ok, FutureRecordId},
     case check_buffer_limit(State0) of
         true ->
-            FlushRequest = build_flush_request(),
+            {_, FlushRequest} = build_flush_request({blocking, true}),
             {reply, _, NewState} = exec_flush(FlushRequest, State0),
             {reply, Reply, NewState};
         false ->
