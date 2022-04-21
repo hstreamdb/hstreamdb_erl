@@ -257,8 +257,10 @@ clear_buffer(
 
 handle_call({Method, Body} = _Request, _From, State) ->
     case Method of
-        flush -> exec_flush(Body, State);
-        append -> exec_append(Body, State)
+        flush ->
+            exec_flush(Body, State);
+        append ->
+            exec_append(Body, State)
     end.
 
 handle_cast(_, _) ->
@@ -267,7 +269,7 @@ handle_cast(_, _) ->
 handle_info(Info, State) ->
     case Info of
         flush ->
-            FlushRequest = build_flush_request({blocking, false}),
+            {_, FlushRequest} = build_flush_request({blocking, false}),
             {reply, {ok, _}, NewState} = exec_flush(FlushRequest, State),
             {noreply, NewState};
         _ ->
@@ -293,10 +295,9 @@ build_append_request(FuturePid, FutureRecordId, Record) ->
         record => Record
     }}.
 
-build_flush_request({blocking, true} = R) when is_tuple(R) ->
-    Blocking = true,
+build_flush_request({blocking, Blocking}) ->
     build_flush_request(Blocking);
-build_flush_request(Blocking) ->
+build_flush_request(Blocking) when is_boolean(Blocking) ->
     {flush, #{
         blocking => Blocking
     }}.
@@ -323,7 +324,7 @@ build_record_header(PayloadType, OrderingKey) ->
 
 do_append(Records, ServerUrl, StreamName, Blocking) ->
     SelfPid = self(),
-    Countdown = hstreamdb_erlang_utils:countdown(length(Records), SelfPid),
+    Countdown = hstreamdb_erlang_utils:countdown(length(maps:keys(Records)), SelfPid),
 
     Fun = fun(OrderingKey, Payloads) ->
         spawn(
@@ -363,11 +364,10 @@ do_append(Records, ServerUrl, StreamName, Blocking) ->
                     end,
                     lists:zip(FuturePids, RecordIds)
                 ),
-
+                Countdown ! finished,
                 _ = hstreamdb_erlang:stop_client_channel(InternalChannel),
                 _ = hstreamdb_erlang:stop_client_channel(Channel)
-            end,
-            Countdown ! finished
+            end
         )
     end,
     Ret = maps:foreach(Fun, Records),
@@ -398,6 +398,8 @@ exec_flush(
         stream_name := StreamName
     } = ProducerOption,
 
+    true = is_boolean(Blocking),
+
     Reply = do_append(Records, ServerUrl, StreamName, Blocking),
 
     NewState = clear_buffer(State),
@@ -415,7 +417,7 @@ exec_append(
     Reply = {ok, FutureRecordId},
     case check_buffer_limit(State0) of
         true ->
-            FlushRequest = build_flush_request({blocking, true}),
+            {_, FlushRequest} = build_flush_request({blocking, true}),
             {reply, _, NewState} = exec_flush(FlushRequest, State0),
             {reply, Reply, NewState};
         false ->
