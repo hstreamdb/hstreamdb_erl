@@ -68,7 +68,7 @@ bench(Opts) ->
     LastSuccessAppendsGet = fun() -> atomics:get(LastSuccessAppends, 1) end,
     LastFailedAppendsGet = fun() -> atomics:get(LastFailedAppends, 1) end,
 
-    Countdown = spawn(fun() -> countdown(length(Producers), SelfPid) end),
+    Countdown = hstreamdb_erlang_utils:countdown(length(Producers), SelfPid),
 
     Append = fun(Producer, Record) ->
         {ok, FutureRecordId} =
@@ -140,17 +140,6 @@ bench() ->
         reportIntervalSeconds => 3,
         batchSetting => hstreamdb_erlang_producer:build_batch_setting({record_count_limit, 400})
     }).
-
-countdown(N, Pid) ->
-    case N of
-        0 ->
-            Pid ! finished;
-        _ ->
-            receive
-                finished ->
-                    countdown(N - 1, Pid)
-            end
-    end.
 
 bit_size_128() ->
     <<"___hstream.io___">>.

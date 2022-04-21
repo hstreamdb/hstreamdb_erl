@@ -317,6 +317,9 @@ build_record_header(PayloadType, OrderingKey) ->
     }.
 
 do_append(Records, ServerUrl, StreamName) ->
+    SelfPid = self(),
+    hstreamdb_erlang_utils:countdown(length(Records), SelfPid),
+
     Fun = fun(OrderingKey, Payloads) ->
         spawn(fun() ->
             AppendRecords = lists:map(
@@ -359,7 +362,16 @@ do_append(Records, ServerUrl, StreamName) ->
             _ = hstreamdb_erlang:stop_client_channel(Channel)
         end)
     end,
-    maps:foreach(Fun, Records).
+    Ret = maps:foreach(Fun, Records),
+
+    case Blocking of
+        true ->
+            receive
+                finished -> Ret
+            end;
+        false ->
+            Ret
+    end.
 
 exec_flush(
     _FlushRequest,
