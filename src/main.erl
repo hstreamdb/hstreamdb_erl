@@ -19,7 +19,6 @@ bench(Opts) ->
     #{
         producerNum := ProducerNum,
         payloadSize := PayloadSize,
-        batchNum := BatchNum,
         serverUrl := ServerUrl,
         replicationFactor := ReplicationFactor,
         backlogDuration := BacklogDuration,
@@ -27,7 +26,8 @@ bench(Opts) ->
         batchSetting := BatchSetting
     } =
         Opts,
-    Payload = lists:duplicate(BatchNum, get_bytes(PayloadSize)),
+    BatchNum = maps:get(record_count_limit, BatchSetting),
+    Payload = get_bytes(PayloadSize),
     SelfPid = self(),
 
     {ok, Channel} = hstreamdb_erlang:start_client_channel(ServerUrl),
@@ -82,11 +82,13 @@ bench(Opts) ->
 
     Record = hstreamdb_erlang_producer:build_record(Payload),
     lists:foreach(
-        spawn(fun() ->
-            fun(Producer) ->
+        fun(Producer) ->
+            spawn(fun() ->
                 FutureRecordIds = lists:map(
-                    Append(Producer, Record),
-                    lists:seq(1, 100)
+                    fun(_) ->
+                        Append(Producer, Record)
+                    end,
+                    lists:seq(1, 1000)
                 ),
                 hstreamdb_erlang_producer:flush(Producer),
                 lists:foreach(
@@ -97,8 +99,8 @@ bench(Opts) ->
                     FutureRecordIds
                 ),
                 Countdown ! finished
-            end
-        end),
+            end)
+        end,
         Producers
     ),
 
@@ -132,12 +134,11 @@ bench() ->
     bench(#{
         producerNum => 100,
         payloadSize => 1,
-        batchNum => 400,
         serverUrl => "http://127.0.0.1:6570",
         replicationFactor => 1,
         backlogDuration => 60 * 30,
         reportIntervalSeconds => 3,
-        batchSetting => undefined
+        batchSetting => hstreamdb_erlang_producer:build_batch_setting({record_count_limit, 400})
     }).
 
 countdown(N, Pid) ->
