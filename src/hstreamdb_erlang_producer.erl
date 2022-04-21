@@ -100,7 +100,7 @@ append(Producer, Record) ->
 flush(Producer) ->
     gen_server:call(
         Producer,
-        build_flush_request()
+        build_flush_request({blocking, false})
     ).
 
 % --------------------------------------------------------------------------------
@@ -267,7 +267,7 @@ handle_cast(_, _) ->
 handle_info(Info, State) ->
     case Info of
         flush ->
-            FlushRequest = build_flush_request(),
+            FlushRequest = build_flush_request({blocking, false}),
             {reply, {ok, _}, NewState} = exec_flush(FlushRequest, State),
             {noreply, NewState};
         _ ->
@@ -293,8 +293,13 @@ build_append_request(FuturePid, FutureRecordId, Record) ->
         record => Record
     }}.
 
-build_flush_request() ->
-    {flush, #{}}.
+build_flush_request({blocking, true} = R) when is_tuple(R) ->
+    Blocking = true,
+    build_flush_request(Blocking);
+build_flush_request(Blocking) ->
+    {flush, #{
+        blocking => Blocking
+    }}.
 
 % --------------------------------------------------------------------------------
 
@@ -316,51 +321,54 @@ build_record_header(PayloadType, OrderingKey) ->
         key => OrderingKey
     }.
 
-do_append(Records, ServerUrl, StreamName) ->
+do_append(Records, ServerUrl, StreamName, Blocking) ->
     SelfPid = self(),
-    hstreamdb_erlang_utils:countdown(length(Records), SelfPid),
+    Countdown = hstreamdb_erlang_utils:countdown(length(Records), SelfPid),
 
     Fun = fun(OrderingKey, Payloads) ->
-        spawn(fun() ->
-            AppendRecords = lists:map(
-                fun({PayloadType, Payload, _}) ->
-                    RecordHeader = build_record_header(PayloadType, OrderingKey),
+        spawn(
+            fun() ->
+                AppendRecords = lists:map(
+                    fun({PayloadType, Payload, _}) ->
+                        RecordHeader = build_record_header(PayloadType, OrderingKey),
+                        #{
+                            header => RecordHeader,
+                            payload => Payload
+                        }
+                    end,
+                    Payloads
+                ),
+
+                {ok, Channel} = hstreamdb_erlang:start_client_channel(ServerUrl),
+                {ok, ServerNode} = hstreamdb_erlang:lookup_stream(Channel, StreamName, OrderingKey),
+
+                AppendServerUrl = hstreamdb_erlang:server_node_to_host_port(ServerNode, http),
+                {ok, InternalChannel} = hstreamdb_erlang:start_client_channel(AppendServerUrl),
+
+                {ok, #{recordIds := RecordIds}, _} = hstream_server_h_stream_api_client:append(
                     #{
-                        header => RecordHeader,
-                        payload => Payload
-                    }
-                end,
-                Payloads
-            ),
+                        streamName => StreamName,
+                        records => AppendRecords
+                    },
+                    #{channel => InternalChannel}
+                ),
 
-            {ok, Channel} = hstreamdb_erlang:start_client_channel(ServerUrl),
-            {ok, ServerNode} = hstreamdb_erlang:lookup_stream(Channel, StreamName, OrderingKey),
+                FuturePids = lists:map(fun({_, _, FuturePid}) -> FuturePid end, Payloads),
+                true = length(FuturePids) == length(RecordIds),
+                lists:foreach(
+                    fun(
+                        {FuturePid, RecordId}
+                    ) ->
+                        FuturePid ! {ok, RecordId}
+                    end,
+                    lists:zip(FuturePids, RecordIds)
+                ),
 
-            AppendServerUrl = hstreamdb_erlang:server_node_to_host_port(ServerNode, http),
-            {ok, InternalChannel} = hstreamdb_erlang:start_client_channel(AppendServerUrl),
-
-            {ok, #{recordIds := RecordIds}, _} = hstream_server_h_stream_api_client:append(
-                #{
-                    streamName => StreamName,
-                    records => AppendRecords
-                },
-                #{channel => InternalChannel}
-            ),
-
-            FuturePids = lists:map(fun({_, _, FuturePid}) -> FuturePid end, Payloads),
-            true = length(FuturePids) == length(RecordIds),
-            lists:foreach(
-                fun(
-                    {FuturePid, RecordId}
-                ) ->
-                    FuturePid ! {ok, RecordId}
-                end,
-                lists:zip(FuturePids, RecordIds)
-            ),
-
-            _ = hstreamdb_erlang:stop_client_channel(InternalChannel),
-            _ = hstreamdb_erlang:stop_client_channel(Channel)
-        end)
+                _ = hstreamdb_erlang:stop_client_channel(InternalChannel),
+                _ = hstreamdb_erlang:stop_client_channel(Channel)
+            end,
+            Countdown ! finished
+        )
     end,
     Ret = maps:foreach(Fun, Records),
 
@@ -374,7 +382,9 @@ do_append(Records, ServerUrl, StreamName) ->
     end.
 
 exec_flush(
-    _FlushRequest,
+    #{
+        blocking := Blocking
+    } = _FlushRequest,
     #{
         producer_status := ProducerStatus,
         producer_option := ProducerOption
@@ -388,7 +398,7 @@ exec_flush(
         stream_name := StreamName
     } = ProducerOption,
 
-    Reply = do_append(Records, ServerUrl, StreamName),
+    Reply = do_append(Records, ServerUrl, StreamName, Blocking),
 
     NewState = clear_buffer(State),
     {reply, Reply, NewState}.
@@ -405,7 +415,7 @@ exec_append(
     Reply = {ok, FutureRecordId},
     case check_buffer_limit(State0) of
         true ->
-            FlushRequest = build_flush_request(),
+            FlushRequest = build_flush_request({blocking, true}),
             {reply, _, NewState} = exec_flush(FlushRequest, State0),
             {reply, Reply, NewState};
         false ->
