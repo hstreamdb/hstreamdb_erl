@@ -73,15 +73,12 @@ bench(Opts) ->
     Append = fun(Producer, Record) ->
         {ok, FutureRecordId} =
             try
-                {ok, Snd} = Ret = hstreamdb_erlang_producer:append(Producer, Record),
-                true = Snd /= ok,
-                Ret
+                hstreamdb_erlang_producer:append(Producer, Record)
             catch
                 _:_ = E ->
                     logger:error("yield error: ~p~n", [E]),
                     FailedAppendsIncr()
             end,
-        true = FutureRecordId /= ok,
         FutureRecordId
     end,
 
@@ -119,13 +116,12 @@ bench(Opts) ->
                 lists:foreach(
                     fun(X) ->
                         try
-                            Ret = rpc:yield(X),
-                            io:format("yield: ~p~n", [Ret])
+                            rpc:yield(X)
                         catch
                             _:_ -> logger:error("yield error: ~p~n", [X])
                         end
                     end,
-                    lists:filter(fun(X) -> X /= ok end, FutureRecordIds)
+                    FutureRecordIds
                 ),
                 Countdown ! finished
             end)
