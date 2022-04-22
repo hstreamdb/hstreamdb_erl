@@ -26,7 +26,6 @@ bench(Opts) ->
         batchSetting := BatchSetting
     } =
         Opts,
-    BatchNum = maps:get(record_count_limit, BatchSetting),
     Payload = get_bytes(PayloadSize),
     SelfPid = self(),
 
@@ -92,7 +91,7 @@ bench(Opts) ->
                 (SuccessAppendsGet() - LastSuccessAppendsGet()) / ReportIntervalSeconds,
             ReportFailedAppends =
                 (FailedAppendsGet() - LastFailedAppendsGet()) / ReportIntervalSeconds,
-            ReportThroughput = ReportSuccessAppends * (PayloadSize * BatchNum) / 1024,
+            ReportThroughput = ReportSuccessAppends * PayloadSize / 1024,
             io:format(
                 "[BENCH]: SuccessAppends=~p, FailedAppends=~p, throughput=~p~n",
                 [ReportSuccessAppends, ReportFailedAppends, ReportThroughput]
@@ -100,12 +99,18 @@ bench(Opts) ->
             ReportLoop()
         end),
 
-    Record = hstreamdb_erlang_producer:build_record(Payload),
+    Record0 = hstreamdb_erlang_producer:build_record(Payload, "__0__"),
+    Record1 = hstreamdb_erlang_producer:build_record(Payload, "__1__"),
+    Record2 = hstreamdb_erlang_producer:build_record(Payload, "__2__"),
+    RecordXS = [Record0, Record1, Record2],
+
     lists:foreach(
         fun(Producer) ->
             spawn(fun() ->
                 FutureRecordIds = lists:map(
-                    fun(_) ->
+                    fun(Ix) ->
+                        Record = lists:nth((Ix rem 3) + 1, RecordXS),
+
                         Ret = Append(Producer, Record),
                         SuccessAppendsIncr(),
                         Ret

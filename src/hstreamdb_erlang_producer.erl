@@ -281,8 +281,10 @@ handle_info(Info, State) ->
 build_record(Payload) when is_binary(Payload) ->
     build_record(raw, Payload, "").
 
-build_record(PayloadType, Payload) ->
-    build_record(PayloadType, Payload, "").
+build_record(PayloadType, Payload) when is_atom(PayloadType) andalso is_binary(Payload) ->
+    build_record(PayloadType, Payload, "");
+build_record(Payload, OrderingKey) when is_binary(Payload) andalso is_list(OrderingKey) ->
+    build_record(raw, Payload, OrderingKey).
 
 build_record(PayloadType, Payload, OrderingKey) ->
     {PayloadType, Payload, OrderingKey}.
