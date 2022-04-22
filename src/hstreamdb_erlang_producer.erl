@@ -85,7 +85,6 @@ append(Producer, Record) ->
     FuturePid =
         receive
             {future_pid, Pid} -> Pid
-        after 100 -> throw(timeout)
         end,
 
     gen_server:call(
@@ -346,13 +345,22 @@ do_append(Records, ServerUrl, StreamName, Blocking) ->
                 AppendServerUrl = hstreamdb_erlang:server_node_to_host_port(ServerNode, http),
                 {ok, InternalChannel} = hstreamdb_erlang:start_client_channel(AppendServerUrl),
 
-                {ok, #{recordIds := RecordIds}, _} = hstream_server_h_stream_api_client:append(
-                    #{
-                        streamName => StreamName,
-                        records => AppendRecords
-                    },
-                    #{channel => InternalChannel}
-                ),
+                {ok, #{recordIds := RecordIds}, _} =
+                    case
+                        hstream_server_h_stream_api_client:append(
+                            #{
+                                streamName => StreamName,
+                                records => AppendRecords
+                            },
+                            #{channel => InternalChannel}
+                        )
+                    of
+                        {ok, _, _} = AppendRet ->
+                            AppendRet;
+                        E ->
+                            logger:error("append error: ~p~n", E),
+                            hstreamdb_erlang_utils:throw_hstreamdb_exception(E)
+                    end,
 
                 FuturePids = lists:map(fun({_, _, FuturePid}) -> FuturePid end, Payloads),
                 true = length(FuturePids) == length(RecordIds),
