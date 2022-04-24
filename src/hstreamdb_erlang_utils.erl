@@ -2,6 +2,7 @@
 
 -export([string_format/2]).
 -export([countdown/2]).
+-export([throw_hstreamdb_exception/1]).
 
 string_format(Pattern, Values) ->
     lists:flatten(io_lib:format(Pattern, Values)).
@@ -21,3 +22,6 @@ do_countdown(N, Pid) ->
                     do_countdown(N - 1, Pid)
             end
     end.
+
+throw_hstreamdb_exception(E) ->
+    throw({hstreamdb_exception, E}).

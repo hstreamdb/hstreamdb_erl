@@ -85,7 +85,6 @@ append(Producer, Record) ->
     FuturePid =
         receive
             {future_pid, Pid} -> Pid
-        after 100 -> throw(timeout)
         end,
 
     gen_server:call(
@@ -282,8 +281,10 @@ handle_info(Info, State) ->
 build_record(Payload) when is_binary(Payload) ->
     build_record(raw, Payload, "").
 
-build_record(PayloadType, Payload) ->
-    build_record(PayloadType, Payload, "").
+build_record(PayloadType, Payload) when is_atom(PayloadType) andalso is_binary(Payload) ->
+    build_record(PayloadType, Payload, "");
+build_record(Payload, OrderingKey) when is_binary(Payload) andalso is_list(OrderingKey) ->
+    build_record(raw, Payload, OrderingKey).
 
 build_record(PayloadType, Payload, OrderingKey) ->
     {PayloadType, Payload, OrderingKey}.
@@ -346,13 +347,22 @@ do_append(Records, ServerUrl, StreamName, Blocking) ->
                 AppendServerUrl = hstreamdb_erlang:server_node_to_host_port(ServerNode, http),
                 {ok, InternalChannel} = hstreamdb_erlang:start_client_channel(AppendServerUrl),
 
-                {ok, #{recordIds := RecordIds}, _} = hstream_server_h_stream_api_client:append(
-                    #{
-                        streamName => StreamName,
-                        records => AppendRecords
-                    },
-                    #{channel => InternalChannel}
-                ),
+                {ok, #{recordIds := RecordIds}, _} =
+                    case
+                        hstream_server_h_stream_api_client:append(
+                            #{
+                                streamName => StreamName,
+                                records => AppendRecords
+                            },
+                            #{channel => InternalChannel}
+                        )
+                    of
+                        {ok, _, _} = AppendRet ->
+                            AppendRet;
+                        E ->
+                            logger:error("append error: ~p~n", E),
+                            hstreamdb_erlang_utils:throw_hstreamdb_exception(E)
+                    end,
 
                 FuturePids = lists:map(fun({_, _, FuturePid}) -> FuturePid end, Payloads),
                 true = length(FuturePids) == length(RecordIds),

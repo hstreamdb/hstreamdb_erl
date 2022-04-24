@@ -1,6 +1,10 @@
 -module(hstreamdb_erlang).
 
--export([start_client_channel/1, start_client_channel/2, stop_client_channel/1]).
+-export([
+    start_client_channel/1, start_client_channel/2,
+    stop_client_channel/1,
+    with_client_channel/2, with_client_channel/3
+]).
 
 -export([list_streams/1, create_stream/4, delete_stream/2, delete_stream/3]).
 
@@ -41,6 +45,18 @@ start_client_channel(ServerUrl, Opts) ->
     end.
 
 stop_client_channel(Channel) -> grpc_client_sup:stop_channel_pool(Channel).
+
+with_client_channel(ServerUrl, Fun) ->
+    with_client_channel(ServerUrl, #{}, Fun).
+
+with_client_channel(ServerUrl, Opts, Fun) ->
+    {Channel, Ret} =
+        case start_client_channel(ServerUrl, Opts) of
+            {error, Reason} -> hstreamdb_erlang_utils:throw_hstreamdb_exception(Reason);
+            {ok, Ch} -> {Ch, Fun(Ch)}
+        end,
+    _ = stop_client_channel(Channel),
+    Ret.
 
 % --------------------------------------------------------------------------------
 
