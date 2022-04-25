@@ -294,47 +294,48 @@ build_record_header(PayloadType, OrderingKey) ->
 do_append(Records, ServerUrl, StreamName) ->
     Fun = fun(OrderingKey, Payloads) ->
         spawn(
-            fun() ->
-                AppendRecords = lists:map(
-                    fun({PayloadType, Payload, _}) ->
-                        RecordHeader = build_record_header(PayloadType, OrderingKey),
-                        #{
-                            header => RecordHeader,
-                            payload => Payload
-                        }
-                    end,
-                    Payloads
-                ),
-
-                {ok, Channel} = hstreamdb_erlang:start_client_channel(ServerUrl),
-                {ok, ServerNode} = hstreamdb_erlang:lookup_stream(Channel, StreamName, OrderingKey),
-
-                AppendServerUrl = hstreamdb_erlang:server_node_to_host_port(ServerNode, http),
-                {ok, InternalChannel} = hstreamdb_erlang:start_client_channel(AppendServerUrl),
-
-                {ok, #{recordIds := RecordIds}, _} =
-                    case
-                        hstream_server_h_stream_api_client:append(
-                            #{
-                                streamName => StreamName,
-                                records => AppendRecords
-                            },
-                            #{channel => InternalChannel}
-                        )
-                    of
-                        {ok, _, _} = AppendRet ->
-                            AppendRet;
-                        E ->
-                            logger:error("append error: ~p~n", E),
-                            hstreamdb_erlang_utils:throw_hstreamdb_exception(E)
-                    end,
-
-                _ = hstreamdb_erlang:stop_client_channel(InternalChannel),
-                _ = hstreamdb_erlang:stop_client_channel(Channel)
-            end
+            do_append_for_key(OrderingKey, Payloads, ServerUrl, StreamName)
         )
     end,
     maps:foreach(Fun, Records).
+
+do_append_for_key(OrderingKey, Payloads, ServerUrl, StreamName) ->
+    AppendRecords = lists:map(
+        fun({PayloadType, Payload, _}) ->
+            RecordHeader = build_record_header(PayloadType, OrderingKey),
+            #{
+                header => RecordHeader,
+                payload => Payload
+            }
+        end,
+        Payloads
+    ),
+
+    {ok, Channel} = hstreamdb_erlang:start_client_channel(ServerUrl),
+    {ok, ServerNode} = hstreamdb_erlang:lookup_stream(Channel, StreamName, OrderingKey),
+
+    AppendServerUrl = hstreamdb_erlang:server_node_to_host_port(ServerNode, http),
+    {ok, InternalChannel} = hstreamdb_erlang:start_client_channel(AppendServerUrl),
+
+    {ok, #{recordIds := RecordIds}, _} =
+        case
+            hstream_server_h_stream_api_client:append(
+                #{
+                    streamName => StreamName,
+                    records => AppendRecords
+                },
+                #{channel => InternalChannel}
+            )
+        of
+            {ok, _, _} = AppendRet ->
+                AppendRet;
+            E ->
+                logger:error("append error: ~p~n", E),
+                hstreamdb_erlang_utils:throw_hstreamdb_exception(E)
+        end,
+
+    _ = hstreamdb_erlang:stop_client_channel(InternalChannel),
+    _ = hstreamdb_erlang:stop_client_channel(Channel).
 
 exec_flush(
     #{} = _FlushRequest,
