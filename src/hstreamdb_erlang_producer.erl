@@ -64,34 +64,9 @@ start_link(Args) ->
     gen_server:start_link(?MODULE, Args, []).
 
 append(Producer, Record) ->
-    SelfPid = self(),
-    FutureRecordId = rpc:async_call(
-        node(),
-        erlang,
-        apply,
-        [
-            fun() ->
-                SelfPid ! {future_pid, self()},
-
-                receive
-                    {ok, RecordId} -> {ok, RecordId}
-                end
-            end,
-
-            []
-        ]
-    ),
-
-    FuturePid =
-        receive
-            {future_pid, Pid} -> Pid
-        end,
-
     gen_server:call(
         Producer,
         build_append_request(
-            FuturePid,
-            FutureRecordId,
             Record
         )
     ).
@@ -174,7 +149,6 @@ neutral_producer_status() ->
 % --------------------------------------------------------------------------------
 
 add_to_buffer(
-    FuturePid,
     {PayloadType, Payload, OrderingKey} = _Record,
     #{
         producer_status := ProducerStatus,
@@ -191,7 +165,7 @@ add_to_buffer(
         bytes := Bytes
     } = BatchStatus,
 
-    X = {PayloadType, Payload, FuturePid},
+    X = {PayloadType, Payload},
     NewRecords =
         case maps:is_key(OrderingKey, Records) of
             false ->
@@ -289,10 +263,8 @@ build_record(Payload, OrderingKey) when is_binary(Payload) andalso is_list(Order
 build_record(PayloadType, Payload, OrderingKey) ->
     {PayloadType, Payload, OrderingKey}.
 
-build_append_request(FuturePid, FutureRecordId, Record) ->
+build_append_request(Record) ->
     {append, #{
-        future_pid => FuturePid,
-        future_record_id => FutureRecordId,
         record => Record
     }}.
 
@@ -357,16 +329,6 @@ do_append(Records, ServerUrl, StreamName) ->
                             hstreamdb_erlang_utils:throw_hstreamdb_exception(E)
                     end,
 
-                FuturePids = lists:map(fun({_, _, FuturePid}) -> FuturePid end, Payloads),
-                true = length(FuturePids) == length(RecordIds),
-                lists:foreach(
-                    fun(
-                        {FuturePid, RecordId}
-                    ) ->
-                        FuturePid ! {ok, RecordId}
-                    end,
-                    lists:zip(FuturePids, RecordIds)
-                ),
                 _ = hstreamdb_erlang:stop_client_channel(InternalChannel),
                 _ = hstreamdb_erlang:stop_client_channel(Channel)
             end
@@ -396,14 +358,12 @@ exec_flush(
 
 exec_append(
     #{
-        future_pid := FuturePid,
-        future_record_id := FutureRecordId,
         record := Record
     } = _AppendRequest,
     State
 ) ->
-    State0 = add_to_buffer(FuturePid, Record, State),
-    Reply = {ok, FutureRecordId},
+    State0 = add_to_buffer(Record, State),
+    Reply = ok,
     case check_buffer_limit(State0) of
         true ->
             {_, FlushRequest} = build_flush_request(),
