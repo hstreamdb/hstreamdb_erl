@@ -28,11 +28,10 @@ init(
     #{batch_setting := BatchSetting} = ProducerOption,
     #{age_limit := AgeLimit} = BatchSetting,
 
-    ProducerResource =
+    AgeLimitWorker =
         case AgeLimit of
             undefined ->
-                AgeLimitWorker = undefined,
-                build_producer_resource(AgeLimitWorker);
+                undefined;
             _ ->
                 SelfPid = self(),
                 _ = spawn(
@@ -44,11 +43,12 @@ init(
                 ),
 
                 receive
-                    {t_ref, AgeLimitWorker} ->
-                        Ret = build_producer_resource(AgeLimitWorker)
-                end,
-                Ret
+                    {t_ref, TRef} ->
+                        TRef
+                end
         end,
+
+    ProducerResource = build_producer_resource(AgeLimitWorker),
 
     State = build_producer_state(
         ProducerStatus, ProducerOption, ProducerResource
