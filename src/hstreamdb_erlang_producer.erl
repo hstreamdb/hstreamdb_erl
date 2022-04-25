@@ -23,6 +23,30 @@ init(
         producer_option := ProducerOption
     } = _Args
 ) ->
+    ExecutorPid = executor(),
+    WorkerPids = lists:map(
+        fun(_) ->
+            spawn(
+                fun Loop() ->
+                    receive
+                        Fun -> Fun()
+                    end,
+                    ExecutorPid ! {free, self()},
+                    Loop()
+                end
+            )
+        end,
+        lists:seq(1, 16)
+    ),
+    lists:foreach(
+        fun(WorkerPid) ->
+            ExecutorPid ! {free, WorkerPid}
+        end,
+        WorkerPids
+    ),
+
+    SpawnFun = fun(Fun) when is_function(Fun) -> ExecutorPid ! {task, Fun} end,
+
     ProducerStatus = neutral_producer_status(),
 
     #{batch_setting := BatchSetting} = ProducerOption,
@@ -48,7 +72,7 @@ init(
                 end
         end,
 
-    ProducerResource = build_producer_resource(AgeLimitWorker),
+    ProducerResource = build_producer_resource(AgeLimitWorker, SpawnFun),
 
     State = build_producer_state(
         ProducerStatus, ProducerOption, ProducerResource
@@ -124,9 +148,10 @@ build_producer_status(Records, BatchStatus) ->
         batch_status => BatchStatus
     }.
 
-build_producer_resource(AgeLimitWorker) ->
+build_producer_resource(AgeLimitWorker, SpawnFun) ->
     #{
-        age_limit_worker => AgeLimitWorker
+        age_limit_worker => AgeLimitWorker,
+        spawn_fun => SpawnFun
     }.
 
 build_producer_state(ProducerStatus, ProducerOption, ProducerResource) ->
@@ -291,9 +316,9 @@ build_record_header(PayloadType, OrderingKey) ->
         key => OrderingKey
     }.
 
-do_append(Records, ServerUrl, StreamName) ->
+do_append(Records, ServerUrl, StreamName, SpawnFun) ->
     Fun = fun(OrderingKey, Payloads) ->
-        spawn(
+        SpawnFun(
             do_append_for_key(OrderingKey, Payloads, ServerUrl, StreamName)
         )
     end,
@@ -341,7 +366,10 @@ exec_flush(
     #{} = _FlushRequest,
     #{
         producer_status := ProducerStatus,
-        producer_option := ProducerOption
+        producer_option := ProducerOption,
+        producer_resource := #{
+            spawn_fun := SpawnFun
+        }
     } = State
 ) ->
     #{
@@ -352,7 +380,7 @@ exec_flush(
         stream_name := StreamName
     } = ProducerOption,
 
-    Reply = do_append(Records, ServerUrl, StreamName),
+    Reply = do_append(Records, ServerUrl, StreamName, SpawnFun),
 
     NewState = clear_buffer(State),
     {reply, Reply, NewState}.
@@ -374,3 +402,15 @@ exec_append(
             NewState = State0,
             {reply, Reply, NewState}
     end.
+
+% --------------------------------------------------------------------------------
+
+executor() ->
+    receive
+        {free, Pid} ->
+            receive
+                {task, Fun} ->
+                    Pid ! Fun
+            end
+    end,
+    executor().
