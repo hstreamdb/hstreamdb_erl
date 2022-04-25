@@ -23,16 +23,39 @@ init(
         producer_option := ProducerOption
     } = _Args
 ) ->
+    ExecutorPid = spawn(fun() -> executor() end),
+    WorkerPids = lists:map(
+        fun(_) ->
+            spawn(
+                fun Loop() ->
+                    receive
+                        Fun ->
+                            Fun()
+                    end,
+                    ExecutorPid ! {free, self()},
+                    Loop()
+                end
+            )
+        end,
+        lists:seq(1, 16)
+    ),
+    lists:foreach(
+        fun(WorkerPid) ->
+            ExecutorPid ! {free, WorkerPid}
+        end,
+        WorkerPids
+    ),
+    SpawnFun = fun(Fun) when is_function(Fun) -> ExecutorPid ! {task, Fun} end,
+
     ProducerStatus = neutral_producer_status(),
 
     #{batch_setting := BatchSetting} = ProducerOption,
     #{age_limit := AgeLimit} = BatchSetting,
 
-    ProducerResource =
+    AgeLimitWorker =
         case AgeLimit of
             undefined ->
-                AgeLimitWorker = undefined,
-                build_producer_resource(AgeLimitWorker);
+                undefined;
             _ ->
                 SelfPid = self(),
                 _ = spawn(
@@ -44,11 +67,12 @@ init(
                 ),
 
                 receive
-                    {t_ref, AgeLimitWorker} ->
-                        Ret = build_producer_resource(AgeLimitWorker)
-                end,
-                Ret
+                    {t_ref, TRef} ->
+                        TRef
+                end
         end,
+
+    ProducerResource = build_producer_resource(AgeLimitWorker, SpawnFun),
 
     State = build_producer_state(
         ProducerStatus, ProducerOption, ProducerResource
@@ -64,34 +88,9 @@ start_link(Args) ->
     gen_server:start_link(?MODULE, Args, []).
 
 append(Producer, Record) ->
-    SelfPid = self(),
-    FutureRecordId = rpc:async_call(
-        node(),
-        erlang,
-        apply,
-        [
-            fun() ->
-                SelfPid ! {future_pid, self()},
-
-                receive
-                    {ok, RecordId} -> {ok, RecordId}
-                end
-            end,
-
-            []
-        ]
-    ),
-
-    FuturePid =
-        receive
-            {future_pid, Pid} -> Pid
-        end,
-
     gen_server:call(
         Producer,
         build_append_request(
-            FuturePid,
-            FutureRecordId,
             Record
         )
     ).
@@ -99,7 +98,7 @@ append(Producer, Record) ->
 flush(Producer) ->
     gen_server:call(
         Producer,
-        build_flush_request({blocking, false})
+        build_flush_request()
     ).
 
 % --------------------------------------------------------------------------------
@@ -149,9 +148,10 @@ build_producer_status(Records, BatchStatus) ->
         batch_status => BatchStatus
     }.
 
-build_producer_resource(AgeLimitWorker) ->
+build_producer_resource(AgeLimitWorker, SpawnFun) ->
     #{
-        age_limit_worker => AgeLimitWorker
+        age_limit_worker => AgeLimitWorker,
+        spawn_fun => SpawnFun
     }.
 
 build_producer_state(ProducerStatus, ProducerOption, ProducerResource) ->
@@ -174,7 +174,6 @@ neutral_producer_status() ->
 % --------------------------------------------------------------------------------
 
 add_to_buffer(
-    FuturePid,
     {PayloadType, Payload, OrderingKey} = _Record,
     #{
         producer_status := ProducerStatus,
@@ -191,7 +190,7 @@ add_to_buffer(
         bytes := Bytes
     } = BatchStatus,
 
-    X = {PayloadType, Payload, FuturePid},
+    X = {PayloadType, Payload},
     NewRecords =
         case maps:is_key(OrderingKey, Records) of
             false ->
@@ -268,7 +267,7 @@ handle_cast(_, _) ->
 handle_info(Info, State) ->
     case Info of
         flush ->
-            {_, FlushRequest} = build_flush_request({blocking, false}),
+            {_, FlushRequest} = build_flush_request(),
             {reply, {ok, _}, NewState} = exec_flush(FlushRequest, State),
             {noreply, NewState};
         _ ->
@@ -289,19 +288,13 @@ build_record(Payload, OrderingKey) when is_binary(Payload) andalso is_list(Order
 build_record(PayloadType, Payload, OrderingKey) ->
     {PayloadType, Payload, OrderingKey}.
 
-build_append_request(FuturePid, FutureRecordId, Record) ->
+build_append_request(Record) ->
     {append, #{
-        future_pid => FuturePid,
-        future_record_id => FutureRecordId,
         record => Record
     }}.
 
-build_flush_request({blocking, Blocking}) ->
-    build_flush_request(Blocking);
-build_flush_request(Blocking) when is_boolean(Blocking) ->
-    {flush, #{
-        blocking => Blocking
-    }}.
+build_flush_request() ->
+    {flush, #{}}.
 
 % --------------------------------------------------------------------------------
 
@@ -323,81 +316,60 @@ build_record_header(PayloadType, OrderingKey) ->
         key => OrderingKey
     }.
 
-do_append(Records, ServerUrl, StreamName, Blocking) ->
-    SelfPid = self(),
-    Countdown = hstreamdb_erlang_utils:countdown(length(maps:keys(Records)), SelfPid),
-
+do_append(Records, ServerUrl, StreamName, SpawnFun) ->
     Fun = fun(OrderingKey, Payloads) ->
-        spawn(
-            fun() ->
-                AppendRecords = lists:map(
-                    fun({PayloadType, Payload, _}) ->
-                        RecordHeader = build_record_header(PayloadType, OrderingKey),
-                        #{
-                            header => RecordHeader,
-                            payload => Payload
-                        }
-                    end,
-                    Payloads
-                ),
-
-                {ok, Channel} = hstreamdb_erlang:start_client_channel(ServerUrl),
-                {ok, ServerNode} = hstreamdb_erlang:lookup_stream(Channel, StreamName, OrderingKey),
-
-                AppendServerUrl = hstreamdb_erlang:server_node_to_host_port(ServerNode, http),
-                {ok, InternalChannel} = hstreamdb_erlang:start_client_channel(AppendServerUrl),
-
-                {ok, #{recordIds := RecordIds}, _} =
-                    case
-                        hstream_server_h_stream_api_client:append(
-                            #{
-                                streamName => StreamName,
-                                records => AppendRecords
-                            },
-                            #{channel => InternalChannel}
-                        )
-                    of
-                        {ok, _, _} = AppendRet ->
-                            AppendRet;
-                        E ->
-                            logger:error("append error: ~p~n", E),
-                            hstreamdb_erlang_utils:throw_hstreamdb_exception(E)
-                    end,
-
-                FuturePids = lists:map(fun({_, _, FuturePid}) -> FuturePid end, Payloads),
-                true = length(FuturePids) == length(RecordIds),
-                lists:foreach(
-                    fun(
-                        {FuturePid, RecordId}
-                    ) ->
-                        FuturePid ! {ok, RecordId}
-                    end,
-                    lists:zip(FuturePids, RecordIds)
-                ),
-                Countdown ! finished,
-                _ = hstreamdb_erlang:stop_client_channel(InternalChannel),
-                _ = hstreamdb_erlang:stop_client_channel(Channel)
-            end
-        )
+        SpawnFun(fun() ->
+            do_append_for_key(OrderingKey, Payloads, ServerUrl, StreamName)
+        end)
     end,
-    Ret = maps:foreach(Fun, Records),
+    maps:foreach(Fun, Records).
 
-    case Blocking of
-        true ->
-            receive
-                finished -> Ret
-            end;
-        false ->
-            Ret
-    end.
+do_append_for_key(OrderingKey, Payloads, ServerUrl, StreamName) ->
+    AppendRecords = lists:map(
+        fun({PayloadType, Payload}) ->
+            RecordHeader = build_record_header(PayloadType, OrderingKey),
+            #{
+                header => RecordHeader,
+                payload => Payload
+            }
+        end,
+        Payloads
+    ),
+
+    {ok, Channel} = hstreamdb_erlang:start_client_channel(ServerUrl),
+    {ok, ServerNode} = hstreamdb_erlang:lookup_stream(Channel, StreamName, OrderingKey),
+
+    AppendServerUrl = hstreamdb_erlang:server_node_to_host_port(ServerNode, http),
+    {ok, InternalChannel} = hstreamdb_erlang:start_client_channel(AppendServerUrl),
+
+    {ok, #{recordIds := RecordIds}, _} =
+        case
+            hstream_server_h_stream_api_client:append(
+                #{
+                    streamName => StreamName,
+                    records => AppendRecords
+                },
+                #{channel => InternalChannel}
+            )
+        of
+            {ok, _, _} = AppendRet ->
+                AppendRet;
+            E ->
+                logger:error("append error: ~p~n", [E]),
+                hstreamdb_erlang_utils:throw_hstreamdb_exception(E)
+        end,
+
+    _ = hstreamdb_erlang:stop_client_channel(InternalChannel),
+    _ = hstreamdb_erlang:stop_client_channel(Channel).
 
 exec_flush(
-    #{
-        blocking := Blocking
-    } = _FlushRequest,
+    #{} = _FlushRequest,
     #{
         producer_status := ProducerStatus,
-        producer_option := ProducerOption
+        producer_option := ProducerOption,
+        producer_resource := #{
+            spawn_fun := SpawnFun
+        }
     } = State
 ) ->
     #{
@@ -408,29 +380,37 @@ exec_flush(
         stream_name := StreamName
     } = ProducerOption,
 
-    true = is_boolean(Blocking),
-
-    Reply = do_append(Records, ServerUrl, StreamName, Blocking),
+    Reply = do_append(Records, ServerUrl, StreamName, SpawnFun),
 
     NewState = clear_buffer(State),
     {reply, Reply, NewState}.
 
 exec_append(
     #{
-        future_pid := FuturePid,
-        future_record_id := FutureRecordId,
         record := Record
     } = _AppendRequest,
     State
 ) ->
-    State0 = add_to_buffer(FuturePid, Record, State),
-    Reply = {ok, FutureRecordId},
+    State0 = add_to_buffer(Record, State),
+    Reply = ok,
     case check_buffer_limit(State0) of
         true ->
-            {_, FlushRequest} = build_flush_request({blocking, true}),
+            {_, FlushRequest} = build_flush_request(),
             {reply, _, NewState} = exec_flush(FlushRequest, State0),
             {reply, Reply, NewState};
         false ->
             NewState = State0,
             {reply, Reply, NewState}
     end.
+
+% --------------------------------------------------------------------------------
+
+executor() ->
+    receive
+        {free, Pid} ->
+            receive
+                {task, Fun} ->
+                    Pid ! Fun
+            end
+    end,
+    executor().
