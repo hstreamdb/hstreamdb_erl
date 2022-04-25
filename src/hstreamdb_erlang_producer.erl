@@ -23,13 +23,14 @@ init(
         producer_option := ProducerOption
     } = _Args
 ) ->
-    ExecutorPid = executor(),
+    ExecutorPid = spawn(fun() -> executor() end),
     WorkerPids = lists:map(
         fun(_) ->
             spawn(
                 fun Loop() ->
                     receive
-                        Fun -> Fun()
+                        Fun ->
+                            Fun()
                     end,
                     ExecutorPid ! {free, self()},
                     Loop()
@@ -44,7 +45,6 @@ init(
         end,
         WorkerPids
     ),
-
     SpawnFun = fun(Fun) when is_function(Fun) -> ExecutorPid ! {task, Fun} end,
 
     ProducerStatus = neutral_producer_status(),
@@ -318,15 +318,15 @@ build_record_header(PayloadType, OrderingKey) ->
 
 do_append(Records, ServerUrl, StreamName, SpawnFun) ->
     Fun = fun(OrderingKey, Payloads) ->
-        SpawnFun(
+        SpawnFun(fun() ->
             do_append_for_key(OrderingKey, Payloads, ServerUrl, StreamName)
-        )
+        end)
     end,
     maps:foreach(Fun, Records).
 
 do_append_for_key(OrderingKey, Payloads, ServerUrl, StreamName) ->
     AppendRecords = lists:map(
-        fun({PayloadType, Payload, _}) ->
+        fun({PayloadType, Payload}) ->
             RecordHeader = build_record_header(PayloadType, OrderingKey),
             #{
                 header => RecordHeader,
@@ -355,7 +355,7 @@ do_append_for_key(OrderingKey, Payloads, ServerUrl, StreamName) ->
             {ok, _, _} = AppendRet ->
                 AppendRet;
             E ->
-                logger:error("append error: ~p~n", E),
+                logger:error("append error: ~p~n", [E]),
                 hstreamdb_erlang_utils:throw_hstreamdb_exception(E)
         end,
 

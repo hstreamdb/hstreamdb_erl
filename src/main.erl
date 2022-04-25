@@ -70,19 +70,17 @@ bench(Opts) ->
     Countdown = hstreamdb_erlang_utils:countdown(length(Producers), SelfPid),
 
     Append = fun(Producer, Record) ->
-        {ok, FutureRecordId} =
-            try
-                hstreamdb_erlang_producer:append(Producer, Record)
-            catch
-                _:_ = E ->
-                    logger:error("yield error: ~p~n", [E]),
-                    FailedAppendsIncr()
-            end,
-        FutureRecordId
+        try
+            hstreamdb_erlang_producer:append(Producer, Record)
+        catch
+            _:_ = E ->
+                logger:error("yield error: ~p~n", [E]),
+                FailedAppendsIncr()
+        end
     end,
 
     ReportLoop =
-        spawn(fun ReportLoop() ->
+        spawn(fun ReportLoopFn() ->
             LastSuccessAppendsPut(SuccessAppendsGet()),
             LastFailedAppendsPut(FailedAppendsGet()),
             timer:sleep(ReportIntervalSeconds * 1000),
@@ -96,7 +94,7 @@ bench(Opts) ->
                 "[BENCH]: SuccessAppends=~p, FailedAppends=~p, throughput=~p~n",
                 [ReportSuccessAppends, ReportFailedAppends, ReportThroughput]
             ),
-            ReportLoop()
+            ReportLoopFn()
         end),
 
     Record0 = hstreamdb_erlang_producer:build_record(Payload, "__0__"),
@@ -107,27 +105,15 @@ bench(Opts) ->
     lists:foreach(
         fun(Producer) ->
             spawn(fun() ->
-                FutureRecordIds = lists:map(
+                lists:foreach(
                     fun(Ix) ->
                         Record = lists:nth((Ix rem 3) + 1, RecordXS),
-
-                        Ret = Append(Producer, Record),
-                        SuccessAppendsIncr(),
-                        Ret
+                        Append(Producer, Record),
+                        SuccessAppendsIncr()
                     end,
-                    lists:seq(1, 8000)
+                    lists:seq(1, 10000000)
                 ),
                 hstreamdb_erlang_producer:flush(Producer),
-                lists:foreach(
-                    fun(X) ->
-                        try
-                            rpc:yield(X)
-                        catch
-                            _:_ -> logger:error("yield error: ~p~n", [X])
-                        end
-                    end,
-                    FutureRecordIds
-                ),
                 Countdown ! finished
             end)
         end,
@@ -139,12 +125,14 @@ bench(Opts) ->
             exit(ReportLoop, finished)
     end,
 
+    timer:sleep(20 * 1000),
+
     % TODO: clean up
     ok.
 
 bench() ->
     bench(#{
-        producerNum => 100,
+        producerNum => 8,
         payloadSize => 1,
         serverUrl => "http://127.0.0.1:6570",
         replicationFactor => 1,
@@ -201,7 +189,7 @@ readme() ->
 
     io:format("StartArgs: ~p~n", [StartArgs]),
 
-    RecordIds = lists:map(
+    lists:foreach(
         fun(_) ->
             Record = hstreamdb_erlang_producer:build_record(<<"_">>),
             hstreamdb_erlang_producer:append(Producer, Record)
@@ -212,13 +200,4 @@ readme() ->
     hstreamdb_erlang_producer:flush(Producer),
 
     timer:sleep(1000),
-
-    lists:foreach(
-        fun({ok, FutureRecordId}) ->
-            RecordId = rpc:yield(FutureRecordId),
-            io:format("~p~n", [RecordId])
-        end,
-        RecordIds
-    ),
-
     ok.
