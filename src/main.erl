@@ -45,7 +45,7 @@ bench(Opts) ->
                     BacklogDuration
                 ),
             ProducerOption = hstreamdb_erlang_producer:build_producer_option(
-                ServerUrl, StreamName, BatchSetting
+                ServerUrl, StreamName, BatchSetting, self()
             ),
             ProducerStartArgs = hstreamdb_erlang_producer:build_start_args(ProducerOption),
             {ok, Producer} = hstreamdb_erlang_producer:start_link(ProducerStartArgs),
@@ -182,7 +182,7 @@ readme() ->
 
     StartArgs = #{
         producer_option => hstreamdb_erlang_producer:build_producer_option(
-            ServerUrl, StreamName, BatchSetting
+            ServerUrl, StreamName, BatchSetting, self()
         )
     },
     {ok, Producer} = hstreamdb_erlang_producer:start_link(StartArgs),
@@ -198,6 +198,15 @@ readme() ->
     ),
 
     hstreamdb_erlang_producer:flush(Producer),
-
     timer:sleep(1000),
+
+    RecordIds =
+        receive
+            {record_ids, Ret} -> Ret
+        end,
+
+    io:format(
+        "RecordIds: ~p~n", [RecordIds]
+    ),
+
     ok.
