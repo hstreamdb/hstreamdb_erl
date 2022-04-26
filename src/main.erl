@@ -27,11 +27,12 @@ bench(Opts) ->
     } =
         Opts,
     Payload = get_bytes(PayloadSize),
-    SelfPid = self(),
+    #{record_count_limit := RecordCountLimit} = BatchSetting,
+    TurnN = 10000,
 
     SuccessAppends = atomics:new(1, [{signed, false}]),
     FailedAppends = atomics:new(1, [{signed, false}]),
-    SuccessAppendsIncr = fun() -> atomics:add(SuccessAppends, 1, 1) end,
+    SuccessAppendsAdd = fun(X) -> atomics:add(SuccessAppends, 1, X) end,
     FailedAppendsIncr = fun() -> atomics:add(FailedAppends, 1, 1) end,
     SuccessAppendsGet = fun() -> atomics:get(SuccessAppends, 1) end,
     FailedAppendsGet = fun() -> atomics:get(FailedAppends, 1) end,
@@ -64,11 +65,10 @@ bench(Opts) ->
         fun RecvIncrLoopFn() ->
             receive
                 {record_ids, RecordIds} ->
-                    lists:foreach(
-                        fun(_) -> SuccessAppendsIncr() end, lists:seq(1, length(RecordIds))
-                    )
-            end,
-            RecvIncrLoopFn()
+                    SuccessAppendsAdd(length(RecordIds)),
+                    RecvIncrLoopFn()
+            after 5 * 1000 -> exit(ReportLoop, finished)
+            end
         end
     ),
 
@@ -97,8 +97,6 @@ bench(Opts) ->
         lists:seq(1, ProducerNum)
     ),
 
-    Countdown = hstreamdb_erlang_utils:countdown(length(Producers), SelfPid),
-
     Append = fun(Producer, Record) ->
         try
             hstreamdb_erlang_producer:append(Producer, Record)
@@ -122,23 +120,18 @@ bench(Opts) ->
                         Record = lists:nth((Ix rem 3) + 1, RecordXS),
                         Append(Producer, Record)
                     end,
-                    lists:seq(1, 10000000)
+                    lists:seq(1, TurnN * RecordCountLimit)
                 ),
-                hstreamdb_erlang_producer:flush(Producer),
-                Countdown ! finished
+                hstreamdb_erlang_producer:flush(Producer)
             end)
         end,
         Producers
     ),
 
-    receive
-        finished ->
-            exit(ReportLoop, finished),
-            exit(RecvIncrLoop, finished)
-    end,
+    % receive
+    %     finished ->
 
-    timer:sleep(20 * 1000),
-
+    % end,
     ok.
 
 bench() ->
