@@ -21,3 +21,5 @@ rebar3.crashdump
 HStreamApi.erl
 hstream_server_h_stream_api_bhvr.erl
 hstream_server_h_stream_api_client.erl
+
+*.bggg
