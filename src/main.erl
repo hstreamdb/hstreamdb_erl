@@ -29,31 +29,6 @@ bench(Opts) ->
     Payload = get_bytes(PayloadSize),
     SelfPid = self(),
 
-    {ok, Channel} = hstreamdb_erlang:start_client_channel(ServerUrl),
-    Producers = lists:map(
-        fun(X) ->
-            StreamName =
-                hstreamdb_erlang_utils:string_format(
-                    "test_stream-~p-~p-~p",
-                    [X, erlang:system_time(second), erlang:unique_integer()]
-                ),
-            ok =
-                hstreamdb_erlang:create_stream(
-                    Channel,
-                    StreamName,
-                    ReplicationFactor,
-                    BacklogDuration
-                ),
-            ProducerOption = hstreamdb_erlang_producer:build_producer_option(
-                ServerUrl, StreamName, BatchSetting, self()
-            ),
-            ProducerStartArgs = hstreamdb_erlang_producer:build_start_args(ProducerOption),
-            {ok, Producer} = hstreamdb_erlang_producer:start_link(ProducerStartArgs),
-            Producer
-        end,
-        lists:seq(1, ProducerNum)
-    ),
-
     SuccessAppends = atomics:new(1, [{signed, false}]),
     FailedAppends = atomics:new(1, [{signed, false}]),
     SuccessAppendsIncr = fun() -> atomics:add(SuccessAppends, 1, 1) end,
@@ -66,18 +41,6 @@ bench(Opts) ->
     LastFailedAppendsPut = fun(X) -> atomics:put(LastFailedAppends, 1, X) end,
     LastSuccessAppendsGet = fun() -> atomics:get(LastSuccessAppends, 1) end,
     LastFailedAppendsGet = fun() -> atomics:get(LastFailedAppends, 1) end,
-
-    Countdown = hstreamdb_erlang_utils:countdown(length(Producers), SelfPid),
-
-    Append = fun(Producer, Record) ->
-        try
-            hstreamdb_erlang_producer:append(Producer, Record)
-        catch
-            _:_ = E ->
-                logger:error("yield error: ~p~n", [E]),
-                FailedAppendsIncr()
-        end
-    end,
 
     ReportLoop =
         spawn(fun ReportLoopFn() ->
@@ -97,6 +60,55 @@ bench(Opts) ->
             ReportLoopFn()
         end),
 
+    RecvIncrLoop = spawn(
+        fun RecvIncrLoopFn() ->
+            receive
+                {record_ids, RecordIds} ->
+                    lists:foreach(
+                        fun(_) -> SuccessAppendsIncr() end, lists:seq(1, length(RecordIds))
+                    )
+            end,
+            RecvIncrLoopFn()
+        end
+    ),
+
+    {ok, Channel} = hstreamdb_erlang:start_client_channel(ServerUrl),
+    Producers = lists:map(
+        fun(X) ->
+            StreamName =
+                hstreamdb_erlang_utils:string_format(
+                    "test_stream-~p-~p-~p",
+                    [X, erlang:system_time(second), erlang:unique_integer()]
+                ),
+            ok =
+                hstreamdb_erlang:create_stream(
+                    Channel,
+                    StreamName,
+                    ReplicationFactor,
+                    BacklogDuration
+                ),
+            ProducerOption = hstreamdb_erlang_producer:build_producer_option(
+                ServerUrl, StreamName, BatchSetting, RecvIncrLoop
+            ),
+            ProducerStartArgs = hstreamdb_erlang_producer:build_start_args(ProducerOption),
+            {ok, Producer} = hstreamdb_erlang_producer:start_link(ProducerStartArgs),
+            Producer
+        end,
+        lists:seq(1, ProducerNum)
+    ),
+
+    Countdown = hstreamdb_erlang_utils:countdown(length(Producers), SelfPid),
+
+    Append = fun(Producer, Record) ->
+        try
+            hstreamdb_erlang_producer:append(Producer, Record)
+        catch
+            _:_ = E ->
+                logger:error("yield error: ~p~n", [E]),
+                FailedAppendsIncr()
+        end
+    end,
+
     Record0 = hstreamdb_erlang_producer:build_record(Payload, "__0__"),
     Record1 = hstreamdb_erlang_producer:build_record(Payload, "__1__"),
     Record2 = hstreamdb_erlang_producer:build_record(Payload, "__2__"),
@@ -108,8 +120,7 @@ bench(Opts) ->
                 lists:foreach(
                     fun(Ix) ->
                         Record = lists:nth((Ix rem 3) + 1, RecordXS),
-                        Append(Producer, Record),
-                        SuccessAppendsIncr()
+                        Append(Producer, Record)
                     end,
                     lists:seq(1, 10000000)
                 ),
@@ -122,12 +133,12 @@ bench(Opts) ->
 
     receive
         finished ->
-            exit(ReportLoop, finished)
+            exit(ReportLoop, finished),
+            exit(RecvIncrLoop, finished)
     end,
 
     timer:sleep(20 * 1000),
 
-    % TODO: clean up
     ok.
 
 bench() ->
