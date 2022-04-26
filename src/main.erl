@@ -67,7 +67,9 @@ bench(Opts) ->
                 {record_ids, RecordIds} ->
                     SuccessAppendsAdd(length(RecordIds)),
                     RecvIncrLoopFn()
-            after 5 * 1000 -> exit(ReportLoop, finished)
+            after 5 * 1000 ->
+                exit(ReportLoop, finished),
+                io:format("[BENCH]: report finished")
             end
         end
     ),
