@@ -1,64 +1,78 @@
-hstreamdb_erlang
-=====
+# hstreamdb_erlang
 
-An OTP library for HStreamDB
+An OTP library for [HStreamDB](https://hstream.io/).
 
-Build
------
+[![.github/workflows/ci.yml](https://github.com/hstreamdb/hstreamdb-erlang/actions/workflows/ci.yml/badge.svg)](https://github.com/hstreamdb/hstreamdb-erlang/actions/workflows/ci.yml)
 
-    $ rebar3 compile
+## Installation
 
+### Rebar3
 
-Example usage:
+Add the following line to the `deps` field of the file `rebar.config`
 
 ```erl
-readme() ->
-    ServerUrl = "http://127.0.0.1:6570",
-    StreamName = hstreamdb_erlang_utils:string_format("~s-~p", [
-        "___v2_test___", erlang:time()
-    ]),
-    BatchSetting = hstreamdb_erlang_producer:build_batch_setting({record_count_limit, 3}),
+{hstreamdb_erlang, {git, "git@github.com:hstreamdb/hstreamdb-erlang.git", {branch, "main"}}}
+```
 
-    {ok, Channel} = hstreamdb_erlang:start_client_channel(ServerUrl),
-    _ = hstreamdb_erlang:delete_stream(Channel, StreamName, #{
-        ignoreNonExist => true,
-        force => true
-    }),
-    ReplicationFactor = 3,
-    BacklogDuration = 60 * 30,
-    ok = hstreamdb_erlang:create_stream(
-        Channel, StreamName, ReplicationFactor, BacklogDuration
-    ),
-    _ = hstreamdb_erlang:stop_client_channel(Channel),
+### Mix
 
-    StartArgs = #{
-        producer_option => hstreamdb_erlang_producer:build_producer_option(
-            ServerUrl, StreamName, BatchSetting
+Add the following line to the `deps` function of the file `mix.exs`
+
+```exs
+{:hstreamdb_erlang, git: "git@github.com:hstreamdb/hstreamdb-erlang.git", branch: "main"}
+```
+
+## Usage
+
+Currently, all user functions are exposed through the
+
+- module [hstreamdb_erlang](./src/hstreamdb_erlang.erl)
+- module [hstreamdb_erlang_producer](./src/hstreamdb_erlang_producer.erl)
+
+### Connect to HStreamDB
+
+```erl
+ServerUrl = "http://localhost:6570",
+{ok, Channel} = hstreamdb_erlang:start_client_channel(ServerUrl).
+```
+
+### Work with Streams
+
+```erl
+StreamName = "s",
+ReplicationFactor = 3,
+BacklogDuration = 60 * 30,
+hstreamdb_erlang:create_stream(
+    Channel, StreamName, ReplicationFactor, BacklogDuration
+).
+
+hstreamdb_erlang:list_streams(Channel).
+
+hstreamdb_erlang:delete_stream(Channel, StreamName, #{
+    ignoreNonExist => true,
+    force => true
+}).
+```
+
+### Write Data to a Stream
+
+```erl
+BatchSetting = hstreamdb_erlang_producer:build_batch_setting({record_count_limit, 3}),
+StartArgs = #{
+    producer_option => hstreamdb_erlang_producer:build_producer_option(
+        ServerUrl, StreamName, BatchSetting, self()
+    )
+},
+{ok, Producer} = hstreamdb_erlang_producer:start_link(StartArgs).
+
+Record = hstreamdb_erlang_producer:build_record(<<"this_is_a_binary_literal">>),
+hstreamdb_erlang_producer:append(Producer, Record).
+
+hstreamdb_erlang_producer:flush(Producer),
+receive
+    {record_ids, RecordIds} ->
+        io:format(
+            "RecordIds: ~p~n", [RecordIds]
         )
-    },
-    {ok, Producer} = hstreamdb_erlang_producer:start_link(StartArgs),
-
-    io:format("StartArgs: ~p~n", [StartArgs]),
-
-    RecordIds = lists:map(
-        fun(_) ->
-            Record = hstreamdb_erlang_producer:build_record(<<"_">>),
-            hstreamdb_erlang_producer:append(Producer, Record)
-        end,
-        lists:seq(0, 100)
-    ),
-
-    hstreamdb_erlang_producer:flush(Producer),
-
-    timer:sleep(1000),
-
-    lists:foreach(
-        fun({ok, FutureRecordId}) ->
-            RecordId = rpc:yield(FutureRecordId),
-            io:format("~p~n", [RecordId])
-        end,
-        RecordIds
-    ),
-
-    ok.
+end.
 ```
