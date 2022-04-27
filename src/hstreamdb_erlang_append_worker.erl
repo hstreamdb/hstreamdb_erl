@@ -50,7 +50,7 @@ build_appender_resource(Channels) when is_map(Channels) ->
 get_channel(ServerUrl, AppenderState) ->
     #{appender_option := AppenderOption, appender_resource := #{channels := Channels}} =
         AppenderState,
-    case maps:is_key(ServerUrl, AppenderState) of
+    case maps:is_key(ServerUrl, Channels) of
         true ->
             {maps:get(ServerUrl, Channels), AppenderState};
         false ->

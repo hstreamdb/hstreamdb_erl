@@ -341,6 +341,7 @@ start_append_worker_pool(ServerUrl, StreamName, ReturnPid) ->
     {ok, Pid} = wpool:start_pool(
         Name,
         [
+            {workers, 4},
             {worker_type, gen_server},
             {worker,
                 {hstreamdb_erlang_append_worker,
