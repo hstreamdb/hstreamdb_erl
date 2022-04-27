@@ -7,7 +7,7 @@
 -export([
     build_start_args/1,
     build_batch_setting/1, build_batch_setting/3,
-    build_producer_option/3,
+    build_producer_option/4,
     build_record/1, build_record/2, build_record/3
 ]).
 
@@ -23,7 +23,7 @@ init(
         producer_option := ProducerOption
     } = _Args
 ) ->
-    ExecutorPid = spawn(fun() -> executor() end),
+    ExecutorPid = spawn(fun executor/0),
     WorkerPids = lists:map(
         fun(_) ->
             spawn(
@@ -45,7 +45,9 @@ init(
         end,
         WorkerPids
     ),
-    SpawnFun = fun(Fun) when is_function(Fun) -> ExecutorPid ! {task, Fun} end,
+    SpawnFun = fun(Fun) when is_function(Fun) ->
+        ExecutorPid ! {task, Fun}
+    end,
 
     ProducerStatus = neutral_producer_status(),
 
@@ -129,11 +131,12 @@ build_batch_setting(RecordCountLimit, BytesLimit, AgeLimit) ->
         age_limit => AgeLimit
     }.
 
-build_producer_option(ServerUrl, StreamName, BatchSetting) ->
+build_producer_option(ServerUrl, StreamName, BatchSetting, ReturnPid) ->
     #{
         server_url => ServerUrl,
         stream_name => StreamName,
-        batch_setting => BatchSetting
+        batch_setting => BatchSetting,
+        return_pid => ReturnPid
     }.
 
 build_batch_status(RecordCount, Bytes) ->
@@ -316,15 +319,15 @@ build_record_header(PayloadType, OrderingKey) ->
         key => OrderingKey
     }.
 
-do_append(Records, ServerUrl, StreamName, SpawnFun) ->
+do_append(Records, ServerUrl, StreamName, ReturnPid, SpawnFun) ->
     Fun = fun(OrderingKey, Payloads) ->
         SpawnFun(fun() ->
-            do_append_for_key(OrderingKey, Payloads, ServerUrl, StreamName)
+            do_append_for_key(OrderingKey, Payloads, ServerUrl, StreamName, ReturnPid)
         end)
     end,
     maps:foreach(Fun, Records).
 
-do_append_for_key(OrderingKey, Payloads, ServerUrl, StreamName) ->
+do_append_for_key(OrderingKey, Payloads, ServerUrl, StreamName, ReturnPid) ->
     AppendRecords = lists:map(
         fun({PayloadType, Payload}) ->
             RecordHeader = build_record_header(PayloadType, OrderingKey),
@@ -358,6 +361,7 @@ do_append_for_key(OrderingKey, Payloads, ServerUrl, StreamName) ->
                 logger:error("append error: ~p~n", [E]),
                 hstreamdb_erlang_utils:throw_hstreamdb_exception(E)
         end,
+    ReturnPid ! {record_ids, RecordIds},
 
     _ = hstreamdb_erlang:stop_client_channel(InternalChannel),
     _ = hstreamdb_erlang:stop_client_channel(Channel).
@@ -377,10 +381,11 @@ exec_flush(
     } = ProducerStatus,
     #{
         server_url := ServerUrl,
-        stream_name := StreamName
+        stream_name := StreamName,
+        return_pid := ReturnPid
     } = ProducerOption,
 
-    Reply = do_append(Records, ServerUrl, StreamName, SpawnFun),
+    Reply = do_append(Records, ServerUrl, StreamName, ReturnPid, SpawnFun),
 
     NewState = clear_buffer(State),
     {reply, Reply, NewState}.

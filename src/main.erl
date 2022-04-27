@@ -27,36 +27,12 @@ bench(Opts) ->
     } =
         Opts,
     Payload = get_bytes(PayloadSize),
-    SelfPid = self(),
-
-    {ok, Channel} = hstreamdb_erlang:start_client_channel(ServerUrl),
-    Producers = lists:map(
-        fun(X) ->
-            StreamName =
-                hstreamdb_erlang_utils:string_format(
-                    "test_stream-~p-~p-~p",
-                    [X, erlang:system_time(second), erlang:unique_integer()]
-                ),
-            ok =
-                hstreamdb_erlang:create_stream(
-                    Channel,
-                    StreamName,
-                    ReplicationFactor,
-                    BacklogDuration
-                ),
-            ProducerOption = hstreamdb_erlang_producer:build_producer_option(
-                ServerUrl, StreamName, BatchSetting
-            ),
-            ProducerStartArgs = hstreamdb_erlang_producer:build_start_args(ProducerOption),
-            {ok, Producer} = hstreamdb_erlang_producer:start_link(ProducerStartArgs),
-            Producer
-        end,
-        lists:seq(1, ProducerNum)
-    ),
+    #{record_count_limit := RecordCountLimit} = BatchSetting,
+    TurnN = 10000,
 
     SuccessAppends = atomics:new(1, [{signed, false}]),
     FailedAppends = atomics:new(1, [{signed, false}]),
-    SuccessAppendsIncr = fun() -> atomics:add(SuccessAppends, 1, 1) end,
+    SuccessAppendsAdd = fun(X) -> atomics:add(SuccessAppends, 1, X) end,
     FailedAppendsIncr = fun() -> atomics:add(FailedAppends, 1, 1) end,
     SuccessAppendsGet = fun() -> atomics:get(SuccessAppends, 1) end,
     FailedAppendsGet = fun() -> atomics:get(FailedAppends, 1) end,
@@ -66,18 +42,6 @@ bench(Opts) ->
     LastFailedAppendsPut = fun(X) -> atomics:put(LastFailedAppends, 1, X) end,
     LastSuccessAppendsGet = fun() -> atomics:get(LastSuccessAppends, 1) end,
     LastFailedAppendsGet = fun() -> atomics:get(LastFailedAppends, 1) end,
-
-    Countdown = hstreamdb_erlang_utils:countdown(length(Producers), SelfPid),
-
-    Append = fun(Producer, Record) ->
-        try
-            hstreamdb_erlang_producer:append(Producer, Record)
-        catch
-            _:_ = E ->
-                logger:error("yield error: ~p~n", [E]),
-                FailedAppendsIncr()
-        end
-    end,
 
     ReportLoop =
         spawn(fun ReportLoopFn() ->
@@ -97,6 +61,54 @@ bench(Opts) ->
             ReportLoopFn()
         end),
 
+    RecvIncrLoop = spawn(
+        fun RecvIncrLoopFn() ->
+            receive
+                {record_ids, RecordIds} ->
+                    SuccessAppendsAdd(length(RecordIds)),
+                    RecvIncrLoopFn()
+            after 5 * 1000 ->
+                exit(ReportLoop, finished),
+                io:format("[BENCH]: report finished")
+            end
+        end
+    ),
+
+    {ok, Channel} = hstreamdb_erlang:start_client_channel(ServerUrl),
+    Producers = lists:map(
+        fun(X) ->
+            StreamName =
+                hstreamdb_erlang_utils:string_format(
+                    "test_stream-~p-~p-~p",
+                    [X, erlang:system_time(second), erlang:unique_integer()]
+                ),
+            ok =
+                hstreamdb_erlang:create_stream(
+                    Channel,
+                    StreamName,
+                    ReplicationFactor,
+                    BacklogDuration
+                ),
+            ProducerOption = hstreamdb_erlang_producer:build_producer_option(
+                ServerUrl, StreamName, BatchSetting, RecvIncrLoop
+            ),
+            ProducerStartArgs = hstreamdb_erlang_producer:build_start_args(ProducerOption),
+            {ok, Producer} = hstreamdb_erlang_producer:start_link(ProducerStartArgs),
+            Producer
+        end,
+        lists:seq(1, ProducerNum)
+    ),
+
+    Append = fun(Producer, Record) ->
+        try
+            hstreamdb_erlang_producer:append(Producer, Record)
+        catch
+            _:_ = E ->
+                logger:error("yield error: ~p~n", [E]),
+                FailedAppendsIncr()
+        end
+    end,
+
     Record0 = hstreamdb_erlang_producer:build_record(Payload, "__0__"),
     Record1 = hstreamdb_erlang_producer:build_record(Payload, "__1__"),
     Record2 = hstreamdb_erlang_producer:build_record(Payload, "__2__"),
@@ -108,26 +120,16 @@ bench(Opts) ->
                 lists:foreach(
                     fun(Ix) ->
                         Record = lists:nth((Ix rem 3) + 1, RecordXS),
-                        Append(Producer, Record),
-                        SuccessAppendsIncr()
+                        Append(Producer, Record)
                     end,
-                    lists:seq(1, 10000000)
+                    lists:seq(1, TurnN * RecordCountLimit)
                 ),
-                hstreamdb_erlang_producer:flush(Producer),
-                Countdown ! finished
+                hstreamdb_erlang_producer:flush(Producer)
             end)
         end,
         Producers
     ),
 
-    receive
-        finished ->
-            exit(ReportLoop, finished)
-    end,
-
-    timer:sleep(20 * 1000),
-
-    % TODO: clean up
     ok.
 
 bench() ->
@@ -182,7 +184,7 @@ readme() ->
 
     StartArgs = #{
         producer_option => hstreamdb_erlang_producer:build_producer_option(
-            ServerUrl, StreamName, BatchSetting
+            ServerUrl, StreamName, BatchSetting, self()
         )
     },
     {ok, Producer} = hstreamdb_erlang_producer:start_link(StartArgs),
@@ -198,6 +200,15 @@ readme() ->
     ),
 
     hstreamdb_erlang_producer:flush(Producer),
-
     timer:sleep(1000),
+
+    RecordIds =
+        receive
+            {record_ids, Ret} -> Ret
+        end,
+
+    io:format(
+        "RecordIds: ~p~n", [RecordIds]
+    ),
+
     ok.
