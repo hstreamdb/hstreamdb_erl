@@ -27,10 +27,13 @@ init(
         server_url := ServerUrl,
         stream_name := StreamName,
         batch_setting := BatchSetting,
-        return_pid := ReturnPid
+        return_pid := ReturnPid,
+        append_worker_num := AppendWorkerNum
     } = ProducerOption,
 
-    {ok, _, AppendWorkerPoolName} = start_append_worker_pool(ServerUrl, StreamName, ReturnPid),
+    {ok, _, AppendWorkerPoolName} = start_append_worker_pool(
+        ServerUrl, StreamName, ReturnPid, AppendWorkerNum
+    ),
 
     ProducerStatus = neutral_producer_status(),
 
@@ -114,11 +117,15 @@ build_batch_setting(RecordCountLimit, BytesLimit, AgeLimit) ->
     }.
 
 build_producer_option(ServerUrl, StreamName, BatchSetting, ReturnPid) ->
+    build_producer_option(ServerUrl, StreamName, BatchSetting, ReturnPid, 16).
+
+build_producer_option(ServerUrl, StreamName, BatchSetting, ReturnPid, AppendWorkerNum) ->
     #{
         server_url => ServerUrl,
         stream_name => StreamName,
         batch_setting => BatchSetting,
-        return_pid => ReturnPid
+        return_pid => ReturnPid,
+        append_worker_num => AppendWorkerNum
     }.
 
 build_batch_status(RecordCount, Bytes) ->
@@ -332,7 +339,7 @@ exec_append(
 
 % --------------------------------------------------------------------------------
 
-start_append_worker_pool(ServerUrl, StreamName, ReturnPid) ->
+start_append_worker_pool(ServerUrl, StreamName, ReturnPid, AppendWorkerNum) ->
     Name = list_to_atom(
         hstreamdb_erlang_utils:string_format("~s-~s", [
             "HSTREAM_WORKER", hstreamdb_erlang_utils:uid()
@@ -341,7 +348,7 @@ start_append_worker_pool(ServerUrl, StreamName, ReturnPid) ->
     {ok, Pid} = wpool:start_pool(
         Name,
         [
-            {workers, 4},
+            {workers, AppendWorkerNum},
             {worker_type, gen_server},
             {worker,
                 {hstreamdb_erlang_append_worker,

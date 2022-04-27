@@ -29,7 +29,7 @@ bench(Opts) ->
         Opts,
     Payload = get_bytes(PayloadSize),
     #{record_count_limit := RecordCountLimit} = BatchSetting,
-    TurnN = 1000,
+    TurnN = 5000,
 
     SuccessAppends = atomics:new(1, [{signed, false}]),
     FailedAppends = atomics:new(1, [{signed, false}]),
