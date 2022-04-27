@@ -24,7 +24,6 @@ init(
     } = _Args
 ) ->
     ExecutorPid = spawn(fun executor/0),
-    MonitorPid = spawn(fun executor_monitor/0),
     WorkerPids = lists:map(
         fun(_) ->
             spawn(
@@ -47,8 +46,7 @@ init(
         WorkerPids
     ),
     SpawnFun = fun(Fun) when is_function(Fun) ->
-        ExecutorPid ! {task, Fun},
-        MonitorPid ! {task, ok}
+        ExecutorPid ! {task, Fun}
     end,
 
     ProducerStatus = neutral_producer_status(),
@@ -421,10 +419,3 @@ executor() ->
             end
     end,
     executor().
-
-executor_monitor() ->
-    receive
-        {task, _} -> executor_monitor()
-    after 5 * 1000 ->
-        lists:foreach(fun(_) -> io:format("All submit done!!!~n") end, lists:seq(1, 10))
-    end.
