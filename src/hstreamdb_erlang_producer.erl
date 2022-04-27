@@ -23,38 +23,14 @@ init(
         producer_option := ProducerOption
     } = _Args
 ) ->
-    ExecutorPid = spawn(fun executor/0),
-    WorkerPids = lists:map(
-        fun(_) ->
-            spawn(
-                fun Loop() ->
-                    receive
-                        Fun ->
-                            Fun()
-                    end,
-                    ExecutorPid ! {free, self()},
-                    Loop()
-                end
-            )
-        end,
-        lists:seq(1, 16)
-    ),
-    lists:foreach(
-        fun(WorkerPid) ->
-            ExecutorPid ! {free, WorkerPid}
-        end,
-        WorkerPids
-    ),
-    SpawnFun = fun(Fun) when is_function(Fun) ->
-        ExecutorPid ! {task, Fun}
-    end,
+    {ok, AppendWorkerPoolPid} = start_worker_pool(),
 
     ProducerStatus = neutral_producer_status(),
 
     #{batch_setting := BatchSetting} = ProducerOption,
     #{age_limit := AgeLimit} = BatchSetting,
 
-    AgeLimitWorker =
+    AgeLimitWorkerPid =
         case AgeLimit of
             undefined ->
                 undefined;
@@ -74,7 +50,7 @@ init(
                 end
         end,
 
-    ProducerResource = build_producer_resource(AgeLimitWorker, SpawnFun),
+    ProducerResource = build_producer_resource(AgeLimitWorkerPid, AppendWorkerPoolPid),
 
     State = build_producer_state(
         ProducerStatus, ProducerOption, ProducerResource
@@ -151,10 +127,10 @@ build_producer_status(Records, BatchStatus) ->
         batch_status => BatchStatus
     }.
 
-build_producer_resource(AgeLimitWorker, SpawnFun) ->
+build_producer_resource(AgeLimitWorker, AppendWorkerPool) ->
     #{
         age_limit_worker => AgeLimitWorker,
-        spawn_fun => SpawnFun
+        append_worker_pool => AppendWorkerPool
     }.
 
 build_producer_state(ProducerStatus, ProducerOption, ProducerResource) ->
@@ -301,91 +277,31 @@ build_flush_request() ->
 
 % --------------------------------------------------------------------------------
 
-build_record_header(PayloadType, OrderingKey) ->
-    Flag =
-        case PayloadType of
-            json -> 0;
-            raw -> 1
-        end,
-
-    Timestamp = #{
-        seconds => erlang:system_time(second),
-        nanos => erlang:system_time(nanosecond)
-    },
-
-    #{
-        flag => Flag,
-        publish_time => Timestamp,
-        key => OrderingKey
-    }.
-
-do_append(Records, ServerUrl, StreamName, ReturnPid, SpawnFun) ->
+do_append(Records, AppendWorkerPool) ->
     Fun = fun(OrderingKey, Payloads) ->
-        SpawnFun(fun() ->
-            do_append_for_key(OrderingKey, Payloads, ServerUrl, StreamName, ReturnPid)
-        end)
+        do_append_for_key(OrderingKey, Payloads, AppendWorkerPool)
     end,
     maps:foreach(Fun, Records).
 
-do_append_for_key(OrderingKey, Payloads, ServerUrl, StreamName, ReturnPid) ->
-    AppendRecords = lists:map(
-        fun({PayloadType, Payload}) ->
-            RecordHeader = build_record_header(PayloadType, OrderingKey),
-            #{
-                header => RecordHeader,
-                payload => Payload
-            }
-        end,
-        Payloads
-    ),
-
-    {ok, Channel} = hstreamdb_erlang:start_client_channel(ServerUrl),
-    {ok, ServerNode} = hstreamdb_erlang:lookup_stream(Channel, StreamName, OrderingKey),
-
-    AppendServerUrl = hstreamdb_erlang:server_node_to_host_port(ServerNode, http),
-    {ok, InternalChannel} = hstreamdb_erlang:start_client_channel(AppendServerUrl),
-
-    {ok, #{recordIds := RecordIds}, _} =
-        case
-            hstream_server_h_stream_api_client:append(
-                #{
-                    streamName => StreamName,
-                    records => AppendRecords
-                },
-                #{channel => InternalChannel}
-            )
-        of
-            {ok, _, _} = AppendRet ->
-                AppendRet;
-            E ->
-                logger:error("append error: ~p~n", [E]),
-                hstreamdb_erlang_utils:throw_hstreamdb_exception(E)
-        end,
-    ReturnPid ! {record_ids, RecordIds},
-
-    _ = hstreamdb_erlang:stop_client_channel(InternalChannel),
-    _ = hstreamdb_erlang:stop_client_channel(Channel).
+do_append_for_key(OrderingKey, Payloads, AppendWorkerPool) ->
+    AppendRequest = hstreamdb_erlang_append_worker:build_append_request(OrderingKey, Payloads),
+    wpool:cast(AppendWorkerPool, AppendRequest).
 
 exec_flush(
     #{} = _FlushRequest,
     #{
         producer_status := ProducerStatus,
-        producer_option := ProducerOption,
-        producer_resource := #{
-            spawn_fun := SpawnFun
-        }
+        producer_resource := ProducerResource
     } = State
 ) ->
     #{
         records := Records
     } = ProducerStatus,
     #{
-        server_url := ServerUrl,
-        stream_name := StreamName,
-        return_pid := ReturnPid
-    } = ProducerOption,
+        append_worker_pool := AppendWorkerPool
+    } = ProducerResource,
 
-    Reply = do_append(Records, ServerUrl, StreamName, ReturnPid, SpawnFun),
+    Reply = do_append(Records, AppendWorkerPool),
 
     NewState = clear_buffer(State),
     {reply, Reply, NewState}.
@@ -409,16 +325,6 @@ exec_append(
     end.
 
 % --------------------------------------------------------------------------------
-
-executor() ->
-    receive
-        {free, Pid} ->
-            receive
-                {task, Fun} ->
-                    Pid ! Fun
-            end
-    end,
-    executor().
 
 start_worker_pool() ->
     wpool:start_pool(
