@@ -130,10 +130,6 @@ bench(Opts) ->
         Producers
     ),
 
-    % receive
-    %     finished ->
-
-    % end,
     ok.
 
 bench() ->
