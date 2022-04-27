@@ -3,7 +3,7 @@
 -behaviour(gen_server).
 -export([init/1, handle_call/3, handle_cast/2]).
 
--export([build_start_args/1, build_appender_option/3]).
+-export([build_start_args/1, build_appender_option/3, build_append_request/2]).
 
 % --------------------------------------------------------------------------------
 
@@ -88,6 +88,9 @@ build_record_header(PayloadType, OrderingKey) ->
         publish_time => Timestamp,
         key => OrderingKey
     }.
+
+build_append_request(OrderingKey, Payloads) ->
+    {append, {OrderingKey, Payloads}}.
 
 exec_append(
     {OrderingKey, Payloads},

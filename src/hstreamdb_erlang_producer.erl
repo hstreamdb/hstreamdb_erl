@@ -419,3 +419,14 @@ executor() ->
             end
     end,
     executor().
+
+start_worker_pool() ->
+    wpool:start_pool(
+        hstreamdb_erlang_utils:string_format("~s-~s", [
+            "HSTREAM_WORKER", hstreamdb_erlang_utils:uid()
+        ]),
+        [
+            {worker_type, gen_server},
+            {worker, hstreamdb_erlang_append_worker}
+        ]
+    ).
