@@ -15,6 +15,7 @@ remove_all_streams(Channel) ->
     ).
 
 bench(Opts) ->
+    SelfPid = self(),
     io:format("Opts: ~p~n", [Opts]),
     #{
         producerNum := ProducerNum,
@@ -28,7 +29,7 @@ bench(Opts) ->
         Opts,
     Payload = get_bytes(PayloadSize),
     #{record_count_limit := RecordCountLimit} = BatchSetting,
-    TurnN = 10000,
+    TurnN = 1000,
 
     SuccessAppends = atomics:new(1, [{signed, false}]),
     FailedAppends = atomics:new(1, [{signed, false}]),
@@ -69,7 +70,8 @@ bench(Opts) ->
                     RecvIncrLoopFn()
             after 5 * 1000 ->
                 exit(ReportLoop, finished),
-                io:format("[BENCH]: report finished")
+                SelfPid ! finished,
+                io:format("[BENCH]: report finished~n")
             end
         end
     ),
@@ -130,7 +132,9 @@ bench(Opts) ->
         Producers
     ),
 
-    ok.
+    receive
+        finished -> ok
+    end.
 
 bench() ->
     bench(#{
@@ -196,19 +200,22 @@ readme() ->
             Record = hstreamdb_erlang_producer:build_record(<<"_">>),
             hstreamdb_erlang_producer:append(Producer, Record)
         end,
-        lists:seq(0, 100)
+        lists:seq(1, 100)
     ),
 
     hstreamdb_erlang_producer:flush(Producer),
-    timer:sleep(1000),
 
-    RecordIds =
+    LoopFun = fun Loop() ->
         receive
-            {record_ids, Ret} -> Ret
-        end,
+            {record_ids, RecordIds} ->
+                io:format(
+                    "RecordIds: ~p~n", [RecordIds]
+                ),
+                Loop()
+        after 2 * 1000 -> ok
+        end
+    end,
 
-    io:format(
-        "RecordIds: ~p~n", [RecordIds]
-    ),
+    LoopFun(),
 
     ok.

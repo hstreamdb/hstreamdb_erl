@@ -15,16 +15,6 @@
 
 % --------------------------------------------------------------------------------
 
-uid() ->
-    {X0, X1, X2} = erlang:timestamp(),
-    hstreamdb_erlang_utils:string_format("~p-~p_~p_~p-~p", [
-        node(),
-        X0,
-        X1,
-        X2,
-        erlang:unique_integer()
-    ]).
-
 server_node_to_host_port(ServerNode) ->
     Host = maps:get(host, ServerNode),
     Port = maps:get(port, ServerNode),
@@ -38,7 +28,7 @@ start_client_channel(ServerUrl) ->
     start_client_channel(ServerUrl, #{}).
 
 start_client_channel(ServerUrl, Opts) ->
-    ChannelName = "hstream_client_channel-" ++ uid(),
+    ChannelName = "hstream_client_channel-" ++ hstreamdb_erlang_utils:uid(),
     case grpc_client_sup:create_channel_pool(ChannelName, ServerUrl, Opts) of
         {error, _} = E -> E;
         _ -> {ok, ChannelName}

@@ -7,8 +7,6 @@
   {git,"https://github.com/ninenines/cowlib",
        {ref,"c6553f8308a2ca5dcd69d845f0a7d098c40c3363"}},
   2},
- {<<"ctx">>,{pkg,<<"ctx">>,<<"0.6.0">>},0},
- {<<"eflambe">>,{pkg,<<"eflambe">>,<<"0.2.3">>},0},
  {<<"gpb">>,{pkg,<<"gpb">>,<<"4.19.5">>},1},
  {<<"gproc">>,{pkg,<<"gproc">>,<<"0.8.0">>},1},
  {<<"grpc">>,
@@ -19,22 +17,18 @@
   {git,"https://github.com/emqx/gun",
        {ref,"4faea40b9a8ca1eac5288355f8202e0cea379d50"}},
   1},
- {<<"meck">>,{pkg,<<"meck">>,<<"0.9.2">>},1},
  {<<"ranch">>,
   {git,"https://github.com/ninenines/ranch",
        {ref,"a692f44567034dacf5efcaa24a24183788594eb7"}},
-  2}]}.
+  2},
+ {<<"worker_pool">>,{pkg,<<"worker_pool">>,<<"6.0.0">>},0}]}.
 [
 {pkg_hash,[
- {<<"ctx">>, <<"8FF88B70E6400C4DF90142E7F130625B82086077A45364A78D208ED3ED53C7FE">>},
- {<<"eflambe">>, <<"9D38201A5C20D6269F7B9C383ED0F97A1A701ED07362045C9568612B26BFAAAE">>},
  {<<"gpb">>, <<"FF9D434308FD205C07B662A86C37E9579A8C9A04AD511D2C4DD63430A59F4729">>},
  {<<"gproc">>, <<"CEA02C578589C61E5341FCE149EA36CCEF236CC2ECAC8691FBA408E7EA77EC2F">>},
- {<<"meck">>, <<"85CCBAB053F1DB86C7CA240E9FC718170EE5BDA03810A6292B5306BF31BAE5F5">>}]},
+ {<<"worker_pool">>, <<"F7B442B30121EED6D8C828833533E5C15DB61E4AB2EF343C8B67824267656822">>}]},
 {pkg_hash_ext,[
- {<<"ctx">>, <<"A14ED2D1B67723DBEBBE423B28D7615EB0BDCBA6FF28F2D1F1B0A7E1D4AA5FC2">>},
- {<<"eflambe">>, <<"1C98692A3EE69408317D2AE3611B6DDC1E5A02850FBD6BA4224F7133A005508F">>},
  {<<"gpb">>, <<"21B76750D66B459CE40CB14298FB38EF8E0161D9B672A5284585C02563806F8E">>},
  {<<"gproc">>, <<"580ADAFA56463B75263EF5A5DF4C86AF321F68694E7786CB057FD805D1E2A7DE">>},
- {<<"meck">>, <<"81344F561357DC40A8344AFA53767C32669153355B626EA9FCBC8DA6B3045826">>}]}
+ {<<"worker_pool">>, <<"F9D95B85E80C5C27B7AB2E60BF780DA70A5E26DD9E6D30BE45032742FC039CC5">>}]}
 ].
