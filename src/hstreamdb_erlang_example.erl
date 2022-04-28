@@ -140,16 +140,37 @@ bench(Opts) ->
     end.
 
 bench() ->
-    bench(#{
-        producerNum => 8,
+    lists:foreach(
+        fun bench/1,
+        [
+            build_bench_settings(
+                8,
+                16,
+                hstreamdb_erlang_producer:build_batch_setting({record_count_limit, 400})
+            )
+        ]
+    ).
+
+common_bench_settings() ->
+    #{
         payloadSize => 1,
         serverUrl => "http://127.0.0.1:6570",
         replicationFactor => 1,
         backlogDuration => 60 * 30,
-        reportIntervalSeconds => 3,
-        batchSetting => hstreamdb_erlang_producer:build_batch_setting({record_count_limit, 400}),
-        append_worker_num => 16
-    }).
+        reportIntervalSeconds => 3
+    }.
+
+build_bench_settings(
+    ProducerNum,
+    AppendWorkerNum,
+    BatchSetting
+) ->
+    M = common_bench_settings(),
+    M#{
+        producerNum => ProducerNum,
+        batchSetting => BatchSetting,
+        append_worker_num => AppendWorkerNum
+    }.
 
 % --------------------------------------------------------------------------------
 bit_size_128() ->
