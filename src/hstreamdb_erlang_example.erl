@@ -1,4 +1,4 @@
--module(main).
+-module(hstreamdb_erlang_example).
 
 -export([bench/0, readme/0]).
 -export([remove_all_streams/1]).
