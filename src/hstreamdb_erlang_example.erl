@@ -3,6 +3,7 @@
 -export([bench/0, readme/0]).
 -export([remove_all_streams/1]).
 
+% --------------------------------------------------------------------------------
 remove_all_streams(Channel) ->
     {ok, Streams} = hstreamdb_erlang:list_streams(Channel),
     lists:foreach(
@@ -14,6 +15,7 @@ remove_all_streams(Channel) ->
         lists:map(fun(Stream) -> maps:get(streamName, Stream) end, Streams)
     ).
 
+% --------------------------------------------------------------------------------
 bench(Opts) ->
     SelfPid = self(),
     io:format("Opts: ~p~n", [Opts]),
@@ -24,7 +26,8 @@ bench(Opts) ->
         replicationFactor := ReplicationFactor,
         backlogDuration := BacklogDuration,
         reportIntervalSeconds := ReportIntervalSeconds,
-        batchSetting := BatchSetting
+        batchSetting := BatchSetting,
+        append_worker_num := AppendWorkerNum
     } =
         Opts,
     Payload = get_bytes(PayloadSize),
@@ -92,7 +95,7 @@ bench(Opts) ->
                     BacklogDuration
                 ),
             ProducerOption = hstreamdb_erlang_producer:build_producer_option(
-                ServerUrl, StreamName, BatchSetting, RecvIncrLoop
+                ServerUrl, StreamName, BatchSetting, RecvIncrLoop, AppendWorkerNum
             ),
             ProducerStartArgs = hstreamdb_erlang_producer:build_start_args(ProducerOption),
             {ok, Producer} = hstreamdb_erlang_producer:start_link(ProducerStartArgs),
@@ -144,9 +147,11 @@ bench() ->
         replicationFactor => 1,
         backlogDuration => 60 * 30,
         reportIntervalSeconds => 3,
-        batchSetting => hstreamdb_erlang_producer:build_batch_setting({record_count_limit, 400})
+        batchSetting => hstreamdb_erlang_producer:build_batch_setting({record_count_limit, 400}),
+        append_worker_num => 16
     }).
 
+% --------------------------------------------------------------------------------
 bit_size_128() ->
     <<"___hstream.io___">>.
 
@@ -166,6 +171,8 @@ get_bytes(Size, Unit) ->
         <<"">>,
         lists:duplicate(round(SizeBytes / 128), bit_size_128())
     ).
+
+% --------------------------------------------------------------------------------
 
 readme() ->
     ServerUrl = "http://127.0.0.1:6570",
