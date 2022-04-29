@@ -30,6 +30,7 @@ bench(Opts, Tid) ->
     #{
         producerNum := ProducerNum,
         payloadSize := PayloadSize,
+        keyNum := KeyNum,
         serverUrl := ServerUrl,
         replicationFactor := ReplicationFactor,
         backlogDuration := BacklogDuration,
@@ -131,10 +132,15 @@ bench(Opts, Tid) ->
         end
     end,
 
-    Record0 = hstreamdb_erlang_producer:build_record(Payload, "__0__"),
-    Record1 = hstreamdb_erlang_producer:build_record(Payload, "__1__"),
-    Record2 = hstreamdb_erlang_producer:build_record(Payload, "__2__"),
-    RecordXS = [Record0, Record1, Record2],
+    RecordXS = lists:map(
+        fun(IX) ->
+            hstreamdb_erlang_producer:build_record(
+                Payload,
+                hstreamdb_erlang_utils:string_format("~p-~s", [IX, hstreamdb_erlang_utils:uid()])
+            )
+        end,
+        lists:seq(1, KeyNum)
+    ),
 
     lists:foreach(
         fun(Producer) ->
@@ -241,7 +247,8 @@ common_bench_settings() ->
         serverUrl => "http://127.0.0.1:6570",
         replicationFactor => 1,
         backlogDuration => 60 * 30,
-        reportIntervalSeconds => 3
+        reportIntervalSeconds => 3,
+        keyNum => 3
     }.
 
 build_bench_settings(
@@ -281,6 +288,7 @@ get_bytes(Size, Unit) ->
 % --------------------------------------------------------------------------------
 
 readme() ->
+    % ServerUrl = "http://192.168.0.216:6570",
     ServerUrl = "http://127.0.0.1:6570",
     StreamName = hstreamdb_erlang_utils:string_format("~s-~p", [
         "___v2_test___", erlang:time()
