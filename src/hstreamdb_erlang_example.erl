@@ -3,6 +3,8 @@
 -export([bench/0, readme/0]).
 -export([remove_all_streams/1]).
 
+-define(ENABLE_PRINT, false).
+
 % --------------------------------------------------------------------------------
 
 remove_all_streams(Channel) ->
@@ -64,10 +66,19 @@ bench(Opts, Tid) ->
             ReportFailedAppends =
                 (FailedAppendsGet() - LastFailedAppendsGet()) / ReportIntervalSeconds,
             ReportThroughput = ReportSuccessAppends * PayloadSize / 1024,
-            io:format(
-                "[BENCH]: SuccessAppends=~p, FailedAppends=~p, throughput=~p~n",
-                [ReportSuccessAppends, ReportFailedAppends, ReportThroughput]
-            ),
+
+            [{success_appends, XS}] = ets:lookup(Tid, success_appends),
+            ets:insert(Tid, {success_appends, [ReportSuccessAppends | XS]}),
+            case ?ENABLE_PRINT of
+                true ->
+                    io:format(
+                        "[BENCH]: SuccessAppends=~p, FailedAppends=~p, throughput=~p~n",
+                        [ReportSuccessAppends, ReportFailedAppends, ReportThroughput]
+                    );
+                _ ->
+                    ok
+            end,
+
             ReportLoopFn()
         end),
 
@@ -158,33 +169,43 @@ bench() ->
             hstreamdb_erlang_producer:build_batch_setting({record_count_limit, 400})
         ),
         build_bench_settings(
-            8,
+            1,
             48,
             hstreamdb_erlang_producer:build_batch_setting({record_count_limit, 400})
         ),
         build_bench_settings(
             4,
-            16,
-            hstreamdb_erlang_producer:build_batch_setting({record_count_limit, 400})
-        ),
-        build_bench_settings(
             8,
-            16,
-            hstreamdb_erlang_producer:build_batch_setting({record_count_limit, 400})
-        ),
-        build_bench_settings(
-            8,
-            8,
-            hstreamdb_erlang_producer:build_batch_setting({record_count_limit, 400})
-        ),
-        build_bench_settings(
-            8,
-            32,
             hstreamdb_erlang_producer:build_batch_setting({record_count_limit, 400})
         ),
         build_bench_settings(
             4,
+            16,
+            hstreamdb_erlang_producer:build_batch_setting({record_count_limit, 400})
+        ),
+        build_bench_settings(
             8,
+            8,
+            hstreamdb_erlang_producer:build_batch_setting({record_count_limit, 400})
+        ),
+        build_bench_settings(
+            8,
+            16,
+            hstreamdb_erlang_producer:build_batch_setting({record_count_limit, 400})
+        ),
+        build_bench_settings(
+            16,
+            4,
+            hstreamdb_erlang_producer:build_batch_setting({record_count_limit, 400})
+        ),
+        build_bench_settings(
+            16,
+            8,
+            hstreamdb_erlang_producer:build_batch_setting({record_count_limit, 400})
+        ),
+        build_bench_settings(
+            16,
+            16,
             hstreamdb_erlang_producer:build_batch_setting({record_count_limit, 400})
         )
     ]),
@@ -196,9 +217,16 @@ bench() ->
                 list_to_atom(
                     hstreamdb_erlang_utils:string_format("HSTREAM_ETS-~p", [I])
                 ),
-                []
+                [
+                    public
+                ]
             ),
+            ets:insert(Tid, {success_appends, []}),
             bench(X, Tid),
+            [{success_appends, XS}] = ets:lookup(Tid, success_appends),
+            [_, _ | YS] = lists:sort(XS),
+            Avg = (lists:sum(YS) / length(YS)),
+            io:format("~p~n~p~n", [X, Avg]),
             timer:sleep(15 * 1000)
         end,
         lists:zip(
