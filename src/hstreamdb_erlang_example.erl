@@ -226,7 +226,7 @@ bench() ->
             [{success_appends, XS}] = ets:lookup(Tid, success_appends),
             [_, _ | YS] = lists:sort(XS),
             Avg = (lists:sum(YS) / length(YS)),
-            io:format("~p~n~p~n", [X, Avg]),
+            io:format("~p~n", [Avg]),
             timer:sleep(15 * 1000)
         end,
         lists:zip(
