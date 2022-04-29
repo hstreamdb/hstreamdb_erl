@@ -4,6 +4,7 @@
 -export([remove_all_streams/1]).
 
 % --------------------------------------------------------------------------------
+
 remove_all_streams(Channel) ->
     {ok, Streams} = hstreamdb_erlang:list_streams(Channel),
     lists:foreach(
@@ -15,8 +16,13 @@ remove_all_streams(Channel) ->
         lists:map(fun(Stream) -> maps:get(streamName, Stream) end, Streams)
     ).
 
+flatten_duplicate(N, XS) ->
+    XSS = lists:duplicate(N, XS),
+    lists:flatten(XSS).
+
 % --------------------------------------------------------------------------------
-bench(Opts) ->
+
+bench(Opts, Tid) ->
     SelfPid = self(),
     io:format("Opts: ~p~n", [Opts]),
     #{
@@ -140,20 +146,70 @@ bench(Opts) ->
     end.
 
 bench() ->
+    Opts = flatten_duplicate(3, [
+        build_bench_settings(
+            1,
+            16,
+            hstreamdb_erlang_producer:build_batch_setting({record_count_limit, 400})
+        ),
+        build_bench_settings(
+            1,
+            32,
+            hstreamdb_erlang_producer:build_batch_setting({record_count_limit, 400})
+        ),
+        build_bench_settings(
+            8,
+            48,
+            hstreamdb_erlang_producer:build_batch_setting({record_count_limit, 400})
+        ),
+        build_bench_settings(
+            4,
+            16,
+            hstreamdb_erlang_producer:build_batch_setting({record_count_limit, 400})
+        ),
+        build_bench_settings(
+            8,
+            16,
+            hstreamdb_erlang_producer:build_batch_setting({record_count_limit, 400})
+        ),
+        build_bench_settings(
+            8,
+            8,
+            hstreamdb_erlang_producer:build_batch_setting({record_count_limit, 400})
+        ),
+        build_bench_settings(
+            8,
+            32,
+            hstreamdb_erlang_producer:build_batch_setting({record_count_limit, 400})
+        ),
+        build_bench_settings(
+            4,
+            8,
+            hstreamdb_erlang_producer:build_batch_setting({record_count_limit, 400})
+        )
+    ]),
+
     lists:foreach(
-        fun bench/1,
-        [
-            build_bench_settings(
-                8,
-                16,
-                hstreamdb_erlang_producer:build_batch_setting({record_count_limit, 400})
-            )
-        ]
+        fun({X, I}) ->
+            io:format("~n"),
+            Tid = ets:new(
+                list_to_atom(
+                    hstreamdb_erlang_utils:string_format("HSTREAM_ETS-~p", [I])
+                ),
+                []
+            ),
+            bench(X, Tid),
+            timer:sleep(15 * 1000)
+        end,
+        lists:zip(
+            Opts, lists:seq(1, length(Opts))
+        )
     ).
 
 common_bench_settings() ->
     #{
         payloadSize => 1,
+        % serverUrl => "http://192.168.0.216:6570",
         serverUrl => "http://127.0.0.1:6570",
         replicationFactor => 1,
         backlogDuration => 60 * 30,
@@ -173,6 +229,7 @@ build_bench_settings(
     }.
 
 % --------------------------------------------------------------------------------
+
 bit_size_128() ->
     <<"___hstream.io___">>.
 
