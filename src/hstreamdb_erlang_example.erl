@@ -163,57 +163,18 @@ bench(Opts, Tid) ->
     end.
 
 bench() ->
-    Opts = flatten_duplicate(3, [
+    Fun = fun({ProducerNum, AppendWorkerNum}) ->
         build_bench_settings(
-            1,
-            16,
-            hstreamdb_erlang_producer:build_batch_setting({record_count_limit, 400})
-        ),
-        build_bench_settings(
-            1,
-            32,
-            hstreamdb_erlang_producer:build_batch_setting({record_count_limit, 400})
-        ),
-        build_bench_settings(
-            1,
-            48,
-            hstreamdb_erlang_producer:build_batch_setting({record_count_limit, 400})
-        ),
-        build_bench_settings(
-            4,
-            8,
-            hstreamdb_erlang_producer:build_batch_setting({record_count_limit, 400})
-        ),
-        build_bench_settings(
-            4,
-            16,
-            hstreamdb_erlang_producer:build_batch_setting({record_count_limit, 400})
-        ),
-        build_bench_settings(
-            8,
-            8,
-            hstreamdb_erlang_producer:build_batch_setting({record_count_limit, 400})
-        ),
-        build_bench_settings(
-            8,
-            16,
-            hstreamdb_erlang_producer:build_batch_setting({record_count_limit, 400})
-        ),
-        build_bench_settings(
-            16,
-            4,
-            hstreamdb_erlang_producer:build_batch_setting({record_count_limit, 400})
-        ),
-        build_bench_settings(
-            16,
-            8,
-            hstreamdb_erlang_producer:build_batch_setting({record_count_limit, 400})
-        ),
-        build_bench_settings(
-            16,
-            16,
+            ProducerNum,
+            AppendWorkerNum,
             hstreamdb_erlang_producer:build_batch_setting({record_count_limit, 400})
         )
+    end,
+
+    Opts = flatten_duplicate(2, [
+        Fun({ProducerNum, AppendWorkerNum})
+     || ProducerNum <- [1, 4, 8, 12, 16],
+        AppendWorkerNum <- [4, 8, 16, 24, 32]
     ]),
 
     lists:foreach(
@@ -232,7 +193,9 @@ bench() ->
             [{success_appends, XS}] = ets:lookup(Tid, success_appends),
             [_, _ | YS] = lists:sort(XS),
             Avg = (lists:sum(YS) / length(YS)),
-            io:format("~p~n", [Avg]),
+            ProducerNum = maps:get(producerNum, X),
+            AppendWorkerNum = maps:get(append_worker_num, X),
+            io:format("[OK]: ~p~n", [{ProducerNum, AppendWorkerNum, Avg}]),
             timer:sleep(15 * 1000)
         end,
         lists:zip(
