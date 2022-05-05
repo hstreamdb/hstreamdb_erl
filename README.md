@@ -60,7 +60,7 @@ hstreamdb_erlang:delete_stream(Channel, StreamName, #{
 BatchSetting = hstreamdb_erlang_producer:build_batch_setting({record_count_limit, 3}),
 StartArgs = #{
     producer_option => hstreamdb_erlang_producer:build_producer_option(
-        ServerUrl, StreamName, BatchSetting, self()
+        ServerUrl, StreamName, self(), 16, BatchSetting
     )
 },
 {ok, Producer} = hstreamdb_erlang_producer:start_link(StartArgs).

@@ -7,7 +7,7 @@
 -export([
     build_start_args/1,
     build_batch_setting/1, build_batch_setting/3,
-    build_producer_option/4,
+    build_producer_option/5,
     build_record/1, build_record/2, build_record/3
 ]).
 
@@ -116,10 +116,7 @@ build_batch_setting(RecordCountLimit, BytesLimit, AgeLimit) ->
         age_limit => AgeLimit
     }.
 
-build_producer_option(ServerUrl, StreamName, BatchSetting, ReturnPid) ->
-    build_producer_option(ServerUrl, StreamName, BatchSetting, ReturnPid, 16).
-
-build_producer_option(ServerUrl, StreamName, BatchSetting, ReturnPid, AppendWorkerNum) ->
+build_producer_option(ServerUrl, StreamName, ReturnPid, AppendWorkerNum, BatchSetting) ->
     #{
         server_url => ServerUrl,
         stream_name => StreamName,

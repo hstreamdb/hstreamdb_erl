@@ -3,6 +3,10 @@
 -export([bench/0, readme/0]).
 -export([remove_all_streams/1]).
 
+-define(ENABLE_PRINT, false).
+
+% --------------------------------------------------------------------------------
+
 remove_all_streams(Channel) ->
     {ok, Streams} = hstreamdb_erlang:list_streams(Channel),
     lists:foreach(
@@ -14,17 +18,25 @@ remove_all_streams(Channel) ->
         lists:map(fun(Stream) -> maps:get(streamName, Stream) end, Streams)
     ).
 
-bench(Opts) ->
+flatten_duplicate(N, XS) ->
+    XSS = lists:duplicate(N, XS),
+    lists:flatten(XSS).
+
+% --------------------------------------------------------------------------------
+
+bench(Opts, Tid) ->
     SelfPid = self(),
     io:format("Opts: ~p~n", [Opts]),
     #{
         producerNum := ProducerNum,
         payloadSize := PayloadSize,
+        keyNum := KeyNum,
         serverUrl := ServerUrl,
         replicationFactor := ReplicationFactor,
         backlogDuration := BacklogDuration,
         reportIntervalSeconds := ReportIntervalSeconds,
-        batchSetting := BatchSetting
+        batchSetting := BatchSetting,
+        append_worker_num := AppendWorkerNum
     } =
         Opts,
     Payload = get_bytes(PayloadSize),
@@ -55,10 +67,19 @@ bench(Opts) ->
             ReportFailedAppends =
                 (FailedAppendsGet() - LastFailedAppendsGet()) / ReportIntervalSeconds,
             ReportThroughput = ReportSuccessAppends * PayloadSize / 1024,
-            io:format(
-                "[BENCH]: SuccessAppends=~p, FailedAppends=~p, throughput=~p~n",
-                [ReportSuccessAppends, ReportFailedAppends, ReportThroughput]
-            ),
+
+            [{success_appends, XS}] = ets:lookup(Tid, success_appends),
+            ets:insert(Tid, {success_appends, [ReportSuccessAppends | XS]}),
+            case ?ENABLE_PRINT of
+                true ->
+                    io:format(
+                        "[BENCH]: SuccessAppends=~p, FailedAppends=~p, throughput=~p~n",
+                        [ReportSuccessAppends, ReportFailedAppends, ReportThroughput]
+                    );
+                _ ->
+                    ok
+            end,
+
             ReportLoopFn()
         end),
 
@@ -92,7 +113,7 @@ bench(Opts) ->
                     BacklogDuration
                 ),
             ProducerOption = hstreamdb_erlang_producer:build_producer_option(
-                ServerUrl, StreamName, BatchSetting, RecvIncrLoop
+                ServerUrl, StreamName, RecvIncrLoop, AppendWorkerNum, BatchSetting
             ),
             ProducerStartArgs = hstreamdb_erlang_producer:build_start_args(ProducerOption),
             {ok, Producer} = hstreamdb_erlang_producer:start_link(ProducerStartArgs),
@@ -111,10 +132,15 @@ bench(Opts) ->
         end
     end,
 
-    Record0 = hstreamdb_erlang_producer:build_record(Payload, "__0__"),
-    Record1 = hstreamdb_erlang_producer:build_record(Payload, "__1__"),
-    Record2 = hstreamdb_erlang_producer:build_record(Payload, "__2__"),
-    RecordXS = [Record0, Record1, Record2],
+    RecordXS = lists:map(
+        fun(IX) ->
+            hstreamdb_erlang_producer:build_record(
+                Payload,
+                hstreamdb_erlang_utils:string_format("~p-~s", [IX, hstreamdb_erlang_utils:uid()])
+            )
+        end,
+        lists:seq(1, KeyNum)
+    ),
 
     lists:foreach(
         fun(Producer) ->
@@ -137,15 +163,70 @@ bench(Opts) ->
     end.
 
 bench() ->
-    bench(#{
-        producerNum => 8,
+    Fun = fun({ProducerNum, AppendWorkerNum}) ->
+        build_bench_settings(
+            ProducerNum,
+            AppendWorkerNum,
+            hstreamdb_erlang_producer:build_batch_setting({record_count_limit, 400})
+        )
+    end,
+
+    Opts = flatten_duplicate(2, [
+        Fun({ProducerNum, AppendWorkerNum})
+     || ProducerNum <- [1, 4, 8, 12, 16],
+        AppendWorkerNum <- [4, 8, 16, 24, 32]
+    ]),
+
+    lists:foreach(
+        fun({X, I}) ->
+            io:format("~n"),
+            Tid = ets:new(
+                list_to_atom(
+                    hstreamdb_erlang_utils:string_format("HSTREAM_ETS-~p", [I])
+                ),
+                [
+                    public
+                ]
+            ),
+            ets:insert(Tid, {success_appends, []}),
+            bench(X, Tid),
+            [{success_appends, XS}] = ets:lookup(Tid, success_appends),
+            [_, _ | YS] = lists:sort(XS),
+            Avg = (lists:sum(YS) / length(YS)),
+            ProducerNum = maps:get(producerNum, X),
+            AppendWorkerNum = maps:get(append_worker_num, X),
+            io:format("[OK]: ~p~n", [{ProducerNum, AppendWorkerNum, Avg}]),
+            timer:sleep(15 * 1000)
+        end,
+        lists:zip(
+            Opts, lists:seq(1, length(Opts))
+        )
+    ).
+
+common_bench_settings() ->
+    #{
         payloadSize => 1,
+        % serverUrl => "http://192.168.0.216:6570",
         serverUrl => "http://127.0.0.1:6570",
         replicationFactor => 1,
         backlogDuration => 60 * 30,
         reportIntervalSeconds => 3,
-        batchSetting => hstreamdb_erlang_producer:build_batch_setting({record_count_limit, 400})
-    }).
+        keyNum => 3
+    }.
+
+build_bench_settings(
+    ProducerNum,
+    AppendWorkerNum,
+    BatchSetting
+) ->
+    M = common_bench_settings(),
+    M#{
+        producerNum => ProducerNum,
+        batchSetting => BatchSetting,
+        append_worker_num => AppendWorkerNum
+    }.
+
+% --------------------------------------------------------------------------------
 
 bit_size_128() ->
     <<"___hstream.io___">>.
@@ -167,7 +248,10 @@ get_bytes(Size, Unit) ->
         lists:duplicate(round(SizeBytes / 128), bit_size_128())
     ).
 
+% --------------------------------------------------------------------------------
+
 readme() ->
+    % ServerUrl = "http://192.168.0.216:6570",
     ServerUrl = "http://127.0.0.1:6570",
     StreamName = hstreamdb_erlang_utils:string_format("~s-~p", [
         "___v2_test___", erlang:time()
@@ -188,7 +272,7 @@ readme() ->
 
     StartArgs = #{
         producer_option => hstreamdb_erlang_producer:build_producer_option(
-            ServerUrl, StreamName, BatchSetting, self()
+            ServerUrl, StreamName, self(), 16, BatchSetting
         )
     },
     {ok, Producer} = hstreamdb_erlang_producer:start_link(StartArgs),
