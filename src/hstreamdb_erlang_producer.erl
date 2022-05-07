@@ -1,7 +1,7 @@
 -module(hstreamdb_erlang_producer).
 
 -behaviour(gen_server).
--export([init/1, handle_call/3, handle_cast/2, handle_info/2]).
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2]).
 
 -export([start/1, start_link/1, append/2, flush/1]).
 -export([
@@ -263,6 +263,18 @@ handle_info(Info, State) ->
             NewState = State,
             {noreply, NewState}
     end.
+
+terminate(
+    _Reason,
+    #{
+        producer_resource := ProducerResource
+    } = _State
+) ->
+    #{
+        append_worker_pool := AppendWorkerPool
+    } = ProducerResource,
+    wpool:stop_pool(AppendWorkerPool),
+    ok.
 
 % --------------------------------------------------------------------------------
 

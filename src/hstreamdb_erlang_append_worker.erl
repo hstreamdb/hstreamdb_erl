@@ -1,7 +1,7 @@
 -module(hstreamdb_erlang_append_worker).
 
 -behaviour(gen_server).
--export([init/1, handle_call/3, handle_cast/2]).
+-export([init/1, handle_call/3, handle_cast/2, terminate/2]).
 
 -export([build_start_args/1, build_appender_option/3, build_append_request/2]).
 
@@ -21,7 +21,7 @@ init(
         server_url := ServerUrl
     } = AppenderOption,
     {_, AppenderState} = get_channel(
-        ServerUrl, build_appender_state(AppenderOption, build_appender_resource(#{}))
+        ServerUrl, build_appender_state(AppenderOption, neutral_appender_resource())
     ),
     {ok, AppenderState}.
 
@@ -44,6 +44,9 @@ build_appender_resource(Channels) when is_map(Channels) ->
     #{
         channels => Channels
     }.
+
+neutral_appender_resource() ->
+    build_appender_resource(#{}).
 
 % --------------------------------------------------------------------------------
 
@@ -68,6 +71,20 @@ handle_cast({Method, Body} = _Request, State) ->
     case Method of
         append -> exec_append(Body, State)
     end.
+
+terminate(
+    _Reason,
+    #{
+        appender_resource := #{channels := Channels}
+    } = _State
+) ->
+    maps:foreach(
+        fun({_, Channel}) ->
+            ok = grpc_client_sup:stop_client_channel(Channel)
+        end,
+        Channels
+    ),
+    ok.
 
 % --------------------------------------------------------------------------------
 
@@ -115,29 +132,28 @@ exec_append(
         Payloads
     ),
 
-    {Channel, State0} = get_channel(ServerUrl, State),
-    {ok, ServerNode} = hstreamdb_erlang:lookup_stream(Channel, StreamName, OrderingKey),
+    try
+        {Channel, State0} = get_channel(ServerUrl, State),
+        {ok, ServerNode} = hstreamdb_erlang:lookup_stream(Channel, StreamName, OrderingKey),
 
-    AppendServerUrl = hstreamdb_erlang:server_node_to_host_port(ServerNode, http),
-    {InternalChannel, State1} = get_channel(AppendServerUrl, State0),
+        AppendServerUrl = hstreamdb_erlang:server_node_to_host_port(ServerNode, http),
+        {InternalChannel, State1} = get_channel(AppendServerUrl, State0),
 
-    {ok, #{recordIds := RecordIds}, _} =
-        case
-            hstream_server_h_stream_api_client:append(
-                #{
-                    streamName => StreamName,
-                    records => AppendRecords
-                },
-                #{channel => InternalChannel}
-            )
-        of
-            {ok, _, _} = AppendRet ->
-                AppendRet;
-            E ->
-                logger:error("append error: ~p~n", [E]),
-                hstreamdb_erlang_utils:throw_hstreamdb_exception(E)
-        end,
-    ReturnPid ! {record_ids, RecordIds},
+        {ok, #{recordIds := RecordIds}, _} = hstream_server_h_stream_api_client:append(
+            #{
+                streamName => StreamName,
+                records => AppendRecords
+            },
+            #{channel => InternalChannel}
+        ),
+        ReturnPid ! {record_ids, RecordIds},
 
-    NewState = State1,
-    {noreply, NewState}.
+        NewState = State1,
+        {noreply, NewState}
+    catch
+        Reason ->
+            % logger:error("append error: ~p~n", [Reason]),
+            ReturnPid ! {append_error, Reason},
+
+            {noreply, build_appender_state(AppenderOption, neutral_appender_resource())}
+    end.

@@ -284,7 +284,7 @@ readme() ->
             Record = hstreamdb_erlang_producer:build_record(<<"_">>),
             hstreamdb_erlang_producer:append(Producer, Record)
         end,
-        lists:seq(1, 100)
+        lists:seq(1, 1000000)
     ),
 
     hstreamdb_erlang_producer:flush(Producer),
@@ -295,6 +295,9 @@ readme() ->
                 io:format(
                     "RecordIds: ~p~n", [RecordIds]
                 ),
+                Loop();
+            {append_error, Reason} ->
+                io:format("Append error: ~p~n", [Reason]),
                 Loop()
         after 2 * 1000 -> ok
         end
