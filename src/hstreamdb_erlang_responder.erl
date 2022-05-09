@@ -10,14 +10,20 @@ init(_Args) -> undefined.
 
 % --------------------------------------------------------------------------------
 
-build_responder_state(ResponderStatus) ->
+build_responder_state(ResponderStatus, ResponderResource) ->
     #{
-        responder_status => ResponderStatus
+        responder_status => ResponderStatus,
+        responder_resource => ResponderResource
     }.
 
 build_responder_status(AckIds) ->
     #{
         ack_ids => AckIds
+    }.
+
+build_responder_resource({Stream, Builder}) ->
+    #{
+        stream => {Stream, Builder}
     }.
 
 neutral_responder_status() ->
@@ -26,21 +32,29 @@ neutral_responder_status() ->
 
 % --------------------------------------------------------------------------------
 
+get_ack_ids(ResponderState) ->
+    #{responder_status := #{ack_ids := AckIds}} = ResponderState,
+    AckIds.
+
 add_to_buffer(
     RecordId,
-    #{responder_status := ResponderStatus} = _State
+    #{
+        responder_status := ResponderStatus,
+        responder_resource := ResponderResource
+    } = _State
 ) ->
     #{
         ack_ids := AckIds
     } = ResponderStatus,
     NewAckIds = [RecordId | AckIds],
     NewResponderStatus = build_responder_status(NewAckIds),
-    build_responder_state(NewResponderStatus).
+    build_responder_state(NewResponderStatus, ResponderResource).
 
-clear_buffer(_State) ->
+clear_buffer(State) ->
+    #{responder_resource := ResponderResource} = State,
     NewAckIds = [],
     NewResponderStatus = build_responder_status(NewAckIds),
-    build_responder_state(NewResponderStatus).
+    build_responder_state(NewResponderStatus, ResponderResource).
 
 % --------------------------------------------------------------------------------
 
@@ -62,14 +76,36 @@ exec_ack(
     #{
         record_id := RecordId
     } = AckRequest,
-    State
+    #{
+        responder_resource := ResponderResource
+    } = State
 ) ->
-    Reply = #{},
-    NewState = State,
+    State0 = add_to_buffer(RecordId, State),
+    #{stream := {Stream, Builder}} = ResponderResource,
+    #{responder_status := #{ack_ids := AckIds}} = State0,
+    Reply = do_flush(AckIds, {Stream, Builder}),
+    NewState = clear_buffer(State0),
     {reply, Reply, NewState}.
+
+do_flush(AckIds, {Stream, Builder}) ->
+    grpc_client:send(Stream, Builder(AckIds)).
 
 % --------------------------------------------------------------------------------
 
-do_flush(AckIds, ServerUrl, SubscriptionId, ConsumerName, OrderingKey) ->
-    {ok, Channel} = hstreamdb_erlang:start_client_channel(ServerUrl),
-    _ = hstreamdb_erlang:stop_client_channel(Channel).
+new_responder_stream(Channel, SubscriptionId, ConsumerName, OrderingKey) ->
+    AckIds = [],
+    StreamingFetchRequestBuilder = fun(X) ->
+        #{
+            subscriptionId => SubscriptionId,
+            consumerName => ConsumerName,
+            orderingKey => OrderingKey,
+            ackIds => X
+        }
+    end,
+    StreamingFetchRequest = StreamingFetchRequestBuilder(AckIds),
+    {
+        hstream_server_h_stream_api_client:streaming_fetch(StreamingFetchRequest, #{
+            channel => Channel
+        }),
+        StreamingFetchRequestBuilder
+    }.
