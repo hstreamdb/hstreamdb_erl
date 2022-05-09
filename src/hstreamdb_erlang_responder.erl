@@ -103,9 +103,12 @@ new_responder_stream(Channel, SubscriptionId, ConsumerName, OrderingKey) ->
         }
     end,
     StreamingFetchRequest = StreamingFetchRequestBuilder(AckIds),
-    {
-        hstream_server_h_stream_api_client:streaming_fetch(StreamingFetchRequest, #{
+    {ok, StreamingFetchStream} = hstream_server_h_stream_api_client:streaming_fetch(
+        StreamingFetchRequest, #{
             channel => Channel
-        }),
+        }
+    ),
+    {
+        StreamingFetchStream,
         StreamingFetchRequestBuilder
     }.
