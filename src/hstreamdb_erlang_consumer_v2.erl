@@ -1,10 +1,10 @@
 -module(hstreamdb_erlang_consumer_v2).
 
--export([start/5, ack/2, get_record_id/1, get_record/1]).
+-export([start/4, ack/2, get_record_id/1, get_record/1]).
 
 % --------------------------------------------------------------------------------
 
-start(ServerUrl, SubscriptionId, ConsumerName, OrderingKey, ConsumerFun) ->
+start(ServerUrl, SubscriptionId, ConsumerName, ConsumerFun) ->
     {ok, Channel} = hstreamdb_erlang:start_client_channel(ServerUrl),
     {ok,
         #{
@@ -26,7 +26,6 @@ start(ServerUrl, SubscriptionId, ConsumerName, OrderingKey, ConsumerFun) ->
         #{
             subscriptionId => SubscriptionId,
             consumerName => ConsumerName,
-            orderingKey => OrderingKey,
             ackIds => AckIds
         }
     end,
@@ -39,9 +38,9 @@ start(ServerUrl, SubscriptionId, ConsumerName, OrderingKey, ConsumerFun) ->
             channel => SubscriptionChannel
         }
     ),
-    ok = grpc_client:send(StreamingFetchStream, InitStreamingFetchRequest),
     LoopRecv = fun LoopRecvFun() ->
-        case grpc_client:recv(StreamingFetchStream) of
+        Recv = grpc_client:recv(StreamingFetchStream),
+        case Recv of
             {ok, RecvXS} when not is_tuple(RecvXS) ->
                 lists:foreach(
                     fun(RecvX) ->
@@ -61,9 +60,13 @@ start(ServerUrl, SubscriptionId, ConsumerName, OrderingKey, ConsumerFun) ->
                 LoopRecvFun()
         end
     end,
+    timer:sleep(200),
+    ok = grpc_client:send(StreamingFetchStream, InitStreamingFetchRequest),
     LoopRecv().
 
-ack(Stream, AckIds) ->
+ack(Stream, AckId) when is_map(AckId) ->
+    ack(Stream, [AckId]);
+ack(Stream, AckIds) when is_list(AckIds) ->
     {StreamingFetchStream, StreamingFetchRequestBuilder} = Stream,
     grpc_client:send(
         StreamingFetchStream,

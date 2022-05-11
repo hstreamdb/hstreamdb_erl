@@ -281,24 +281,8 @@ consumer_test() ->
     ConsumerName = hstreamdb_erlang_utils:string_format("~s-~p-~p", [
         "___v2_test___", erlang:unique_integer(), erlang:system_time()
     ]),
-    OrderingKey = "",
 
     ok = hstreamdb_erlang:create_subscription(Channel, SubscriptionId, StreamName),
-
-    ConsumerFun = fun(
-        Stream, ReceivedRecord
-    ) ->
-        io:format("~p~n", ReceivedRecord),
-        hstreamdb_erlang_consumer_v2:ack(
-            Stream, hstreamdb_erlang_consumer_v2:get_record_id(ReceivedRecord)
-        )
-    end,
-
-    spawn(fun() ->
-        hstreamdb_erlang_consumer_v2:start(
-            ServerUrl, SubscriptionId, ConsumerName, OrderingKey, ConsumerFun
-        )
-    end),
 
     lists:foreach(
         fun(_) ->
@@ -307,11 +291,21 @@ consumer_test() ->
             ),
             hstreamdb_erlang_producer:append(Producer, Record)
         end,
-        lists:seq(1, 10000)
+        lists:seq(1, 1000)
     ),
-    hstreamdb_erlang_producer:flush(Producer),
 
-    _ = hstreamdb_erlang:stop_client_channel(Channel).
+    ConsumerFun = fun(
+        Stream, ReceivedRecord
+    ) ->
+        io:format("~p~n", [ReceivedRecord]),
+        ok = hstreamdb_erlang_consumer_v2:ack(
+            Stream, hstreamdb_erlang_consumer_v2:get_record_id(ReceivedRecord)
+        )
+    end,
+
+    hstreamdb_erlang_consumer_v2:start(
+        ServerUrl, SubscriptionId, ConsumerName, ConsumerFun
+    ).
 
 readme() ->
     % ServerUrl = "http://192.168.0.216:6570",
