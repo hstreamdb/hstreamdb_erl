@@ -1,68 +1,80 @@
 -module(hstreamdb_erlang_consumer).
 
--behaviour(gen_server).
+-export([start/4, ack/2, get_record_id/1, get_record/1]).
 
 % --------------------------------------------------------------------------------
 
-build_start_args(ServerUrl, ReturnPid, SubscriptionId, ConsumerName, OrderingKey) ->
-    #{
-        server_url => ServerUrl,
-        return_pid => ReturnPid,
-        subscriptionId => SubscriptionId,
-        consumerName => ConsumerName,
-        orderingKey => OrderingKey
-    }.
-
-init(Args) ->
-    #{
-        server_url := ServerUrl,
-        return_pid := ReturnPid,
-        subscriptionId := SubscriptionId,
-        consumerName := ConsumerName,
-        orderingKey := OrderingKey
-    } = Args,
-
-    ConsumerOption = build_consumer_option(ReturnPid),
-
+start(ServerUrl, SubscriptionId, ConsumerName, ConsumerFun) ->
     {ok, Channel} = hstreamdb_erlang:start_client_channel(ServerUrl),
-    Stream = new_consumer_stream(Channel, SubscriptionId, ConsumerName, OrderingKey),
-    ConsumerResource = build_consumer_resource(Stream),
-
-    State = build_consumer_state(ConsumerOption, ConsumerResource),
-    {ok, State}.
-
-% --------------------------------------------------------------------------------
-
-build_consumer_option(ReturnPid) ->
-    #{
-        return_pid => ReturnPid
-    }.
-
-build_consumer_resource(Stream) ->
-    #{
-        stream => Stream
-    }.
-
-build_consumer_state(ConsumerOption, ConsumerResource) ->
-    #{
-        consumer_option => ConsumerOption,
-        consumer_resource => ConsumerResource
-    }.
-
-% --------------------------------------------------------------------------------
-
-new_consumer_stream(Channel, SubscriptionId, ConsumerName, OrderingKey) ->
-    AckIds = [],
-    StreamingFetchRequest =
+    {ok,
         #{
-            subscriptionId => SubscriptionId,
-            consumerName => ConsumerName,
-            orderingKey => OrderingKey,
-            ackIds => AckIds
+            serverNode := ServerNode
         },
-    {ok, StreamingFetchStream} = hstream_server_h_stream_api_client:streaming_fetch(
-        StreamingFetchRequest, #{
+        _} = hstream_server_h_stream_api_client:lookup_subscription(
+        #{
+            subscriptionId => SubscriptionId
+        },
+        #{
             channel => Channel
         }
     ),
-    StreamingFetchStream.
+    ok = hstreamdb_erlang:stop_client_channel(Channel),
+    SubscriptionServerUrl = hstreamdb_erlang:server_node_to_host_port(ServerNode, http),
+    {ok, SubscriptionChannel} = hstreamdb_erlang:start_client_channel(SubscriptionServerUrl),
+
+    StreamingFetchRequestBuilder = fun(AckIds) ->
+        #{
+            subscriptionId => SubscriptionId,
+            consumerName => ConsumerName,
+            ackIds => AckIds
+        }
+    end,
+
+    AckIds = [],
+    InitStreamingFetchRequest = StreamingFetchRequestBuilder(AckIds),
+    {ok, StreamingFetchStream} = hstream_server_h_stream_api_client:streaming_fetch(
+        #{},
+        #{
+            channel => SubscriptionChannel
+        }
+    ),
+    LoopRecv = fun LoopRecvFun() ->
+        Recv = grpc_client:recv(StreamingFetchStream),
+        case Recv of
+            {ok, RecvXS} when not is_tuple(RecvXS) ->
+                lists:foreach(
+                    fun(RecvX) ->
+                        #{receivedRecords := ReceivedRecords} = RecvX,
+                        lists:foreach(
+                            fun(ReceivedRecord) ->
+                                ConsumerFun(
+                                    {StreamingFetchStream, StreamingFetchRequestBuilder},
+                                    ReceivedRecord
+                                )
+                            end,
+                            ReceivedRecords
+                        )
+                    end,
+                    RecvXS
+                ),
+                LoopRecvFun()
+        end
+    end,
+    timer:sleep(200),
+    ok = grpc_client:send(StreamingFetchStream, InitStreamingFetchRequest),
+    LoopRecv().
+
+ack(Stream, AckId) when is_map(AckId) ->
+    ack(Stream, [AckId]);
+ack(Stream, AckIds) when is_list(AckIds) ->
+    {StreamingFetchStream, StreamingFetchRequestBuilder} = Stream,
+    grpc_client:send(
+        StreamingFetchStream,
+        StreamingFetchRequestBuilder(AckIds)
+    ).
+
+get_record_id(ReceivedRecord) ->
+    maps:get(recordId, ReceivedRecord).
+
+get_record(ReceivedRecord) ->
+    maps:get(record, ReceivedRecord).
