@@ -8,7 +8,7 @@
 
 -export([list_streams/1, create_stream/4, delete_stream/2, delete_stream/3]).
 
--export([list_subscriptions/1]).
+-export([list_subscriptions/1, create_subscription/3, create_subscription/5]).
 
 -export([server_node_to_host_port/1, server_node_to_host_port/2]).
 -export([lookup_stream/3]).
@@ -120,6 +120,33 @@ list_subscriptions(Channel) ->
     case Ret of
         {ok, Resp, _} ->
             {ok, maps:get(subscription, Resp)};
+        R ->
+            R
+    end.
+
+create_subscription(Channel, SubscriptionId, StreamName) ->
+    AckTimeoutSeconds = 600,
+    MaxUnackedRecords = 10000,
+    create_subscription(Channel, SubscriptionId, StreamName, AckTimeoutSeconds, MaxUnackedRecords).
+
+create_subscription(Channel, SubscriptionId, StreamName, AckTimeoutSeconds, MaxUnackedRecords) ->
+    true = AckTimeoutSeconds > 0 andalso AckTimeoutSeconds < 36000,
+    true = MaxUnackedRecords > 0,
+
+    Ret = hstream_server_h_stream_api_client:create_subscription(
+        #{
+            subscriptionId => SubscriptionId,
+            streamName => StreamName,
+            ackTimeoutSeconds => AckTimeoutSeconds,
+            maxUnackedRecords => MaxUnackedRecords
+        },
+        #{
+            channel => Channel
+        }
+    ),
+    case Ret of
+        {ok, _, _} ->
+            ok;
         R ->
             R
     end.

@@ -1,6 +1,6 @@
 -module(hstreamdb_erlang_example).
 
--export([bench/0, readme/0]).
+-export([bench/0, readme/0, consumer_test/0]).
 -export([remove_all_streams/1]).
 
 -define(ENABLE_PRINT, false).
@@ -249,6 +249,63 @@ get_bytes(Size, Unit) ->
     ).
 
 % --------------------------------------------------------------------------------
+
+consumer_test() ->
+    ServerUrl = "http://127.0.0.1:6570",
+    StreamName = hstreamdb_erlang_utils:string_format("~s-~p-~p", [
+        "___v2_test___", erlang:unique_integer(), erlang:system_time()
+    ]),
+    BatchSetting = hstreamdb_erlang_producer:build_batch_setting({record_count_limit, 3}),
+
+    {ok, Channel} = hstreamdb_erlang:start_client_channel(ServerUrl),
+    _ = hstreamdb_erlang:delete_stream(Channel, StreamName, #{
+        ignoreNonExist => true,
+        force => true
+    }),
+    ReplicationFactor = 3,
+    BacklogDuration = 60 * 30,
+    ok = hstreamdb_erlang:create_stream(
+        Channel, StreamName, ReplicationFactor, BacklogDuration
+    ),
+
+    StartArgs = #{
+        producer_option => hstreamdb_erlang_producer:build_producer_option(
+            ServerUrl, StreamName, self(), 16, BatchSetting
+        )
+    },
+    {ok, Producer} = hstreamdb_erlang_producer:start_link(StartArgs),
+
+    SubscriptionId = hstreamdb_erlang_utils:string_format("~s-~p-~p", [
+        "___v2_test___", erlang:unique_integer(), erlang:system_time()
+    ]),
+    ConsumerName = hstreamdb_erlang_utils:string_format("~s-~p-~p", [
+        "___v2_test___", erlang:unique_integer(), erlang:system_time()
+    ]),
+
+    ok = hstreamdb_erlang:create_subscription(Channel, SubscriptionId, StreamName),
+
+    lists:foreach(
+        fun(_) ->
+            Record = hstreamdb_erlang_producer:build_record(
+                <<"_", (erlang:integer_to_binary(erlang:unique_integer()))/binary, "_">>
+            ),
+            hstreamdb_erlang_producer:append(Producer, Record)
+        end,
+        lists:seq(1, 1000)
+    ),
+
+    ConsumerFun = fun(
+        Stream, ReceivedRecord
+    ) ->
+        io:format("~p~n", [ReceivedRecord]),
+        ok = hstreamdb_erlang_consumer:ack(
+            Stream, hstreamdb_erlang_consumer:get_record_id(ReceivedRecord)
+        )
+    end,
+
+    hstreamdb_erlang_consumer:start(
+        ServerUrl, SubscriptionId, ConsumerName, ConsumerFun
+    ).
 
 readme() ->
     % ServerUrl = "http://192.168.0.216:6570",
