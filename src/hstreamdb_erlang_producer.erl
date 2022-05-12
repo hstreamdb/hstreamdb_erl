@@ -257,7 +257,7 @@ handle_info(Info, State) ->
     case Info of
         flush ->
             {_, FlushRequest} = build_flush_request(),
-            {reply, {ok, _}, NewState} = exec_flush(FlushRequest, State),
+            {reply, ok, NewState} = exec_flush(FlushRequest, State),
             {noreply, NewState};
         _ ->
             NewState = State,
