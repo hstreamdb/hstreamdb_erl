@@ -2,6 +2,8 @@
 
 An OTP library for [HStreamDB](https://hstream.io/).
 
+Git HEAD EDoc: https://hstreamdb.github.io/hstreamdb-erlang/
+
 [![.github/workflows/ci.yml](https://github.com/hstreamdb/hstreamdb-erlang/actions/workflows/ci.yml/badge.svg)](https://github.com/hstreamdb/hstreamdb-erlang/actions/workflows/ci.yml)
 
 ## Installation
