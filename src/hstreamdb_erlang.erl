@@ -24,6 +24,8 @@ server_node_to_host_port(ServerNode, Protocol) ->
     hstreamdb_erlang_utils:string_format("~p://~s", [Protocol, server_node_to_host_port(ServerNode)]).
 
 % --------------------------------------------------------------------------------
+-type channel() :: string().
+
 start_client_channel(ServerUrl) ->
     start_client_channel(ServerUrl, #{}).
 
@@ -50,6 +52,10 @@ with_client_channel(ServerUrl, Opts, Fun) ->
 
 % --------------------------------------------------------------------------------
 
+-spec list_streams(Channel :: channel()) ->
+    {ok, Streams :: list('HStreamApi':stream())}
+    | {error, Reason :: term()}.
+
 list_streams(Channel) ->
     Ret = hstream_server_h_stream_api_client:list_streams(
         #{},
@@ -61,6 +67,13 @@ list_streams(Channel) ->
         R ->
             R
     end.
+
+-spec create_stream(
+    Channel :: channel(),
+    StreamName :: string(),
+    ReplicationFactor :: integer(),
+    BacklogDuration :: integer()
+) -> ok | {error, Reason :: term()}.
 
 create_stream(Channel, StreamName, ReplicationFactor, BacklogDuration) ->
     Ret = hstream_server_h_stream_api_client:create_stream(
@@ -76,7 +89,13 @@ create_stream(Channel, StreamName, ReplicationFactor, BacklogDuration) ->
         R -> R
     end.
 
+-spec delete_stream(Channel :: channel(), StreamName :: string()) -> ok | {error, Reason :: term()}.
 delete_stream(Channel, StreamName) -> delete_stream(Channel, StreamName, #{}).
+
+-spec delete_stream(Channel :: channel(), StreamName :: string(), Opts :: delete_stream_opts()) ->
+    ok | {error, Reason :: term()}.
+
+-type delete_stream_opts() :: map().
 
 delete_stream(Channel, StreamName, Opts) ->
     IgnoreNonExist = maps:get(ignoreNonExist, Opts, false),
@@ -129,6 +148,13 @@ create_subscription(Channel, SubscriptionId, StreamName) ->
     MaxUnackedRecords = 10000,
     create_subscription(Channel, SubscriptionId, StreamName, AckTimeoutSeconds, MaxUnackedRecords).
 
+-spec create_subscription(
+    Channel :: channel(),
+    SubscriptionId :: string(),
+    StreamName :: string(),
+    AckTimeoutSeconds :: integer(),
+    MaxUnackedRecords :: integer()
+) -> ok | {error, Reason :: term()}.
 create_subscription(Channel, SubscriptionId, StreamName, AckTimeoutSeconds, MaxUnackedRecords) ->
     true = AckTimeoutSeconds > 0 andalso AckTimeoutSeconds < 36000,
     true = MaxUnackedRecords > 0,
