@@ -3,7 +3,7 @@
 -export([bench/0, readme/0, consumer_test/0]).
 -export([remove_all_streams/1]).
 
--define(ENABLE_PRINT, false).
+-define(ENABLE_PRINT, true).
 
 % --------------------------------------------------------------------------------
 
@@ -75,9 +75,7 @@ bench(Opts, Tid) ->
                     io:format(
                         "[BENCH]: SuccessAppends=~p, FailedAppends=~p, throughput=~p~n",
                         [ReportSuccessAppends, ReportFailedAppends, ReportThroughput]
-                    );
-                _ ->
-                    ok
+                    )
             end,
 
             ReportLoopFn()
@@ -238,9 +236,9 @@ get_bytes(Size, Unit) ->
     SizeBytes =
         case Unit of
             k ->
-                Size * 1024;
-            m ->
-                Size * 1024 * 1024
+                Size * 1024
+            % m ->
+            %     Size * 1024 * 1024
         end,
     lists:foldl(
         fun(X, Acc) -> <<X/binary, Acc/binary>> end,

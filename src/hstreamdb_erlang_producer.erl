@@ -13,10 +13,19 @@
 
 % --------------------------------------------------------------------------------
 
+-type start_args() :: #{
+    producer_option => producer_option()
+}.
+
+-spec build_start_args(ProducerOption :: producer_option()) ->
+    start_args().
+
 build_start_args(ProducerOption) ->
     #{
         producer_option => ProducerOption
     }.
+
+-spec init(Args :: start_args()) -> {ok, producer_state()}.
 
 init(
     #{
@@ -74,6 +83,9 @@ start(Args) ->
 start_link(Args) ->
     gen_server:start_link(?MODULE, Args, []).
 
+-spec append(Producer :: gen_server:server_ref(), Record :: record()) ->
+    ok.
+
 append(Producer, Record) ->
     gen_server:call(
         Producer,
@@ -81,6 +93,9 @@ append(Producer, Record) ->
             Record
         )
     ).
+
+-spec flush(Producer :: gen_server:server_ref()) ->
+    ok.
 
 flush(Producer) ->
     gen_server:call(
@@ -108,6 +123,16 @@ check_batch_setting(RecordCountLimit, BytesLimit, AgeLimit) ->
     BatchSettingList = [RecordCountLimit, BytesLimit, AgeLimit],
     true = lists:any(fun(X) -> X /= undefined end, BatchSettingList).
 
+-type batch_setting() :: #{
+    record_count_limit => integer(),
+    bytes_limit => integer(),
+    age_limit => integer()
+}.
+
+-spec build_batch_setting(
+    RecordCountLimit :: integer(), BytesLimit :: integer(), AgeLimit :: integer()
+) -> batch_setting().
+
 build_batch_setting(RecordCountLimit, BytesLimit, AgeLimit) ->
     check_batch_setting(RecordCountLimit, BytesLimit, AgeLimit),
     #{
@@ -115,6 +140,22 @@ build_batch_setting(RecordCountLimit, BytesLimit, AgeLimit) ->
         bytes_limit => BytesLimit,
         age_limit => AgeLimit
     }.
+
+-type producer_option() :: #{
+    server_url => string(),
+    stream_name => string(),
+    batch_setting => batch_setting(),
+    return_pid => pid(),
+    append_worker_num => integer()
+}.
+
+-spec build_producer_option(
+    ServerUrl :: string(),
+    StreamName :: string(),
+    ReturnPid :: pid(),
+    AppendWorkerNum :: integer(),
+    BatchSetting :: batch_setting()
+) -> producer_option().
 
 build_producer_option(ServerUrl, StreamName, ReturnPid, AppendWorkerNum, BatchSetting) ->
     #{
@@ -125,23 +166,56 @@ build_producer_option(ServerUrl, StreamName, ReturnPid, AppendWorkerNum, BatchSe
         append_worker_num => AppendWorkerNum
     }.
 
+-type batch_status() :: #{
+    record_count => integer(),
+    bytes => integer()
+}.
+
+-spec build_batch_status(RecordCount :: integer(), Bytes :: integer()) -> batch_status().
 build_batch_status(RecordCount, Bytes) ->
     #{
         record_count => RecordCount,
         bytes => Bytes
     }.
 
+-type producer_status() :: #{
+    records => map(),
+    batch_status => batch_status()
+}.
+
+-spec build_producer_status(Records :: map(), BatchStatus :: batch_status()) -> producer_status().
 build_producer_status(Records, BatchStatus) ->
     #{
         records => Records,
         batch_status => BatchStatus
     }.
 
+-type producer_resource() :: #{
+    age_limit_worker => pid(),
+    append_worker_pool => atom()
+}.
+
+-spec build_producer_resource(AgeLimitWorker :: pid(), AppendWorkerPool :: atom()) ->
+    producer_resource().
+
 build_producer_resource(AgeLimitWorker, AppendWorkerPool) ->
     #{
         age_limit_worker => AgeLimitWorker,
         append_worker_pool => AppendWorkerPool
     }.
+
+-type producer_state() :: #{
+    producer_status => producer_status(),
+    producer_option => producer_option(),
+    producer_resource => producer_resource()
+}.
+
+-spec build_producer_state(
+    ProducerStatus :: producer_status(),
+    ProducerOption :: producer_option(),
+    ProducerResource :: producer_resource()
+) ->
+    producer_state().
 
 build_producer_state(ProducerStatus, ProducerOption, ProducerResource) ->
     #{
@@ -150,10 +224,14 @@ build_producer_state(ProducerStatus, ProducerOption, ProducerResource) ->
         producer_resource => ProducerResource
     }.
 
+-spec neutral_batch_status() -> batch_status().
+
 neutral_batch_status() ->
     RecordCount = 0,
     Bytes = 0,
     build_batch_status(RecordCount, Bytes).
+
+-spec neutral_producer_status() -> producer_status().
 
 neutral_producer_status() ->
     Records = #{},
@@ -257,7 +335,7 @@ handle_info(Info, State) ->
     case Info of
         flush ->
             {_, FlushRequest} = build_flush_request(),
-            {reply, {ok, _}, NewState} = exec_flush(FlushRequest, State),
+            {reply, ok, NewState} = exec_flush(FlushRequest, State),
             {noreply, NewState};
         _ ->
             NewState = State,
@@ -266,6 +344,10 @@ handle_info(Info, State) ->
 
 % --------------------------------------------------------------------------------
 
+-type payload_type() :: json | raw.
+
+-type record() :: {payload_type(), binary(), string()}.
+
 build_record(Payload) when is_binary(Payload) ->
     build_record(raw, Payload, "").
 
@@ -273,6 +355,12 @@ build_record(PayloadType, Payload) when is_atom(PayloadType) andalso is_binary(P
     build_record(PayloadType, Payload, "");
 build_record(Payload, OrderingKey) when is_binary(Payload) andalso is_list(OrderingKey) ->
     build_record(raw, Payload, OrderingKey).
+
+-spec build_record(PayloadType, Payload, OrderingKey) -> Record when
+    PayloadType :: payload_type(),
+    Payload :: binary(),
+    OrderingKey :: string(),
+    Record :: record().
 
 build_record(PayloadType, Payload, OrderingKey) ->
     {PayloadType, Payload, OrderingKey}.
