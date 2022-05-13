@@ -78,3 +78,22 @@ receive
         )
 end.
 ```
+
+### Consume Data from a Stream
+
+```erl
+ok = hstreamdb_erlang:create_subscription(Channel, SubscriptionId, StreamName),
+
+ConsumerFun = fun(
+    Stream, ReceivedRecord
+) ->
+    io:format("~p~n", [ReceivedRecord]),
+    ok = hstreamdb_erlang_consumer:ack(
+        Stream, hstreamdb_erlang_consumer:get_record_id(ReceivedRecord)
+    )
+end,
+
+hstreamdb_erlang_consumer:start(
+    ServerUrl, SubscriptionId, ConsumerName, ConsumerFun
+).
+```

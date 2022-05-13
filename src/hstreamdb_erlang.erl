@@ -8,7 +8,11 @@
 
 -export([list_streams/1, create_stream/4, delete_stream/2, delete_stream/3]).
 
--export([list_subscriptions/1, create_subscription/3, create_subscription/5]).
+-export([
+    list_subscriptions/1,
+    create_subscription/3, create_subscription/5,
+    delete_subscription/2, delete_subscription/3
+]).
 
 -export([server_node_to_host_port/1, server_node_to_host_port/2]).
 -export([lookup_stream/3]).
@@ -170,6 +174,42 @@ create_subscription(Channel, SubscriptionId, StreamName, AckTimeoutSeconds, MaxU
             channel => Channel
         }
     ),
+    case Ret of
+        {ok, _, _} ->
+            ok;
+        R ->
+            R
+    end.
+
+-type delete_subscription_opts() :: map().
+
+-spec delete_subscription(
+    Channel :: channel(), SubscriptionId :: string()
+) -> ok | {error, Reason :: term()}.
+
+delete_subscription(
+    Channel, SubscriptionId
+) ->
+    delete_subscription(Channel, SubscriptionId, #{}).
+
+-spec delete_subscription(
+    Channel :: channel(), SubscriptionId :: string(), Opts :: delete_subscription_opts()
+) -> ok | {error, Reason :: term()}.
+
+delete_subscription(
+    Channel, SubscriptionId, Opts
+) ->
+    Force = maps:get(force, Opts, true),
+    Ret = hstream_server_h_stream_api_client:delete_subscription(
+        #{
+            subscriptionId => SubscriptionId,
+            force => Force
+        },
+        #{
+            channel => Channel
+        }
+    ),
+
     case Ret of
         {ok, _, _} ->
             ok;

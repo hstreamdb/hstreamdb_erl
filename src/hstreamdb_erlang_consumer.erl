@@ -4,6 +4,24 @@
 
 % --------------------------------------------------------------------------------
 
+-type record_id() :: map().
+
+-type responder() :: {grpc_client:grpcstream(), fun()}.
+
+-type received_record() :: #{
+    recordId => record_id(),
+    record => binary()
+}.
+
+-type consumer_fun() :: fun((responder(), received_record()) -> any()).
+
+-spec start(
+    ServerUrl :: string(),
+    SubscriptionId :: string(),
+    ConsumerName :: string(),
+    ConsumerFun :: consumer_fun()
+) -> any().
+
 start(ServerUrl, SubscriptionId, ConsumerName, ConsumerFun) ->
     {ok, Channel} = hstreamdb_erlang:start_client_channel(ServerUrl),
     {ok,
@@ -64,17 +82,25 @@ start(ServerUrl, SubscriptionId, ConsumerName, ConsumerFun) ->
     ok = grpc_client:send(StreamingFetchStream, InitStreamingFetchRequest),
     LoopRecv().
 
-ack(Stream, AckId) when is_map(AckId) ->
-    ack(Stream, [AckId]);
-ack(Stream, AckIds) when is_list(AckIds) ->
-    {StreamingFetchStream, StreamingFetchRequestBuilder} = Stream,
+-spec ack(Responder, AckIds) -> ok when
+    Responder :: responder(),
+    AckIds :: record_id() | list(record_id()).
+
+ack(Responder, AckId) when is_map(AckId) ->
+    ack(Responder, [AckId]);
+ack(Responder, AckIds) when is_list(AckIds) ->
+    {StreamingFetchStream, StreamingFetchRequestBuilder} = Responder,
     grpc_client:send(
         StreamingFetchStream,
         StreamingFetchRequestBuilder(AckIds)
     ).
 
+-spec get_record_id(ReceivedRecord :: received_record()) -> record_id().
+
 get_record_id(ReceivedRecord) ->
     maps:get(recordId, ReceivedRecord).
+
+-spec get_record(ReceivedRecord :: received_record()) -> binary().
 
 get_record(ReceivedRecord) ->
     maps:get(record, ReceivedRecord).
