@@ -292,17 +292,31 @@ consumer_test() ->
         lists:seq(1, 1000)
     ),
 
+    SelfPid = self(),
+
     ConsumerFun = fun(
-        Stream, ReceivedRecord
+        ReceivedRecord, Ack
     ) ->
         io:format("~p~n", [ReceivedRecord]),
-        ok = hstreamdb_erlang_consumer:ack(
-            Stream, hstreamdb_erlang_consumer:get_record_id(ReceivedRecord)
-        )
+        ok = Ack(),
+        SelfPid ! consumer_ok
     end,
 
-    hstreamdb_erlang_consumer:start(
-        ServerUrl, SubscriptionId, ConsumerName, ConsumerFun
+    spawn(fun() ->
+        hstreamdb_erlang_producer:flush(Producer),
+        hstreamdb_erlang_consumer:start(
+            ServerUrl, SubscriptionId, ConsumerName, ConsumerFun
+        )
+    end),
+
+    lists:foreach(
+        fun(_) ->
+            receive
+                consumer_ok -> ok
+            after 2000 -> exit(-1)
+            end
+        end,
+        lists:seq(1, 1000)
     ).
 
 readme() ->

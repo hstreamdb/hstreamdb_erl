@@ -85,12 +85,10 @@ end.
 ok = hstreamdb_erlang:create_subscription(Channel, SubscriptionId, StreamName),
 
 ConsumerFun = fun(
-    Stream, ReceivedRecord
+    ReceivedRecord, AckFun
 ) ->
     io:format("~p~n", [ReceivedRecord]),
-    ok = hstreamdb_erlang_consumer:ack(
-        Stream, hstreamdb_erlang_consumer:get_record_id(ReceivedRecord)
-    )
+    ok = AckFun(),
 end,
 
 hstreamdb_erlang_consumer:start(

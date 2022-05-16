@@ -1,19 +1,19 @@
 -module(hstreamdb_erlang_consumer).
 
--export([start/4, ack/2, get_record_id/1, get_record/1]).
+-export([start/4, get_record_id/1, get_record/1]).
 
 % --------------------------------------------------------------------------------
 
 -type record_id() :: map().
 
--type responder() :: {grpc_client:grpcstream(), fun()}.
+-type responder() :: fun(() -> ok).
 
 -type received_record() :: #{
     recordId => record_id(),
     record => binary()
 }.
 
--type consumer_fun() :: fun((responder(), received_record()) -> any()).
+-type consumer_fun() :: fun((received_record(), responder()) -> any()).
 
 -spec start(
     ServerUrl :: string(),
@@ -65,9 +65,15 @@ start(ServerUrl, SubscriptionId, ConsumerName, ConsumerFun) ->
                         #{receivedRecords := ReceivedRecords} = RecvX,
                         lists:foreach(
                             fun(ReceivedRecord) ->
+                                Responder = fun() ->
+                                    ack(
+                                        {StreamingFetchStream, StreamingFetchRequestBuilder},
+                                        get_record_id(ReceivedRecord)
+                                    )
+                                end,
                                 ConsumerFun(
-                                    {StreamingFetchStream, StreamingFetchRequestBuilder},
-                                    ReceivedRecord
+                                    ReceivedRecord,
+                                    Responder
                                 )
                             end,
                             ReceivedRecords
@@ -83,7 +89,7 @@ start(ServerUrl, SubscriptionId, ConsumerName, ConsumerFun) ->
     LoopRecv().
 
 -spec ack(Responder, AckIds) -> ok when
-    Responder :: responder(),
+    Responder :: {grpc_client:grpcstream(), fun()},
     AckIds :: record_id() | list(record_id()).
 
 ack(Responder, AckId) when is_map(AckId) ->
