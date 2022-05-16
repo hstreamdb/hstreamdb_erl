@@ -2,6 +2,8 @@
 
 -export([start/4, get_record_id/1, get_record/1]).
 
+-export_type([consumer_fun/0, responder/0, received_record/0, record_id/0]).
+
 % --------------------------------------------------------------------------------
 
 -type record_id() :: map().
@@ -22,6 +24,11 @@
     ConsumerFun :: consumer_fun()
 ) -> any().
 
+%% @doc
+%% Start a consumer.
+%% ConsumerFun: `fun(ReceivedRecord, AckFun)' where `AckFun() -> ok' is used for acknowledging that the message has been successfully received.
+%% @end
+
 start(ServerUrl, SubscriptionId, ConsumerName, ConsumerFun) ->
     {ok, Channel} = hstreamdb_erlang:start_client_channel(ServerUrl),
     {ok,
@@ -37,7 +44,7 @@ start(ServerUrl, SubscriptionId, ConsumerName, ConsumerFun) ->
         }
     ),
     ok = hstreamdb_erlang:stop_client_channel(Channel),
-    SubscriptionServerUrl = hstreamdb_erlang:server_node_to_host_port(ServerNode, http),
+    SubscriptionServerUrl = hstreamdb_erlang_utils:server_node_to_host_port(ServerNode, http),
     {ok, SubscriptionChannel} = hstreamdb_erlang:start_client_channel(SubscriptionServerUrl),
 
     StreamingFetchRequestBuilder = fun(AckIds) ->

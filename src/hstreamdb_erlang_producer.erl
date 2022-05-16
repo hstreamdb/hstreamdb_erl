@@ -11,6 +11,8 @@
     build_record/1, build_record/2, build_record/3
 ]).
 
+-export_type([start_args/0, batch_setting/0, producer_option/0, payload_type/0, record/0]).
+
 % --------------------------------------------------------------------------------
 
 -type start_args() :: #{
@@ -86,6 +88,8 @@ start_link(Args) ->
 -spec append(Producer :: gen_server:server_ref(), Record :: record()) ->
     ok.
 
+%% @doc Append a record to buffer.
+
 append(Producer, Record) ->
     gen_server:call(
         Producer,
@@ -96,6 +100,8 @@ append(Producer, Record) ->
 
 -spec flush(Producer :: gen_server:server_ref()) ->
     ok.
+
+%% @doc Flush the buffer.
 
 flush(Producer) ->
     gen_server:call(

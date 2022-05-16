@@ -118,7 +118,7 @@ exec_append(
     {Channel, State0} = get_channel(ServerUrl, State),
     {ok, ServerNode} = lookup_stream(Channel, StreamName, OrderingKey),
 
-    AppendServerUrl = hstreamdb_erlang:server_node_to_host_port(ServerNode, http),
+    AppendServerUrl = hstreamdb_erlang_utils:server_node_to_host_port(ServerNode, http),
     {InternalChannel, State1} = get_channel(AppendServerUrl, State0),
 
     {ok, #{recordIds := RecordIds}, _} =

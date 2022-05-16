@@ -14,23 +14,23 @@
     delete_subscription/2, delete_subscription/3
 ]).
 
--export([server_node_to_host_port/1, server_node_to_host_port/2]).
+-export_type([delete_stream_opts/0, delete_subscription_opts/0]).
 
 % --------------------------------------------------------------------------------
 
-server_node_to_host_port(ServerNode) ->
-    Host = maps:get(host, ServerNode),
-    Port = maps:get(port, ServerNode),
-    hstreamdb_erlang_utils:string_format("~s:~p", [Host, Port]).
+-type hstreamdb_channel() :: string().
 
-server_node_to_host_port(ServerNode, Protocol) ->
-    hstreamdb_erlang_utils:string_format("~p://~s", [Protocol, server_node_to_host_port(ServerNode)]).
+-spec start_client_channel(ServerUrl :: string()) -> {ok, hstreamdb_channel()}.
 
-% --------------------------------------------------------------------------------
--type channel() :: string().
+%% @doc Start HStreamDB client channel.
 
 start_client_channel(ServerUrl) ->
     start_client_channel(ServerUrl, #{}).
+
+-spec start_client_channel(ServerUrl :: string(), Opts :: grpc_client_sup:options()) ->
+    {ok, hstreamdb_channel()}.
+
+%% @doc Start HStreamDB client channel with gRPC options.
 
 start_client_channel(ServerUrl, Opts) ->
     ChannelName = "hstream_client_channel-" ++ hstreamdb_erlang_utils:uid(),
@@ -39,25 +39,33 @@ start_client_channel(ServerUrl, Opts) ->
         _ -> {ok, ChannelName}
     end.
 
+-spec stop_client_channel(Channel :: string()) -> ok.
+
+%% @doc Stop HStreamDB client channel.
+
 stop_client_channel(Channel) -> grpc_client_sup:stop_channel_pool(Channel).
+
+-spec with_client_channel(ServerUrl :: string(), Fun :: fun()) -> any().
 
 with_client_channel(ServerUrl, Fun) ->
     with_client_channel(ServerUrl, #{}, Fun).
 
+-spec with_client_channel(ServerUrl :: string(), Opts :: grpc_client_sup:options(), Fun :: fun()) ->
+    any().
+
 with_client_channel(ServerUrl, Opts, Fun) ->
-    {Channel, Ret} =
-        case start_client_channel(ServerUrl, Opts) of
-            {error, Reason} -> hstreamdb_erlang_utils:throw_hstreamdb_exception(Reason);
-            {ok, Ch} -> {Ch, Fun(Ch)}
-        end,
-    _ = stop_client_channel(Channel),
+    {ok, Ch} = start_client_channel(ServerUrl, Opts),
+    Ret = {Ch, Fun(Ch)},
+    _ = stop_client_channel(Ch),
     Ret.
 
 % --------------------------------------------------------------------------------
 
--spec list_streams(Channel :: channel()) ->
+-spec list_streams(Channel :: hstreamdb_channel()) ->
     {ok, Streams :: list('HStreamApi':stream())}
     | {error, Reason :: term()}.
+
+%% @doc List all streams.
 
 list_streams(Channel) ->
     Ret = hstream_server_h_stream_api_client:list_streams(
@@ -72,11 +80,13 @@ list_streams(Channel) ->
     end.
 
 -spec create_stream(
-    Channel :: channel(),
+    Channel :: hstreamdb_channel(),
     StreamName :: string(),
     ReplicationFactor :: integer(),
     BacklogDuration :: integer()
 ) -> ok | {error, Reason :: term()}.
+
+%% @doc Create a new stream.
 
 create_stream(Channel, StreamName, ReplicationFactor, BacklogDuration) ->
     Ret = hstream_server_h_stream_api_client:create_stream(
@@ -92,13 +102,24 @@ create_stream(Channel, StreamName, ReplicationFactor, BacklogDuration) ->
         R -> R
     end.
 
--spec delete_stream(Channel :: channel(), StreamName :: string()) -> ok | {error, Reason :: term()}.
+-spec delete_stream(Channel :: hstreamdb_channel(), StreamName :: string()) ->
+    ok | {error, Reason :: term()}.
+
+%% @doc Delete the specified stream with the name of stream.
+
 delete_stream(Channel, StreamName) -> delete_stream(Channel, StreamName, #{}).
 
--spec delete_stream(Channel :: channel(), StreamName :: string(), Opts :: delete_stream_opts()) ->
+-spec delete_stream(
+    Channel :: hstreamdb_channel(), StreamName :: string(), Opts :: delete_stream_opts()
+) ->
     ok | {error, Reason :: term()}.
 
 -type delete_stream_opts() :: map().
+
+%% @doc
+%% Delete the specified stream with the name of stream.
+%% Avaiable options are: `#{ignoreNonExist => bool, force => bool}'
+%% @end
 
 delete_stream(Channel, StreamName, Opts) ->
     IgnoreNonExist = maps:get(ignoreNonExist, Opts, false),
@@ -119,6 +140,8 @@ delete_stream(Channel, StreamName, Opts) ->
 
 % --------------------------------------------------------------------------------
 
+%% @doc List all subscriptions.
+
 list_subscriptions(Channel) ->
     Ret = hstream_server_h_stream_api_client:list_subscriptions(
         #{},
@@ -131,18 +154,22 @@ list_subscriptions(Channel) ->
             R
     end.
 
+%% @doc Create a new subscription with 600 seconds ack timeout, 10000 max unacked records.
+
 create_subscription(Channel, SubscriptionId, StreamName) ->
     AckTimeoutSeconds = 600,
     MaxUnackedRecords = 10000,
     create_subscription(Channel, SubscriptionId, StreamName, AckTimeoutSeconds, MaxUnackedRecords).
 
 -spec create_subscription(
-    Channel :: channel(),
+    Channel :: hstreamdb_channel(),
     SubscriptionId :: string(),
     StreamName :: string(),
     AckTimeoutSeconds :: integer(),
     MaxUnackedRecords :: integer()
 ) -> ok | {error, Reason :: term()}.
+
+%% @doc Create a new Subscription.
 create_subscription(Channel, SubscriptionId, StreamName, AckTimeoutSeconds, MaxUnackedRecords) ->
     true = AckTimeoutSeconds > 0 andalso AckTimeoutSeconds < 36000,
     true = MaxUnackedRecords > 0,
@@ -168,8 +195,10 @@ create_subscription(Channel, SubscriptionId, StreamName, AckTimeoutSeconds, MaxU
 -type delete_subscription_opts() :: map().
 
 -spec delete_subscription(
-    Channel :: channel(), SubscriptionId :: string()
+    Channel :: hstreamdb_channel(), SubscriptionId :: string()
 ) -> ok | {error, Reason :: term()}.
+
+%% @doc Delete (force) the specified subscription with the name of subscription.
 
 delete_subscription(
     Channel, SubscriptionId
@@ -177,8 +206,13 @@ delete_subscription(
     delete_subscription(Channel, SubscriptionId, #{}).
 
 -spec delete_subscription(
-    Channel :: channel(), SubscriptionId :: string(), Opts :: delete_subscription_opts()
+    Channel :: hstreamdb_channel(), SubscriptionId :: string(), Opts :: delete_subscription_opts()
 ) -> ok | {error, Reason :: term()}.
+
+%% @doc
+%% Delete the specified subscription with the name of subscription.
+%% Avaiable options are: `#{force => bool}'
+%% @end
 
 delete_subscription(
     Channel, SubscriptionId, Opts
