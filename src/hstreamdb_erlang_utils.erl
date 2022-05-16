@@ -5,6 +5,18 @@
 -export([throw_hstreamdb_exception/1]).
 -export([uid/0]).
 
+-export([server_node_to_host_port/1, server_node_to_host_port/2]).
+
+% --------------------------------------------------------------------------------
+
+server_node_to_host_port(ServerNode) ->
+    Host = maps:get(host, ServerNode),
+    Port = maps:get(port, ServerNode),
+    hstreamdb_erlang_utils:string_format("~s:~p", [Host, Port]).
+
+server_node_to_host_port(ServerNode, Protocol) ->
+    hstreamdb_erlang_utils:string_format("~p://~s", [Protocol, server_node_to_host_port(ServerNode)]).
+
 string_format(Pattern, Values) ->
     lists:flatten(
         io_lib:format(Pattern, Values)

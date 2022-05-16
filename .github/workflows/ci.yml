@@ -16,4 +16,4 @@ jobs:
           otp-version: ${{ matrix.otp }}
           rebar3-version: ${{ matrix.rebar3 }}
       - run: |
-          rebar3 fmt --check && rebar3 dialyzer && rebar3 compile
+          rebar3 fmt --check && rebar3 dialyzer && rebar3 compile && rebar3 edoc
