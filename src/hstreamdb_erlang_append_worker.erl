@@ -116,7 +116,7 @@ exec_append(
     ),
 
     {Channel, State0} = get_channel(ServerUrl, State),
-    {ok, ServerNode} = hstreamdb_erlang:lookup_stream(Channel, StreamName, OrderingKey),
+    {ok, ServerNode} = lookup_stream(Channel, StreamName, OrderingKey),
 
     AppendServerUrl = hstreamdb_erlang:server_node_to_host_port(ServerNode, http),
     {InternalChannel, State1} = get_channel(AppendServerUrl, State0),
@@ -141,3 +141,20 @@ exec_append(
 
     NewState = State1,
     {noreply, NewState}.
+
+% --------------------------------------------------------------------------------
+
+lookup_stream(Channel, StreamName, OrderingKey) ->
+    Ret = hstream_server_h_stream_api_client:lookup_stream(
+        #{
+            streamName => StreamName,
+            orderingKey => OrderingKey
+        },
+        #{channel => Channel}
+    ),
+    case Ret of
+        {ok, Resp, _} ->
+            {ok, maps:get(serverNode, Resp)};
+        R ->
+            R
+    end.
