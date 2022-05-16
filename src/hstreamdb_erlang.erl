@@ -15,7 +15,6 @@
 ]).
 
 -export([server_node_to_host_port/1, server_node_to_host_port/2]).
--export([lookup_stream/3]).
 
 % --------------------------------------------------------------------------------
 
@@ -116,21 +115,6 @@ delete_stream(Channel, StreamName, Opts) ->
     case Ret of
         {ok, _, _} -> ok;
         R -> R
-    end.
-
-lookup_stream(Channel, StreamName, OrderingKey) ->
-    Ret = hstream_server_h_stream_api_client:lookup_stream(
-        #{
-            streamName => StreamName,
-            orderingKey => OrderingKey
-        },
-        #{channel => Channel}
-    ),
-    case Ret of
-        {ok, Resp, _} ->
-            {ok, maps:get(serverNode, Resp)};
-        R ->
-            R
     end.
 
 % --------------------------------------------------------------------------------
