@@ -30,6 +30,7 @@ Currently, all user functions are exposed through the
 
 - module [hstreamdb_erlang](./src/hstreamdb_erlang.erl)
 - module [hstreamdb_erlang_producer](./src/hstreamdb_erlang_producer.erl)
+- module [hstreamdb_erlang_consumer](./src/hstreamdb_erlang_consumer.erl)
 
 ### Connect to HStreamDB
 
