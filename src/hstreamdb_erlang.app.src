@@ -1,6 +1,6 @@
 {application, hstreamdb_erlang, [
     {description, "An OTP library"},
-    {vsn, "1.0.0"},
+    {vsn, "0.1.0"},
     {licenses, ["BSD-3-Clause"]},
     {registered, []},
     {applications, [
