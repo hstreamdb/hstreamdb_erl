@@ -1,6 +1,7 @@
 {application, hstreamdb_erlang, [
     {description, "An OTP library"},
-    {vsn, "0.1.0"},
+    {vsn, "1.0.0"},
+    {licenses, ["BSD-3-Clause"]},
     {registered, []},
     {applications, [
         kernel,
@@ -9,5 +10,5 @@
     {env, []},
     {modules, []},
 
-    {links, []}
+    {links, ["https://github.com/hstreamdb/hstreamdb-erlang.git"]}
 ]}.
