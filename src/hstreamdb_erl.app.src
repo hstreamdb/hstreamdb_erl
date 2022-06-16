@@ -1,0 +1,18 @@
+{application, hstreamdb_erl,
+ [{description, "An OTP application"},
+  {vsn, "0.1.0"},
+  {registered, []},
+  {mod, {hstreamdb_erl_app, []}},
+  {applications,
+   [kernel,
+    stdlib,
+    grpc,
+    worker_pool
+   ]},
+  {env,[]},
+  {modules, []},
+
+  {licenses, ["Apache-2.0"]},
+
+  {links, ["https://github.com/DDDHuang/hstreamdb_erl.git"]}
+ ]}.

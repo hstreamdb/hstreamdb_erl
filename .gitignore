@@ -7,6 +7,7 @@ _*
 *.swp
 *.swo
 .erlang.cookie
+.vscode
 ebin
 log
 erl_crash.dump
@@ -17,9 +18,4 @@ _build
 *.iml
 rebar3.crashdump
 *~
-
-HStreamApi.erl
-hstream_server_h_stream_api_bhvr.erl
-hstream_server_h_stream_api_client.erl
-
-/doc
+rebar.lock
