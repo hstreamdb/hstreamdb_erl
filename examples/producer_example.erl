@@ -13,6 +13,15 @@ start() ->
     ],
     {ok, Client} = hstreamdb:start_client(test_c, ClientOptions),
     io:format("start client  ~p~n", [Client]),
+    Start2 = hstreamdb:start_client(test_c, ClientOptions),
+    io:format("start client2  ~p~n", [Start2]),
+
+    StopClient = hstreamdb:stop_client(test_c),
+    io:format("stop client ~p~n", [StopClient]),
+
+    Start3 = hstreamdb:start_client(test_c, ClientOptions),
+    io:format("start client3  ~p~n", [Start3]),
+
     Echo = hstreamdb:echo(Client),
     io:format("echo  ~p~n", [Echo]),
     ProducerOptions = [
@@ -42,8 +51,8 @@ start() ->
     Stop = hstreamdb:stop_producer(Producer),
     io:format("stop producer  ~p~n", [Stop]),
 
-    % AppendAfterStop = hstreamdb:append(Producer, Record1),
-    % io:format("append after stop ~p~n", [AppendAfterStop]),
+    AppendAfterStop = hstreamdb:append(Producer, Record1),
+    io:format("append after stop ~p~n", [AppendAfterStop]),
     ok.
 
 callback(A) ->

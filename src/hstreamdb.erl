@@ -55,6 +55,9 @@ start_client(Name, Options) ->
     end.
 
 stop_client(#{channel := Channel}) ->
+    grpc_client_sup:stop_channel_pool(Channel);
+stop_client(Name) ->
+    Channel =  hstreamdb_channel_mgr:channel_name(Name),
     grpc_client_sup:stop_channel_pool(Channel).
 
 start_producer(Client, Producer, ProducerOptions) ->
