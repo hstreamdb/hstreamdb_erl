@@ -50,13 +50,15 @@ stop(#{channels := Channels}) ->
 
 lookup_channel(OrderingKey, ChannelM = #{channels := Channels,
                                          stream := Stream,
-                                         rpc_options := RPCOptions,
+                                         rpc_options := RPCOptions0,
                                          url_prefix := UrlPrefix}) ->
     case maps:get(OrderingKey, Channels, undefined) of
         undefined ->
             case lookup_stream(OrderingKey, Stream, ChannelM) of
                 {ok, #{host := Host, port := Port}} ->
                     ServerURL = lists:concat(io_lib:format("~s~s~s~p", [UrlPrefix, Host, ":", Port])),
+                    %% Producer need only one channel. Because it is sync call.
+                    RPCOptions = RPCOptions0#{pool_size => 1},
                     case start_channel(random_channel_name(OrderingKey), ServerURL, RPCOptions) of
                         {ok, Channel} ->
                             {ok, Channel, ChannelM#{channels => Channels#{OrderingKey => Channel}}};

@@ -25,7 +25,7 @@ start() ->
     Echo = hstreamdb:echo(Client),
     io:format("echo  ~p~n", [Echo]),
     ProducerOptions = [
-        {stream, "stream2"},
+        {stream, "stream1"},
         {callback, {?MODULE, callback}},
         {max_records, 1000},
         {interval, 1000}
@@ -51,8 +51,8 @@ start() ->
     Stop = hstreamdb:stop_producer(Producer),
     io:format("stop producer  ~p~n", [Stop]),
 
-    AppendAfterStop = hstreamdb:append(Producer, Record1),
-    io:format("append after stop ~p~n", [AppendAfterStop]),
+    % AppendAfterStop = hstreamdb:append(Producer, Record1),
+    % io:format("append after stop ~p~n", [AppendAfterStop]),
     ok.
 
 callback(A) ->
