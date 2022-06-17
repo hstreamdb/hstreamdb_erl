@@ -35,11 +35,15 @@ start() ->
 
     OrderingKey = "ok1",
     PayloadType = raw,
-    Payload = <<"data 12">>,
+    Payload = <<"hello stream !">>,
     Record1 = hstreamdb:to_record(OrderingKey, PayloadType, Payload),
     io:format("to record ~p~n", [Record1]),
-    Append = hstreamdb:append(Producer, Record1),
-    % Append = [hstreamdb:append(Producer, Record1) || _ <- lists:seq(0, 100)],
+    % Append = hstreamdb:append(Producer, Record1),
+    Append = [
+        begin
+            RecordN = hstreamdb:to_record(OrderingKey, PayloadType, list_to_binary(io_lib:format("message ~p", [N]))),
+            hstreamdb:append(Producer, RecordN)
+        end || N <- lists:seq(0, 100)],
     io:format("append ~p~n", [Append]),
 
     timer:sleep(2000),

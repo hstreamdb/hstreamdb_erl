@@ -191,7 +191,7 @@ do_flush(OrderingKey, State = #state{record_map = RecordMap,
                      Callback,
                      NState#state{channel_manager = NCManager});
         {error, Error} ->
-            _ = apply_callback(Callback, {{flush, Records}, {error, Error}}),
+            _ = apply_callback(Callback, {{flush, Stream, Records}, {error, Error}}),
             NState
     end.
 
