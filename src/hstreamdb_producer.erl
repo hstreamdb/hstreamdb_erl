@@ -62,7 +62,7 @@ start(Producer, Options) ->
 
 stop(Producer) ->
     _ = wpool:broadcast(Producer, stop),
-    wpool:stop_pool(Producer).
+    wpool:stop_sup_pool(Producer).
 
 append(Producer, Record) ->
     wpool:call(Producer, {append, Record}).
