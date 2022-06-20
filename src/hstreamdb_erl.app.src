@@ -1,6 +1,6 @@
 {application, hstreamdb_erl,
  [{description, "An OTP application"},
-  {vsn, "0.1.0"},
+  {vsn, git},
   {registered, []},
   {mod, {hstreamdb_erl_app, []}},
   {applications,

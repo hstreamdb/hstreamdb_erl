@@ -15,7 +15,7 @@ start() ->
         % }
     },
     ClientOptions = [
-        {url,  "http://192.168.0.234:6570"},
+        {url,  "http://119.3.80.172:6570"},
         {rpc_options, RPCOptions}
     ],
     {ok, Client} = hstreamdb:start_client(test_c, ClientOptions),
@@ -32,7 +32,7 @@ start() ->
     Echo = hstreamdb:echo(Client),
     io:format("echo  ~p~n", [Echo]),
     ProducerOptions = [
-        {stream, "stream12"},
+        {stream, "test_h"},
         {callback, {?MODULE, callback}},
         {max_records, 1000},
         {interval, 1000}
@@ -61,6 +61,8 @@ start() ->
     timer:sleep(1000),
     Stop = hstreamdb:stop_producer(Producer),
     io:format("stop producer  ~p~n", [Stop]),
+    Stop2 = hstreamdb:stop_producer(Producer),
+    io:format("stop2 producer  ~p~n", [Stop2]),
 
     timer:sleep(200),
     RestartProducer = hstreamdb:start_producer(Client, test_producer, ProducerOptions),
