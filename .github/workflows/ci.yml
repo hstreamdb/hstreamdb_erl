@@ -1,0 +1,23 @@
+on:
+  push:
+    branches: [main]
+
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        os: ["ubuntu-latest", "macos-latest"]
+        otp: ["24"]
+        rebar3: ["3.18.0"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v3
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: ${{ matrix.otp }}
+          rebar3-version: ${{ matrix.rebar3 }}
+      - run: |
+          rebar3 fmt --check && rebar3 dialyzer && rebar3 compile && rebar3 edoc
