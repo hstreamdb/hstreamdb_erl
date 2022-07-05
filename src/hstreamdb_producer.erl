@@ -18,6 +18,8 @@
 
 -define(DEFAULT_MAX_RECORDS, 100).
 -define(DEFAULT_INTERVAL, 10).
+-define(DEFAULT_REQUEST_RETRY_INTERVAL_SECONDS, 5).
+-define(DEFAULT_APPEND_RETRY_MAX_TIMES, 5).
 
 -behaviour(gen_server).
 
@@ -41,6 +43,8 @@
     callback,
     max_records,
     interval,
+    request_retry_interval_seconds,
+    append_retry_max_times,
     record_map,
     channel_manager,
     timer_ref
@@ -81,11 +85,15 @@ init(Options) ->
     Callback = proplists:get_value(callback, Options),
     MaxRecords = proplists:get_value(max_records, Options, ?DEFAULT_MAX_RECORDS),
     MaxInterval = proplists:get_value(interval, Options, ?DEFAULT_INTERVAL),
+    RequestRetryIntervalSeconds = proplists:get_value(request_retry_interval_seconds, Options, ?DEFAULT_REQUEST_RETRY_INTERVAL_SECONDS),
+    AppendRetryMaxTimes = proplists:get_value(append_retry_max_times, Options, ?DEFAULT_APPEND_RETRY_MAX_TIMES),
     {ok, #state{
         stream = StreamName,
         callback = Callback,
         max_records = MaxRecords,
         interval = MaxInterval,
+        request_retry_interval_seconds = RequestRetryIntervalSeconds,
+        append_retry_max_times = AppendRetryMaxTimes,
         record_map = #{},
         channel_manager = hstreamdb_channel_mgr:start(Options)
     }}.
@@ -195,8 +203,10 @@ do_flush(OrderingKey, State = #state{record_map = RecordMap,
             NState
     end.
 
-do_flush(Stream, OrderingKey, Records, Channel, Callback, State = #state{channel_manager = CMgr}) ->
-    Res = flush_request(Stream, Records, Channel),
+do_flush(Stream, OrderingKey, Records, Channel, Callback, State = #state{channel_manager = CMgr,
+                                                                         request_retry_interval_seconds = RequestRetryIntervalSeconds,
+                                                                         append_retry_max_times = AppendRetryMaxTimes}) ->
+    Res = flush_request(Stream, Records, Channel, RequestRetryIntervalSeconds, AppendRetryMaxTimes),
     _ = apply_callback(Callback, {{flush, Stream, Records}, Res}),
     case Res of
         {ok, _Resp} ->
@@ -207,24 +217,38 @@ do_flush(Stream, OrderingKey, Records, Channel, Callback, State = #state{channel
     end.
 
 do_append_flush({OrderingKey, Record}, State = #state{stream = Stream,
+                                                      request_retry_interval_seconds = RequestRetryIntervalSeconds,
+                                                      append_retry_max_times = AppendRetryMaxTimes,
                                                       channel_manager = ChannelM}) ->
     case hstreamdb_channel_mgr:lookup_channel(OrderingKey, ChannelM) of
         {ok, Channel} ->
-            Res = flush_request(Stream, [Record], Channel),
+            Res = flush_request(Stream, [Record], Channel, RequestRetryIntervalSeconds, AppendRetryMaxTimes),
             {Res, State};
         {ok, Channel, NCManager} ->
-            Res = flush_request(Stream, [Record], Channel),
+            Res = flush_request(Stream, [Record], Channel, RequestRetryIntervalSeconds, AppendRetryMaxTimes),
             {Res, State#state{channel_manager = NCManager}};
         {error, Error} ->
             {{error, Error}, State}
     end.
 
-flush_request(Stream, Records, Channel) ->
+flush_request(Stream, Records, Channel, RequestRetryIntervalSeconds, AppendRetryMaxTimes) ->
     Req = #{streamName => Stream, records => Records},
     Options = #{channel => Channel},
+    case append_with_retry(Req, Options, RequestRetryIntervalSeconds, AppendRetryMaxTimes) of
+        {ok, Resp, _MetaData} ->
+            {ok, Resp};
+        {error, R} ->
+            {error, R}
+    end.
+
+-define(GRPC_STATUS_UNAVAILABLE, <<"14">>).
+append_with_retry(Req, Options, RequestRetryIntervalSeconds, AppendRetryMaxTimes) ->
     case hstreamdb_client:append(Req, Options) of
         {ok, Resp, _MetaData} ->
             {ok, Resp};
+        {error, {?GRPC_STATUS_UNAVAILABLE, _BinaryGrpcMessage}} when AppendRetryMaxTimes > 1 ->
+            timer:sleep(RequestRetryIntervalSeconds * 1000),
+            append_with_retry(Req, Options, RequestRetryIntervalSeconds, AppendRetryMaxTimes -1);
         {error, R} ->
             {error, R}
     end.
