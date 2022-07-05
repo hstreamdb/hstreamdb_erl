@@ -241,12 +241,11 @@ flush_request(Stream, Records, Channel, RequestRetryIntervalSeconds, AppendRetry
             {error, R}
     end.
 
--define(GRPC_STATUS_UNAVAILABLE, <<"14">>).
 append_with_retry(Req, Options, RequestRetryIntervalSeconds, AppendRetryMaxTimes) ->
     case hstreamdb_client:append(Req, Options) of
         {ok, Resp, _MetaData} ->
             {ok, Resp};
-        {error, {?GRPC_STATUS_UNAVAILABLE, _BinaryGrpcMessage}} when AppendRetryMaxTimes > 1 ->
+        {error, {unavailable, _BinaryGrpcMessage}} when AppendRetryMaxTimes > 1 ->
             timer:sleep(RequestRetryIntervalSeconds * 1000),
             append_with_retry(Req, Options, RequestRetryIntervalSeconds, AppendRetryMaxTimes -1);
         {error, R} ->
