@@ -97,8 +97,8 @@ append(Producer, Record) ->
 flush(Producer) ->
     hstreamdb_producer:flush(Producer).
 
-append_flush(Producer, Record) ->
-    hstreamdb_producer:append_flush(Producer, Record).
+append_flush(Producer, Data) ->
+    hstreamdb_producer:append_flush(Producer, Data).
 
 %% -------------------------------------------------------------------------------------------------
 %% internal

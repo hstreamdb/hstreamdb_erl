@@ -73,7 +73,15 @@ lookup_channel(OrderingKey, ChannelM = #{channels := Channels,
     end.
 
 bad_channel(OrderingKey, ChannelM = #{channels := Channels}) ->
+    ok = stop_channel(maps:get(OrderingKey, Channels, undefined)),
     ChannelM#{channels => maps:remove(OrderingKey, Channels)}.
+
+stop_channel(undefined) -> ok;
+stop_channel(Channel) ->
+    try grpc_client_sup:stop_channel_pool(Channel)
+    catch _:_ ->
+        ok
+    end.
 
 random_channel_name(Name) ->
     lists:concat([Name,  erlang:unique_integer()]). 

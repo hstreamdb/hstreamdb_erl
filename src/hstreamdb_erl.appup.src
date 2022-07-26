@@ -1,0 +1,15 @@
+%% -*- mode: erlang -*-
+{VSN,
+  [{"0.2.4",
+    [{load_module,hstreamdb,brutal_purge,soft_purge,[]},
+     {load_module,hstreamdb_channel_mgr,brutal_purge,soft_purge,[]},
+     {load_module,hstreamdb_producer,brutal_purge,soft_purge,[]}
+    ]},
+   {<<".*">>,[]}],
+  [{"0.2.4",
+    [{load_module,hstreamdb,brutal_purge,soft_purge,[]},
+     {load_module,hstreamdb_channel_mgr,brutal_purge,soft_purge,[]},
+     {load_module,hstreamdb_producer,brutal_purge,soft_purge,[]}
+    ]},
+   {<<".*">>,[]}]
+}.

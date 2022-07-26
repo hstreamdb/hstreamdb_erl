@@ -70,8 +70,8 @@ append(Producer, Record) ->
 flush(Producer) ->
     wpool:call(Producer, flush).
 
-append_flush(Producer, Record) ->
-    wpool:call(Producer, {append_flush, Record}).
+append_flush(Producer, Records) ->
+    wpool:call(Producer, {append_flush, Records}).
 
 %% -------------------------------------------------------------------------------------------------
 %% gen_server part
@@ -101,18 +101,9 @@ handle_call({append, Record}, _From, State) ->
 handle_call(flush, _From, State) ->
     {reply, ok, do_flush(State)};
 
-handle_call({append_flush, Recode = {OrderingKey, _}},
-            _From,
-            State = #state{channel_manager = CMgr}) ->
-    {Res, NState} = do_append_flush(Recode, State),
-    NCManager =
-        case Res of
-            {ok, _} ->
-                CMgr;
-            _Error ->
-                hstreamdb_channel_mgr:bad_channel(OrderingKey, CMgr)
-        end,
-    {reply, Res, NState#state{channel_manager = NCManager}};
+handle_call({append_flush, Records}, _From, State) ->
+    {Res, NState} = do_append_flush(Records, State),
+    {reply, Res, NState};
 
 handle_call(_Request, _From, State) ->
     {reply, ok, State}.
@@ -206,18 +197,31 @@ do_flush(Stream, OrderingKey, Records, Channel, Callback, State = #state{channel
             State#state{channel_manager = NCManager}
     end.
 
-do_append_flush({OrderingKey, Record}, State = #state{stream = Stream,
-                                                      channel_manager = ChannelM}) ->
+do_append_flush({OrderingKey, Records},
+ State = #state{stream = Stream, channel_manager = ChannelM}) when is_list(Records) ->
     case hstreamdb_channel_mgr:lookup_channel(OrderingKey, ChannelM) of
         {ok, Channel} ->
-            Res = flush_request(Stream, [Record], Channel),
-            {Res, State};
+            case flush_request(Stream, Records, Channel) of
+                Res = {ok, _} ->
+                    {Res, State};
+                Error ->
+                    NCManager = hstreamdb_channel_mgr:bad_channel(OrderingKey, ChannelM),
+                    {Error, State#state{channel_manager = NCManager}}
+            end;
         {ok, Channel, NCManager} ->
-            Res = flush_request(Stream, [Record], Channel),
-            {Res, State#state{channel_manager = NCManager}};
+            case flush_request(Stream, Records, Channel) of
+                Res = {ok, _} ->
+                    {Res, State#state{channel_manager = NCManager}};
+                Error ->
+                    NCManager = hstreamdb_channel_mgr:bad_channel(OrderingKey, ChannelM),
+                    {Error, State#state{channel_manager = NCManager}}
+            end;
         {error, Error} ->
             {{error, Error}, State}
-    end.
+    end;
+
+do_append_flush({OrderingKey, Record}, State) ->
+    do_append_flush({OrderingKey, [Record]}, State).
 
 flush_request(Stream, Records, Channel) ->
     Req = #{streamName => Stream, records => Records},
