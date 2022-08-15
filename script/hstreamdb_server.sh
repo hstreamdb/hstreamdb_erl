@@ -2,7 +2,7 @@
 
 set -e
 
-DEFAULT_HSTREAM_DOCKER_TAG="latest"
+DEFAULT_HSTREAM_DOCKER_TAG="v0.8.0"
 
 docker pull hstreamdb/hstream:${DEFAULT_HSTREAM_DOCKER_TAG}
 
@@ -33,7 +33,7 @@ docker run \
   --network host \
   -p 6570:6570 \
   hstreamdb/hstream:${DEFAULT_HSTREAM_DOCKER_TAG} \
-  hstream-server --port 6570 --store-config /data/store/logdevice.conf --server-id 0 --log-level debug --address ${your host: 127.0.0.1}
+  hstream-server --port 6570 --store-config /data/store/logdevice.conf --server-id 0 --log-level debug
 
 docker run \
   -td \
@@ -42,7 +42,7 @@ docker run \
   --network host \
   -p 6571:6571 \
   hstreamdb/hstream:${DEFAULT_HSTREAM_DOCKER_TAG} \
-  hstream-server --port 6571 --store-config /data/store/logdevice.conf --server-id 1 --log-level debug --address ${your host: 127.0.0.1}
+  hstream-server --port 6571 --store-config /data/store/logdevice.conf --server-id 1 --log-level debug
 
 docker run \
   -td \
@@ -51,4 +51,4 @@ docker run \
   --network host \
   -p 6572:6572 \
   hstreamdb/hstream:${DEFAULT_HSTREAM_DOCKER_TAG} \
-  hstream-server --port 6572 --store-config /data/store/logdevice.conf --server-id 2 --log-level debug --address ${your host: 127.0.0.1}
+  hstream-server --port 6572 --store-config /data/store/logdevice.conf --server-id 2 --log-level debug
