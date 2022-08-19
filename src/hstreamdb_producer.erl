@@ -7,21 +7,16 @@
 
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2,
          code_change/3]).
--export([start/2]).
+-export([start/2, append/2]).
 
 -record(state,
         {stream, callback, max_records, interval, record_map, worker_pool, timer_ref}).
 
 start(Producer, Options) ->
-    Workers = proplists:get_value(pool_size, Options, 8),
-    PoolOptions =
-        [{workers, Workers}, {worker_type, gen_server}, {worker, {hstreamdb_appender, Options}}],
-    case wpool:start_sup_pool(Producer, PoolOptions) of
-        {ok, _Pid} ->
-            {ok, Producer};
-        {error, Error} ->
-            {error, Error}
-    end.
+    gen_server:start(?MODULE, [{producer, Producer} | Options], []).
+
+append(Producer, Record) ->
+    gen_server:call(Producer, {append, Record}).
 
 init(Options) ->
     StreamName = proplists:get_value(stream, Options),
