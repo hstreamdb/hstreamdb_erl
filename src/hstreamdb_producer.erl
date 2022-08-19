@@ -148,7 +148,7 @@ do_append({OrderingKey, Record}, State = #state{interval = Interval,
             NState = State#state{record_map = NRecordMap},
             case length(NRecords) >= MaxRecords of
                 true ->
-                    do_flush(NState);
+                    do_flush(OrderingKey, NState);
                 _ ->
                     NState
             end
