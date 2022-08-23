@@ -213,8 +213,8 @@ do_append_flush({OrderingKey, Records},
                 Res = {ok, _} ->
                     {Res, State#state{channel_manager = NCManager}};
                 Error ->
-                    NCManager = hstreamdb_channel_mgr:bad_channel(OrderingKey, ChannelM),
-                    {Error, State#state{channel_manager = NCManager}}
+                    ENCManager = hstreamdb_channel_mgr:bad_channel(OrderingKey, ChannelM),
+                    {Error, State#state{channel_manager = ENCManager}}
             end;
         {error, Error} ->
             {{error, Error}, State}
