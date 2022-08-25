@@ -52,6 +52,15 @@ code_change(_OldVsn, State, _Extra) ->
 handle_info({flush, OrderingKey}, State) ->
     NState = do_flush(OrderingKey, State),
     {noreply, NState};
+handle_info(empty, State = #state{record_map = RecordMap}) ->
+    Values = maps:values(RecordMap),
+    IsEmpty = lists:all(fun(XS) -> length(XS) =:= 0 end, Values),
+    if IsEmpty ->
+           io:format("[DEBUG]: periodic check buffer is empty~n");
+       true ->
+           io:format("[DEBUG]: periodic check buffer is not empty~n")
+    end,
+    {noreply, State};
 handle_info(_Request, State) ->
     {noreply, State}.
 

@@ -51,6 +51,7 @@ start_producer(Client, Producer, ProducerOptions) ->
     {ok, BufferedProducer} =
         hstreamdb_producer:start(Producer, [{client, Client} | ProducerOptions]),
     {ok, FlowController} = gen_server:start(hstreamdb_flow_controller, ProducerOptions, []),
+    timer:send_interval(1 * 1000, FlowController, refresh_mem),
     {ok, #producer{buffered_producer = BufferedProducer, flow_controller = FlowController}}.
 
 stop_producer(Producer) ->

@@ -68,7 +68,9 @@ call_rpc_append(Stream, Records, Channel, ByteSizeRef) ->
                     0,
                     Records),
       atomics:add(ByteSizeRef, 1, Size),
+      io:format("[DEBUG]: append RPC~n"),
       {ok, AppendResponse};
     {error, AppendErrorReason} ->
+      io:format("[ERROR]: append error ~p~n", [AppendErrorReason]),
       {error, AppendErrorReason}
   end.

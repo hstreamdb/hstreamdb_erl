@@ -20,7 +20,7 @@ init(Options) ->
   Size = proplists:get_value(flow_control_size, Options),
   MemSize = proplists:get_value(flow_control_memory, Options),
   CurMemSize = proplists:get_value(total, erlang:memory()),
-  timer:send_interval(1 * 1000, refresh_mem),
+  true = CurMemSize /= undefined,
   {ok,
    #state{flow_control_timer = timer:send_interval(Interval, refresh),
           flow_control_size = Size,
@@ -54,6 +54,7 @@ handle_info({check, From},
   {noreply, State};
 handle_info(refresh_mem, State) ->
   CurMemSize = proplists:get_value(total, erlang:memory()),
+  true = CurMemSize /= undefined,
   {noreply, State#state{current_memory_size = CurMemSize}};
 handle_info(_Info, State) ->
   {noreply, State}.
@@ -67,5 +68,8 @@ do_check_and_send(_Size, _CurSize, MemSize, CurMemSize, From) ->
   if MemSize > CurMemSize ->
        From ! ok_msg();
      true ->
+       io:format("[DEBUG]: memory check failed, memory limit = ~p, total memory "
+                 "= ~p, binary = ~p~n",
+                 [MemSize, CurMemSize, proplists:get_value(binary, erlang:memory())]),
        timer:send_after(500, {check, From})
   end.

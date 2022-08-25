@@ -11,11 +11,12 @@ start() ->
   {ok, Client} = hstreamdb:start_client(ClientName, client_opts(PoolSize)),
   Streams =
     lists:map(fun(Ix) ->
-                 Stream = str_fmt("stream___~p______", [Ix]),
+                 Stream =
+                   str_fmt("stream___~p__~p__~p__", [Ix, erlang:system_time(), rand:uniform(200)]),
                  _ = create_stream(ClientName, Stream),
                  Stream
               end,
-              seq_list(40)),
+              seq_list(1)),
   Producers =
     lists:map(fun(Stream) ->
                  {ok, Producer} =
@@ -25,6 +26,8 @@ start() ->
                                                       rand:uniform(200),
                                                       rand:uniform(200)]),
                                             producer_opts(Stream, ByteSizeRef)),
+                 {_, BufferedProducer, _} = Producer,
+                 timer:send_interval(2000, BufferedProducer, empty),
                  Producer
               end,
               Streams),
