@@ -2,7 +2,7 @@
 
 -export([start/0, cb/1]).
 
--define(URL, "http://172.20.250.151:6570").
+-define(URL, "http://127.0.0.1:6570").
 
 start() ->
   ByteSizeRef = new_byte_size_ref(),

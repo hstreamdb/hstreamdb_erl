@@ -10,14 +10,7 @@
 -export([start/2, append/2]).
 
 -record(state,
-        {stream,
-         callback,
-         max_records,
-         interval,
-         record_map,
-         worker_pool,
-         timer_ref_map,
-         flow_controller :: pid()}).
+        {stream, callback, max_records, interval, record_map, worker_pool, timer_ref_map}).
 
 start(Producer, Options) ->
     gen_server:start(?MODULE, [{producer, Producer} | Options], []).
@@ -32,7 +25,6 @@ init(Options) ->
     MaxInterval = proplists:get_value(interval, Options, ?DEFAULT_INTERVAL),
     Workers = proplists:get_value(pool_size, Options, 8),
     Producer = proplists:get_value(producer, Options),
-    {ok, FlowController} = gen_server:start_link(hstreamdb_flow_controller, Options, []),
     PoolOptions =
         [{workers, Workers}, {worker_type, gen_server}, {worker, {hstreamdb_appender, Options}}],
     case wpool:start_sup_pool(Producer, PoolOptions) of
@@ -44,8 +36,7 @@ init(Options) ->
                     interval = MaxInterval,
                     record_map = #{},
                     timer_ref_map = #{},
-                    worker_pool = Producer,
-                    flow_controller = FlowController}};
+                    worker_pool = Producer}};
         {error, Error} ->
             {stop, Error}
     end.
@@ -67,18 +58,12 @@ handle_info(_Request, State) ->
 handle_cast(_Request, State) ->
     {noreply, State}.
 
-handle_call({append, Record}, _From, State = #state{flow_controller = FlowController}) ->
-    {_, #{payload := Payload}} = Record,
-    Size = erlang:byte_size(Payload),
-    ok = gen_server:call(FlowController, {check, Size}),
-    receive
-        {flow_control, ok} ->
-            case do_append(Record, State) of
-                {NState, Timeout} ->
-                    {reply, ok, NState, Timeout};
-                NState ->
-                    {reply, ok, NState}
-            end
+handle_call({append, Record}, _From, State) ->
+    case do_append(Record, State) of
+        {NState, Timeout} ->
+            {reply, ok, NState, Timeout};
+        NState ->
+            {reply, ok, NState}
     end;
 handle_call(flush, _From, State) ->
     {reply, ok, do_flush(State)}.
