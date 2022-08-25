@@ -62,7 +62,7 @@ terminate(_Reason, #state{flow_control_timer = Timer}) ->
   _ = timer:cancel(Timer),
   ok.
 
-do_check_and_send(Size, CurSize, MemSize, CurMemSize, From) ->
+do_check_and_send(_Size, _CurSize, MemSize, CurMemSize, From) ->
   % if Size >= CurSize ->
   if MemSize > CurMemSize ->
        From ! ok_msg();

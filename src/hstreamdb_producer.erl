@@ -58,6 +58,9 @@ terminate(_Reason, #state{worker_pool = Producer}) ->
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
+handle_info({flush, OrderingKey}, State) ->
+    NState = do_flush(OrderingKey, State),
+    {noreply, NState};
 handle_info(_Request, State) ->
     {noreply, State}.
 
@@ -88,7 +91,7 @@ do_append({OrderingKey, Record},
                      max_records = MaxRecords}) ->
     case maps:get(OrderingKey, RecordMap, undefined) of
         undefined ->
-            {ok, TimerRef} = timer:send_after(Interval, self(), flush),
+            {ok, TimerRef} = timer:send_after(Interval, self(), {flush, OrderingKey}),
             NTimerRefMap = TimerRefMap#{OrderingKey => TimerRef},
             NRecordMap = RecordMap#{OrderingKey => [Record]},
             {State#state{record_map = NRecordMap, timer_ref_map = NTimerRefMap}, Interval};
