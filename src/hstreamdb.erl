@@ -16,23 +16,12 @@
 
 -module(hstreamdb).
 
--export([ start_client/2
-        , stop_client/1
-        , start_producer/3
-        , stop_producer/1
-        , start_consumer/3
-        , stop_consumer/1
-        ]).
+-export([start_client/2, stop_client/1, start_producer/3, stop_producer/1,
+         start_consumer/3, stop_consumer/1]).
+-export([echo/1]).
+-export([to_record/3, append/2, append/4, flush/1]).
 
--export([ echo/1
-        ]).
-
--export([ to_record/3
-        , append/2
-        , append/4
-        , flush/1
-        , append_flush/2
-        ]).
+-record(producer, {buffered_producer, flow_controller}).
 
 start_client(Name, Options) when is_list(Options) ->
     start_client(Name, maps:from_list(Options));
@@ -41,14 +30,12 @@ start_client(Name, Options) ->
     RPCOptions = maps:get(rpc_options, Options),
     ChannelName = hstreamdb_channel_mgr:channel_name(Name),
     Client =
-        #{
-            channel => ChannelName,
-            url => ServerURL,
-            rpc_options => RPCOptions,
-            url_prefix => url_prefix(ServerURL)
-        },
+        #{channel => ChannelName,
+          url => ServerURL,
+          rpc_options => RPCOptions,
+          url_prefix => url_prefix(ServerURL)},
     case hstreamdb_channel_mgr:start_channel(ChannelName, ServerURL, RPCOptions) of
-        {ok,_} ->
+        {ok, _} ->
             {ok, Client};
         {error, Reason} ->
             {error, Reason}
@@ -57,14 +44,21 @@ start_client(Name, Options) ->
 stop_client(#{channel := Channel}) ->
     grpc_client_sup:stop_channel_pool(Channel);
 stop_client(Name) ->
-    Channel =  hstreamdb_channel_mgr:channel_name(Name),
+    Channel = hstreamdb_channel_mgr:channel_name(Name),
     grpc_client_sup:stop_channel_pool(Channel).
 
 start_producer(Client, Producer, ProducerOptions) ->
-    hstreamdb_producer:start(Producer, [{client, Client} | ProducerOptions]).
+    {ok, BufferedProducer} =
+        hstreamdb_producer:start(Producer, [{client, Client} | ProducerOptions]),
+    {ok, FlowController} = gen_server:start(hstreamdb_flow_controller, ProducerOptions, []),
+    timer:send_interval(1 * 1000, FlowController, refresh_mem),
+    {ok, #producer{buffered_producer = BufferedProducer, flow_controller = FlowController}}.
 
 stop_producer(Producer) ->
-    hstreamdb_producer:stop(Producer).
+    #producer{buffered_producer = BufferedProducer, flow_controller = FlowController} =
+        Producer,
+    gen_server:stop(BufferedProducer),
+    gen_server:stop(FlowController).
 
 start_consumer(_Client, Consumer, _ConsumerOptions) ->
     {ok, Consumer}.
@@ -73,16 +67,17 @@ stop_consumer(_) ->
     ok.
 
 to_record(OrderingKey, PayloadType, Payload) ->
-    {OrderingKey, #{
-        header => #{
-            flag => case PayloadType of
-                        json -> 0;
-                        raw -> 1
-                    end,
-            key => OrderingKey
-            },
-        payload => Payload
-    }}.
+    {OrderingKey,
+     #{header =>
+           #{flag =>
+                 case PayloadType of
+                     json ->
+                         0;
+                     raw ->
+                         1
+                 end,
+             key => OrderingKey},
+       payload => Payload}}.
 
 echo(Client) ->
     do_echo(Client).
@@ -92,13 +87,23 @@ append(Producer, OrderingKey, PayloadType, Payload) ->
     append(Producer, Record).
 
 append(Producer, Record) ->
-    hstreamdb_producer:append(Producer, Record).
+    #producer{buffered_producer = BufferedProducer} = Producer,
+    flow_control(Producer, Record),
+    hstreamdb_producer:append(BufferedProducer, Record).
 
 flush(Producer) ->
-    hstreamdb_producer:flush(Producer).
+    #producer{buffered_producer = BufferedProducer} = Producer,
+    hstreamdb_producer:flush(BufferedProducer).
 
-append_flush(Producer, Data) ->
-    hstreamdb_producer:append_flush(Producer, Data).
+flow_control(Producer, Record) ->
+    #producer{flow_controller = FlowController} = Producer,
+    {_, #{payload := Payload}} = Record,
+    Size = erlang:byte_size(Payload),
+    ok = gen_server:call(FlowController, {check, Size}),
+    receive
+        {flow_control, ok} ->
+            ok
+    end.
 
 %% -------------------------------------------------------------------------------------------------
 %% internal
