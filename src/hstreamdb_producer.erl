@@ -16,14 +16,14 @@
          interval,
          record_map,
          worker_pool,
-         timer_ref,
+         timer_ref_map,
          flow_controller :: pid()}).
 
 start(Producer, Options) ->
     gen_server:start(?MODULE, [{producer, Producer} | Options], []).
 
 append(Producer, Record) ->
-    gen_server:call(Producer, {append, Record}).
+    gen_server:call(Producer, {append, Record}, infinity).
 
 init(Options) ->
     StreamName = proplists:get_value(stream, Options),
@@ -43,6 +43,7 @@ init(Options) ->
                     max_records = MaxRecords,
                     interval = MaxInterval,
                     record_map = #{},
+                    timer_ref_map = #{},
                     worker_pool = Producer,
                     flow_controller = FlowController}};
         {error, Error} ->
@@ -83,12 +84,14 @@ do_append({OrderingKey, Record},
           State =
               #state{interval = Interval,
                      record_map = RecordMap,
+                     timer_ref_map = TimerRefMap,
                      max_records = MaxRecords}) ->
     case maps:get(OrderingKey, RecordMap, undefined) of
         undefined ->
             {ok, TimerRef} = timer:send_after(Interval, self(), flush),
+            NTimerRefMap = TimerRefMap#{OrderingKey => TimerRef},
             NRecordMap = RecordMap#{OrderingKey => [Record]},
-            {State#state{record_map = NRecordMap, timer_ref = TimerRef}, Interval};
+            {State#state{record_map = NRecordMap, timer_ref_map = NTimerRefMap}, Interval};
         Records ->
             NRecords = [Record | Records],
             NRecordMap = RecordMap#{OrderingKey => NRecords},
@@ -109,12 +112,13 @@ do_flush(OrderingKey,
          State =
              #state{record_map = RecordMap,
                     stream = Stream,
-                    timer_ref = TimerRef,
+                    timer_ref_map = TimerRefMap,
                     worker_pool = Workers}) ->
     Records =
         lists:reverse(
             maps:get(OrderingKey, RecordMap)),
-    _ = timer:cancel(TimerRef),
+    _ = timer:cancel(
+            maps:get(OrderingKey, TimerRefMap)),
     NState = State#state{record_map = maps:remove(OrderingKey, RecordMap)},
     wpool:cast(Workers, {append, {Stream, OrderingKey, Records}}),
     NState.

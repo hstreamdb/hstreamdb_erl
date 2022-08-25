@@ -11,7 +11,8 @@ init([X]) ->
 
 handle_info(check, {OldTimer, Cnt, X}) ->
   erlang:cancel_timer(OldTimer),
-  io:format("~p ~p~n", [atomics:get(X, 1), Cnt]),
+  GetVal = atomics:get(X, 1),
+  io:format("~p ~p ~p~n", [GetVal, Cnt, GetVal / 1000 / 1000 / 10]),
   atomics:put(X, 1, 0),
   Timer = erlang:send_after(10000, self(), check),
   {noreply, {Timer, Cnt + 1, X}}.

@@ -2,20 +2,20 @@
 
 -export([start/0, cb/1]).
 
--define(URL, "http://127.0.0.1:6570").
+-define(URL, "http://172.20.250.151:6570").
 
 start() ->
   ByteSizeRef = new_byte_size_ref(),
-  PoolSize = 8,
+  PoolSize = 10,
   ClientName = test_c,
   {ok, Client} = hstreamdb:start_client(ClientName, client_opts(PoolSize)),
   Streams =
-    lists:map(fun(_) ->
-                 Stream = str_fmt("stream___~p___", [0]),
+    lists:map(fun(Ix) ->
+                 Stream = str_fmt("stream___~p______", [Ix]),
                  _ = create_stream(ClientName, Stream),
                  Stream
               end,
-              seq_list(50)),
+              seq_list(40)),
   Producers =
     lists:map(fun(Stream) ->
                  {ok, Producer} =
@@ -28,7 +28,7 @@ start() ->
                  Producer
               end,
               Streams),
-  producer_list(Producers, 1),
+  producer_list(Producers, 12),
   error_return.
 
 cb(_) ->
@@ -46,6 +46,9 @@ producer_list(Producers, OrdKeyNum) ->
   loop_write(X, 4, rand_key(OrdKeyNum)).
 
 spawn_loop_write(Producer, Size, OrdKey) ->
+  spawn(fun() -> loop_write(Producer, Size, OrdKey) end),
+  spawn(fun() -> loop_write(Producer, Size, OrdKey) end),
+  spawn(fun() -> loop_write(Producer, Size, OrdKey) end),
   spawn(fun() -> loop_write(Producer, Size, OrdKey) end).
 
 loop_write(Producer, Size, OrdKey) ->
@@ -59,11 +62,12 @@ client_opts(PoolSize) ->
 producer_opts(StreamName, ByteSizeRef) ->
   [{stream, StreamName},
    {callback, {?MODULE, cb}},
-   {max_records, 15},
+   {max_records, 16},
    {interval, 1000},
    {byte_size_ref, ByteSizeRef},
    {flow_control_interval, 1000},
-   {flow_control_size, 2 * 100 * 1000}].
+   {flow_control_size, 100 * 1000 * 1000},
+   {flow_control_memory, 2 * 1000 * 1000 * 1000}].
 
 seq_list(Size) ->
   lists:seq(1, Size).
