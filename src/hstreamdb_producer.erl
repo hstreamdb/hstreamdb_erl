@@ -238,7 +238,7 @@ flush_request(Stream, Records, Channel, CompressionType, OrderingKey) ->
     case compress_payload(Payload, CompressionType)  of
         {ok, CompressedPayload} ->
             BatchedRecord = #{
-                compressionType => CompressionType
+                  compressionType => compression_type_to_enum(CompressionType)
                 , batchSize       => length(Records)
                 , orderingKey     => OrderingKey
                 , payload         => CompressedPayload
@@ -256,12 +256,18 @@ flush_request(Stream, Records, Channel, CompressionType, OrderingKey) ->
 
 -spec compress_payload(Payload :: binary(), CompressionType :: compression_type()) -> {ok, binary()} | {error, any()}.
 compress_payload(Payload, CompressionType) -> case CompressionType of
-    none -> Payload;
+    none -> {ok, Payload};
     zstd -> case ezstd:compress(Payload) of
         {error, R} -> {error, R};
         R -> {ok, R}
     end
 end.
+
+compression_type_to_enum(CompressionType) ->
+    case CompressionType of
+        none -> 0;
+        zstd -> 2
+    end.
 
 apply_callback({M, F}, R) ->
     erlang:apply(M, F, [R]);
