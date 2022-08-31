@@ -43,8 +43,11 @@
     interval,
     record_map,
     channel_manager,
-    timer_ref
+    timer_ref,
+    compression_type :: compression_type()
 }).
+
+- type compression_type() :: none | zstd.
 
 start(Producer, Options) ->
     Workers = proplists:get_value(pool_size, Options, 8),
@@ -81,13 +84,15 @@ init(Options) ->
     Callback = proplists:get_value(callback, Options),
     MaxRecords = proplists:get_value(max_records, Options, ?DEFAULT_MAX_RECORDS),
     MaxInterval = proplists:get_value(interval, Options, ?DEFAULT_INTERVAL),
+    CompressionType = proplists:get_value(compression_type, Options, none),
     {ok, #state{
         stream = StreamName,
         callback = Callback,
         max_records = MaxRecords,
         interval = MaxInterval,
         record_map = #{},
-        channel_manager = hstreamdb_channel_mgr:start(Options)
+        channel_manager = hstreamdb_channel_mgr:start(Options),
+        compression_type = CompressionType
     }}.
 
 handle_call({append, Record}, _From, State) ->
@@ -186,8 +191,8 @@ do_flush(OrderingKey, State = #state{record_map = RecordMap,
             NState
     end.
 
-do_flush(Stream, OrderingKey, Records, Channel, Callback, State = #state{channel_manager = CMgr}) ->
-    Res = flush_request(Stream, Records, Channel),
+do_flush(Stream, OrderingKey, Records, Channel, Callback, State = #state{channel_manager = CMgr, compression_type =  CompressionType}) ->
+    Res = flush_request(Stream, Records, Channel, CompressionType, OrderingKey),
     _ = apply_callback(Callback, {{flush, Stream, Records}, Res}),
     case Res of
         {ok, _Resp} ->
@@ -198,10 +203,10 @@ do_flush(Stream, OrderingKey, Records, Channel, Callback, State = #state{channel
     end.
 
 do_append_flush({OrderingKey, Records},
- State = #state{stream = Stream, channel_manager = ChannelM}) when is_list(Records) ->
+ State = #state{stream = Stream, channel_manager = ChannelM, compression_type = CompressionType}) when is_list(Records) ->
     case hstreamdb_channel_mgr:lookup_channel(OrderingKey, ChannelM) of
         {ok, Channel} ->
-            case flush_request(Stream, Records, Channel) of
+            case flush_request(Stream, Records, Channel, CompressionType, OrderingKey) of
                 Res = {ok, _} ->
                     {Res, State};
                 Error ->
@@ -209,7 +214,7 @@ do_append_flush({OrderingKey, Records},
                     {Error, State#state{channel_manager = NCManager}}
             end;
         {ok, Channel, NCManager} ->
-            case flush_request(Stream, Records, Channel) of
+            case flush_request(Stream, Records, Channel, CompressionType, OrderingKey) of
                 Res = {ok, _} ->
                     {Res, State#state{channel_manager = NCManager}};
                 Error ->
@@ -223,15 +228,40 @@ do_append_flush({OrderingKey, Records},
 do_append_flush({OrderingKey, Record}, State) ->
     do_append_flush({OrderingKey, [Record]}, State).
 
-flush_request(Stream, Records, Channel) ->
-    Req = #{streamName => Stream, records => Records},
-    Options = #{channel => Channel},
-    case hstreamdb_client:append(Req, Options) of
-        {ok, Resp, _MetaData} ->
-            {ok, Resp};
-        {error, R} ->
-            {error, R}
+flush_request(Stream, Records, Channel, CompressionType, OrderingKey) ->
+    BatchHStreamRecords = #{ records => Records },
+    Payload = hstreamdb_api:encode_msg(
+          BatchHStreamRecords
+        , batch_h_stream_records
+        , []
+    ),
+    case compress_payload(Payload, CompressionType)  of
+        {ok, CompressedPayload} ->
+            BatchedRecord = #{
+                compressionType => CompressionType
+                , batchSize       => length(Records)
+                , orderingKey     => OrderingKey
+                , payload         => CompressedPayload
+            },
+            Req = #{ streamName => Stream, records => BatchedRecord },
+            Options = #{channel => Channel},
+            case hstreamdb_client:append(Req, Options) of
+                {ok, Resp, _MetaData} ->
+                    {ok, Resp};
+                {error, R} ->
+                    {error, R}
+            end;
+        {error, R} -> {error, R}
     end.
+
+-spec compress_payload(Payload :: binary(), CompressionType :: compression_type()) -> {ok, binary()} | {error, any()}.
+compress_payload(Payload, CompressionType) -> case CompressionType of
+    none -> Payload;
+    zstd -> case ezstd:compress(Payload) of
+        {error, R} -> {error, R};
+        R -> {ok, R}
+    end
+end.
 
 apply_callback({M, F}, R) ->
     erlang:apply(M, F, [R]);
