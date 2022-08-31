@@ -8,7 +8,7 @@ start() ->
     %% producer_example:start().
     _ = application:ensure_all_started(hstreamdb_erl),
     RPCOptions = #{
-        pool_size => 8
+        pool_size => 3
         % gun_opts => #{
         %     transport => ssl,
         %     transport_opts => [{cacertfile, CA}]
@@ -17,7 +17,9 @@ start() ->
     ClientOptions = [
         % {url,  "http://119.3.80.172:6570"},
         {url,  "http://127.0.0.1:6570"},
-        {rpc_options, RPCOptions}
+        {rpc_options, RPCOptions},
+        {host_mapping, #{<<"10.5.0.4">> => <<"127.0.0.1">>,
+                         <<"10.5.0.5">> => <<"127.0.0.1">>}}
     ],
     {ok, Client} = hstreamdb:start_client(test_c, ClientOptions),
     io:format("start client  ~p~n", [Client]),
@@ -33,8 +35,9 @@ start() ->
     Echo = hstreamdb:echo(Client),
     io:format("echo  ~p~n", [Echo]),
     ProducerOptions = [
-        {stream, "stream1"},
-        {callback, {?MODULE, callback}},
+        {pool_size, 4},
+        {stream, "demo2"},
+        {callback, {producer_example, callback}},
         {max_records, 1000},
         {interval, 1000}
     ],
@@ -57,7 +60,7 @@ start() ->
     io:format("append1 ~p~n", [Append1]),
     io:format("append2 ~p~n", [Append2]),
 
-    timer:sleep(2000),
+    timer:sleep(3000),
 
     io:format("start append flush ~n"),
 
@@ -72,8 +75,8 @@ start() ->
     timer:sleep(1000),
     Stop = hstreamdb:stop_producer(Producer),
     io:format("stop producer  ~p~n", [Stop]),
-    Stop2 = hstreamdb:stop_producer(Producer),
-    io:format("stop2 producer  ~p~n", [Stop2]),
+    % Stop2 = hstreamdb:stop_producer(Producer),
+    % io:format("stop2 producer  ~p~n", [Stop2]),
 
     timer:sleep(200),
     RestartProducer = hstreamdb:start_producer(Client, test_producer, ProducerOptions),

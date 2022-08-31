@@ -7,7 +7,7 @@
    [kernel,
     stdlib,
     grpc,
-    worker_pool
+    ecpool
    ]},
   {env,[]},
   {modules, []},

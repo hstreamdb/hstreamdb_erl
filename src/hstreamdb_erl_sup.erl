@@ -22,11 +22,13 @@
 -export([init/1]).
 
 -define(SERVER, ?MODULE).
+-define(TAB, hstreamdb_ordkey_mgr).
+
 
 start_link() ->
     supervisor:start_link({local, ?SERVER}, ?MODULE, []).
 
 init([]) ->
+    _ = ets:new(?TAB, [set, named_table, public]),
     {ok, {#{strategy => one_for_one, intensity => 5, period => 30}, []}}.
 
-%% internal functions

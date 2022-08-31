@@ -15,6 +15,8 @@
 %%--------------------------------------------------------------------
 -module(hstreamdb_channel_mgr).
 
+-define(GRPC_ECHO_TIMEOUT, 500).
+
 -export([ start/1
         , stop/1
         ]).
@@ -29,13 +31,13 @@
 start(Options) ->
     case proplists:get_value(client, Options, undefined) of
         #{channel := Channel,
-         rpc_options := RPCOptions,
-         url_prefix := UrlPrefix} ->
+          rpc_options := RPCOptions,
+          url_prefix := UrlPrefix} ->
             Stream = proplists:get_value(stream, Options, undefined),
             Stream == undefined andalso erlang:error({bad_options, no_stream_name}),
             #{
                 channel => Channel,
-                channels => #{},
+                channels_by_node => #{},
                 stream => Stream,
                 rpc_options => RPCOptions,
                 url_prefix => UrlPrefix
@@ -44,47 +46,59 @@ start(Options) ->
             erlang:error({bad_options, {bad_client, C}})
     end.
 
-stop(#{channels := Channels}) ->
+stop(#{channels_by_node := Channels}) ->
     _ = [grpc_client_sup:stop_channel_pool(Channel) || Channel <- maps:values(Channels)],
     ok.
 
-lookup_channel(OrderingKey, ChannelM = #{channels := Channels,
-                                         stream := Stream,
-                                         rpc_options := RPCOptions0,
-                                         url_prefix := UrlPrefix}) ->
-    case maps:get(OrderingKey, Channels, undefined) of
+lookup_channel(Node, ChannelM = #{ channels_by_node := ChannelsByNode,
+                                   rpc_options := RPCOptions0,
+                                   url_prefix := UrlPrefix
+                                 }) ->
+    case maps:get(Node, ChannelsByNode, undefined) of
         undefined ->
-            case lookup_stream(OrderingKey, Stream, ChannelM) of
-                {ok, #{host := Host, port := Port}} ->
-                    ServerURL = lists:concat(io_lib:format("~s~s~s~p", [UrlPrefix, Host, ":", Port])),
-                    %% Producer need only one channel. Because it is sync call.
-                    RPCOptions = RPCOptions0#{pool_size => 1},
-                    case start_channel(random_channel_name(OrderingKey), ServerURL, RPCOptions) of
-                        {ok, Channel} ->
-                            {ok, Channel, ChannelM#{channels => Channels#{OrderingKey => Channel}}};
+            {Host, Port} = Node,
+            %% Producer need only one channel. Because it is sync call.
+            ServerURL = lists:concat(io_lib:format("~s~s~s~p", [UrlPrefix, Host, ":", Port])),
+            logger:info("ServerURL for new channel: ~p~n", [ServerURL]),
+            RPCOptions = RPCOptions0#{pool_size => 1},
+            case start_channel(random_channel_name(ServerURL), ServerURL, RPCOptions) of
+                {ok, Channel} ->
+                    _ = timer:sleep(100),
+                    case hstreamdb_client:echo(#{}, #{channel => Channel, timeout => ?GRPC_ECHO_TIMEOUT}) of
+                        {ok, #{msg := _}, _} ->
+                            %% logger:info("Echo success for new channel=~p~n", [Channel]),
+                            {ok, Channel, ChannelM#{channels_by_node => ChannelsByNode#{Node => Channel}}};
                         {error, Reason} ->
+                            ok = stop_channel(Channel),
+                            logger:info("Echo failed for new channel=~p: ~p~n", [Channel, Reason]),
                             {error, Reason}
                     end;
-                {error, Error} ->
-                    {error, Error}
+                {error, Reason} ->
+                    {error, Reason}
             end;
         Channel ->
-            {ok, Channel}
+            {ok, Channel, ChannelM}
     end.
 
-bad_channel(OrderingKey, ChannelM = #{channels := Channels}) ->
-    ok = stop_channel(maps:get(OrderingKey, Channels, undefined)),
-    ChannelM#{channels => maps:remove(OrderingKey, Channels)}.
+bad_channel(BadChannel, ChannelM = #{channels_by_node := ChannelsByNode}) ->
+    ok = stop_channel(BadChannel),
+    BadNodes = [Node || {Node, Ch} <- maps:to_list(ChannelsByNode), Ch =:= BadChannel],
+    logger:info("BadChannel: ~p, BadNodes: ~p~n", [BadChannel, BadNodes]),
+    NChannelM = ChannelM#{channels_by_node => maps:without(BadNodes, ChannelsByNode)},
+    NChannelM.
 
 stop_channel(undefined) -> ok;
 stop_channel(Channel) ->
-    try grpc_client_sup:stop_channel_pool(Channel)
-    catch _:_ ->
+    try 
+        Res = grpc_client_sup:stop_channel_pool(Channel),
+        logger:info("hstreamdb_channel_mgr stop channel[~p]: ~p", [Channel, Res])
+    catch Class:Error ->
+        logger:error("hstreamdb_channel_mgr stop channel[~p]: ~p", [Channel, {Class, Error}]),
         ok
     end.
 
 random_channel_name(Name) ->
-    lists:concat([Name,  erlang:unique_integer()]). 
+    lists:concat([Name, erlang:unique_integer()]). 
 channel_name(Name) ->
     lists:concat([Name]).
 
@@ -98,12 +112,3 @@ start_channel(ChannelName, ServerURL, RPCOptions) ->
             {error, Reason}
     end.
 
-lookup_stream(OrderingKey, Stream, #{channel := Channel}) ->
-    Req = #{'orderingKey' => OrderingKey, 'streamName' => Stream},
-    Options = #{channel => Channel},
-    case hstreamdb_client:lookup_stream(Req, Options) of
-        {ok, Resp, _} ->
-            {ok, maps:get('serverNode', Resp)};
-        {error, Error} ->
-            {error, Error}
-    end.
