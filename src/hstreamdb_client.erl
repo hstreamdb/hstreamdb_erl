@@ -317,6 +317,26 @@ describe_cluster(Req, Metadata, Options) ->
                            empty, describe_cluster_response, <<"google.protobuf.Empty">>),
                       Req, Metadata, Options).
 
+-spec send_admin_command(hstreamdb_api:admin_command_request())
+    -> {ok, hstreamdb_api:admin_command_response(), grpc:metadata()}
+     | {error, term()}.
+send_admin_command(Req) ->
+    send_admin_command(Req, #{}, #{}).
+
+-spec send_admin_command(hstreamdb_api:admin_command_request(), grpc:options())
+    -> {ok, hstreamdb_api:admin_command_response(), grpc:metadata()}
+     | {error, term()}.
+send_admin_command(Req, Options) ->
+    send_admin_command(Req, #{}, Options).
+
+-spec send_admin_command(hstreamdb_api:admin_command_request(), grpc:metadata(), grpc_client:options())
+    -> {ok, hstreamdb_api:admin_command_response(), grpc:metadata()}
+     | {error, term()}.
+send_admin_command(Req, Metadata, Options) ->
+    grpc_client:unary(?DEF(<<"/hstream.server.HStreamApi/SendAdminCommand">>,
+                           admin_command_request, admin_command_response, <<"hstream.server.AdminCommandRequest">>),
+                      Req, Metadata, Options).
+
 -spec per_stream_time_series_stats(hstreamdb_api:per_stream_time_series_stats_request())
     -> {ok, hstreamdb_api:per_stream_time_series_stats_response(), grpc:metadata()}
      | {error, term()}.
@@ -355,26 +375,6 @@ per_stream_time_series_stats_all(Req, Options) ->
 per_stream_time_series_stats_all(Req, Metadata, Options) ->
     grpc_client:unary(?DEF(<<"/hstream.server.HStreamApi/PerStreamTimeSeriesStatsAll">>,
                            per_stream_time_series_stats_all_request, per_stream_time_series_stats_all_response, <<"hstream.server.PerStreamTimeSeriesStatsAllRequest">>),
-                      Req, Metadata, Options).
-
--spec send_admin_command(hstreamdb_api:admin_command_request())
-    -> {ok, hstreamdb_api:admin_command_response(), grpc:metadata()}
-     | {error, term()}.
-send_admin_command(Req) ->
-    send_admin_command(Req, #{}, #{}).
-
--spec send_admin_command(hstreamdb_api:admin_command_request(), grpc:options())
-    -> {ok, hstreamdb_api:admin_command_response(), grpc:metadata()}
-     | {error, term()}.
-send_admin_command(Req, Options) ->
-    send_admin_command(Req, #{}, Options).
-
--spec send_admin_command(hstreamdb_api:admin_command_request(), grpc:metadata(), grpc_client:options())
-    -> {ok, hstreamdb_api:admin_command_response(), grpc:metadata()}
-     | {error, term()}.
-send_admin_command(Req, Metadata, Options) ->
-    grpc_client:unary(?DEF(<<"/hstream.server.HStreamApi/SendAdminCommand">>,
-                           admin_command_request, admin_command_response, <<"hstream.server.AdminCommandRequest">>),
                       Req, Metadata, Options).
 
 -spec execute_push_query(grpc_client:options())
