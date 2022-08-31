@@ -21,7 +21,7 @@
 -export([start/2, stop/1]).
 
 start(_StartType, _StartArgs) ->
-    _ = application:ensure_all_started(worker_pool),
+    _ = application:ensure_all_started(ecpool),
     hstreamdb_erl_sup:start_link().
 
 stop(_State) ->

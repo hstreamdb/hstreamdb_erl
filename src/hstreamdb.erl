@@ -34,18 +34,24 @@
         , append_flush/2
         ]).
 
+-define(GRPC_TIMEOUT, 5000).
+
 start_client(Name, Options) when is_list(Options) ->
     start_client(Name, maps:from_list(Options));
 start_client(Name, Options) ->
     ServerURL = maps:get(url, Options),
     RPCOptions = maps:get(rpc_options, Options),
+    HostMapping = maps:get(host_mapping, Options, #{}),
     ChannelName = hstreamdb_channel_mgr:channel_name(Name),
+    GRPCTimeout = maps:get(grpc_timeout, Options, ?GRPC_TIMEOUT),
     Client =
         #{
             channel => ChannelName,
             url => ServerURL,
             rpc_options => RPCOptions,
-            url_prefix => url_prefix(ServerURL)
+            url_prefix => url_prefix(ServerURL),
+            host_mapping => HostMapping,
+            grpc_timeout => GRPCTimeout
         },
     case hstreamdb_channel_mgr:start_channel(ChannelName, ServerURL, RPCOptions) of
         {ok,_} ->
@@ -110,8 +116,8 @@ url_prefix(<<"https://", _/binary>>) ->
 url_prefix(<<"http://", _/binary>>) ->
     "http://".
 
-do_echo(#{channel := Channel}) ->
-    case hstreamdb_client:echo(#{}, #{channel => Channel}) of
+do_echo(#{channel := Channel, grpc_timeout := Timeout}) ->
+    case hstreamdb_client:echo(#{}, #{channel => Channel, timeout => Timeout}) of
         {ok, #{msg := _}, _} ->
             {ok, echo};
         {error, R} ->
