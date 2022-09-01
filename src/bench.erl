@@ -6,7 +6,7 @@
 
 start() ->
   ByteSizeRef = new_byte_size_ref(),
-  PoolSize = 10,
+  PoolSize = 8,
   ClientName = test_c,
   {ok, Client} = hstreamdb:start_client(ClientName, client_opts(PoolSize)),
   Streams =
@@ -16,7 +16,7 @@ start() ->
                  _ = create_stream(ClientName, Stream),
                  Stream
               end,
-              seq_list(1)),
+              seq_list(20)),
   Producers =
     lists:map(fun(Stream) ->
                  {ok, Producer} =
