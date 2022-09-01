@@ -44,7 +44,8 @@
     record_map,
     channel_manager,
     timer_ref,
-    compression_type :: compression_type()
+    compression_type :: compression_type(),
+    byte_size_ref
 }).
 
 - type compression_type() :: none | gzip | zstd.
@@ -87,6 +88,7 @@ init(Options) ->
     MaxRecords = proplists:get_value(max_records, Options, ?DEFAULT_MAX_RECORDS),
     MaxInterval = proplists:get_value(interval, Options, ?DEFAULT_INTERVAL),
     CompressionType = proplists:get_value(compression_type, Options, zstd),
+    ByteSizeRef = proplists:get_value(byte_size_ref, Options),
     {ok, #state{
         stream = StreamName,
         callback = Callback,
@@ -94,7 +96,8 @@ init(Options) ->
         interval = MaxInterval,
         record_map = #{},
         channel_manager = hstreamdb_channel_mgr:start(Options),
-        compression_type = CompressionType
+        compression_type = CompressionType,
+        byte_size_ref = ByteSizeRef
     }}.
 
 handle_call({append, Record}, _From, State) ->
@@ -193,8 +196,8 @@ do_flush(OrderingKey, State = #state{record_map = RecordMap,
             NState
     end.
 
-do_flush(Stream, OrderingKey, Records, Channel, Callback, State = #state{channel_manager = CMgr, compression_type =  CompressionType}) ->
-    Res = flush_request(Stream, Records, Channel, CompressionType, OrderingKey),
+do_flush(Stream, OrderingKey, Records, Channel, Callback, State = #state{channel_manager = CMgr, compression_type = CompressionType, byte_size_ref = ByteSizeRef}) ->
+    Res = flush_request(Stream, Records, Channel, CompressionType, OrderingKey, ByteSizeRef),
     _ = apply_callback(Callback, {{flush, Stream, Records}, Res}),
     case Res of
         {ok, _Resp} ->
@@ -205,10 +208,10 @@ do_flush(Stream, OrderingKey, Records, Channel, Callback, State = #state{channel
     end.
 
 do_append_flush({OrderingKey, Records},
- State = #state{stream = Stream, channel_manager = ChannelM, compression_type = CompressionType}) when is_list(Records) ->
+ State = #state{stream = Stream, channel_manager = ChannelM, compression_type = CompressionType, byte_size_ref = ByteSizeRef}) when is_list(Records) ->
     case hstreamdb_channel_mgr:lookup_channel(OrderingKey, ChannelM) of
         {ok, Channel} ->
-            case flush_request(Stream, Records, Channel, CompressionType, OrderingKey) of
+            case flush_request(Stream, Records, Channel, CompressionType, OrderingKey, ByteSizeRef) of
                 Res = {ok, _} ->
                     {Res, State};
                 Error ->
@@ -216,7 +219,7 @@ do_append_flush({OrderingKey, Records},
                     {Error, State#state{channel_manager = NCManager}}
             end;
         {ok, Channel, NCManager} ->
-            case flush_request(Stream, Records, Channel, CompressionType, OrderingKey) of
+            case flush_request(Stream, Records, Channel, CompressionType, OrderingKey, ByteSizeRef) of
                 Res = {ok, _} ->
                     {Res, State#state{channel_manager = NCManager}};
                 Error ->
@@ -230,7 +233,7 @@ do_append_flush({OrderingKey, Records},
 do_append_flush({OrderingKey, Record}, State) ->
     do_append_flush({OrderingKey, [Record]}, State).
 
-flush_request(Stream, Records, Channel, CompressionType, OrderingKey) ->
+flush_request(Stream, Records, Channel, CompressionType, OrderingKey, ByteSizeRef) ->
     BatchHStreamRecords = #{ records => Records },
     Payload = hstreamdb_api:encode_msg(
           BatchHStreamRecords
@@ -249,6 +252,8 @@ flush_request(Stream, Records, Channel, CompressionType, OrderingKey) ->
             Options = #{channel => Channel},
             case hstreamdb_client:append(Req, Options) of
                 {ok, Resp, _MetaData} ->
+                    Size = byte_size(Payload),
+                    atomics:add(ByteSizeRef, 1, Size),
                     {ok, Resp};
                 {error, R} ->
                     {error, R}
