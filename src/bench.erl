@@ -126,7 +126,7 @@ client_opts(PoolSize) ->
 producer_opts(StreamName, ByteSizeRef) ->
   [{stream, StreamName},
    {callback, {?MODULE, cb}},
-   {max_records, 16},
+   {max_records, 250},
    {interval, 1000},
    {byte_size_ref, ByteSizeRef},
    {flow_control_interval, 1000},
