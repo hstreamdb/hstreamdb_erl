@@ -47,7 +47,7 @@
     compression_type :: compression_type()
 }).
 
-- type compression_type() :: none | zstd.
+- type compression_type() :: none | gzip | zstd.
 
 start(Producer, Options) ->
     Workers = proplists:get_value(pool_size, Options, 8),
@@ -257,6 +257,7 @@ flush_request(Stream, Records, Channel, CompressionType, OrderingKey) ->
 -spec compress_payload(Payload :: binary(), CompressionType :: compression_type()) -> {ok, binary()} | {error, any()}.
 compress_payload(Payload, CompressionType) -> case CompressionType of
     none -> {ok, Payload};
+    gzip -> {ok, zlib:gzip(Payload)};
     zstd -> case ezstd:compress(Payload) of
         {error, R} -> {error, R};
         R -> {ok, R}
@@ -266,6 +267,7 @@ end.
 compression_type_to_enum(CompressionType) ->
     case CompressionType of
         none -> 0;
+        gzip -> 1;
         zstd -> 2
     end.
 
