@@ -68,13 +68,15 @@ stop(Producer) ->
     wpool:stop_sup_pool(Producer).
 
 append(Producer, Record) ->
-    wpool:call(Producer, {append, Record}).
+    {OrderingKey, _} = Record,
+    wpool:call(Producer, {append, Record}, {hash_worker, OrderingKey}).
 
 flush(Producer) ->
     wpool:call(Producer, flush).
 
 append_flush(Producer, Records) ->
-    wpool:call(Producer, {append_flush, Records}).
+    {OrderingKey, _} = Records,
+    wpool:call(Producer, {append_flush, Records}, {hash_worker, OrderingKey}).
 
 %% -------------------------------------------------------------------------------------------------
 %% gen_server part
