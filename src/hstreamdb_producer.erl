@@ -84,7 +84,7 @@ init(Options) ->
     Callback = proplists:get_value(callback, Options),
     MaxRecords = proplists:get_value(max_records, Options, ?DEFAULT_MAX_RECORDS),
     MaxInterval = proplists:get_value(interval, Options, ?DEFAULT_INTERVAL),
-    CompressionType = proplists:get_value(compression_type, Options, none),
+    CompressionType = proplists:get_value(compression_type, Options, zstd),
     {ok, #state{
         stream = StreamName,
         callback = Callback,
