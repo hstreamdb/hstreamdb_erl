@@ -82,7 +82,7 @@ gen_rnd(Length, AllowedChars) ->
   MaxLength = length(AllowedChars),
   lists:foldl(fun(_, Acc) ->
                  [lists:nth(
-                    rand:uniform(1, MaxLength), AllowedChars)]
+                    rand:uniform(MaxLength), AllowedChars)]
                  ++ Acc
               end,
               [],
