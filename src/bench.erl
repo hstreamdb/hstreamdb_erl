@@ -44,7 +44,8 @@ producer_list(Producers, OrdKeyNum) ->
   [X | XS] = Producers,
   lists:foreach(fun(Producer) -> spawn_loop_write(Producer, 4, rand_key(OrdKeyNum)) end,
                 XS),
-  loop_write(X, 4, rand_key(OrdKeyNum)).
+  spawn_loop_write(X, 4, rand_key(OrdKeyNum)),
+        loop_write(X, 4, rand_key(OrdKeyNum)).
 
 spawn_loop_write(Producer, Size, OrdKey) ->
   spawn(fun() -> loop_write(Producer, Size, OrdKey) end),
