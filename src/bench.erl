@@ -6,7 +6,7 @@
 
 start() ->
   ByteSizeRef = new_byte_size_ref(),
-  PoolSize = 8,
+  PoolSize = 32,
   ClientName = test_c,
   {ok, Client} = hstreamdb:start_client(ClientName, client_opts(PoolSize)),
   Streams =
@@ -42,24 +42,24 @@ new_byte_size_ref() ->
 
 producer_list(Producers, OrdKeyNum) ->
   [X | XS] = Producers,
-  lists:foreach(fun(Producer) -> spawn_loop_write(Producer, 4, rand_key(OrdKeyNum)) end,
+  lists:foreach(fun(Producer) -> spawn_loop_write(Producer, 4, OrdKeyNum) end,
                 XS),
-  spawn_loop_write(X, 4, rand_key(OrdKeyNum)),
-  loop_write(X, 4, rand_key(OrdKeyNum)).
+  spawn_loop_write(X, 4, OrdKeyNum),
+  loop_write(X, 4, OrdKeyNum).
 
-spawn_loop_write(Producer, Size, OrdKey) ->
+spawn_loop_write(Producer, Size, OrdKeyNum) ->
   lists:foreach(fun(_) ->
                    io:format("spawn"),
                    spawn(fun() ->
-                            loop_write(Producer, Size, OrdKey),
+                            loop_write(Producer, Size, OrdKeyNum),
                             io:format("error")
                          end)
                 end,
                 seq_list(200)).
 
-loop_write(Producer, Size, OrdKey) ->
-  hstreamdb:append(Producer, OrdKey, raw, rand_bytes(Size, k)),
-  loop_write(Producer, Size, OrdKey).
+loop_write(Producer, Size, OrdKeyNum) ->
+  hstreamdb:append(Producer, rand_key(OrdKeyNum), raw, rand_bytes(Size, k)),
+  loop_write(Producer, Size, OrdKeyNum).
 
 client_opts(PoolSize) ->
   RPCOptions = #{pool_size => PoolSize},
