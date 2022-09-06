@@ -107,5 +107,5 @@ do_flush(OrderingKey,
     _ = timer:cancel(
             maps:get(OrderingKey, TimerRefMap)),
     NState = State#state{record_map = maps:remove(OrderingKey, RecordMap)},
-    wpool:cast(Workers, {append, {Stream, OrderingKey, Records}}),
+    wpool:cast(Workers, {append, {Stream, OrderingKey, Records}}, {hash_worker, OrderingKey}),
     NState.
