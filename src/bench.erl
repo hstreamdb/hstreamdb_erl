@@ -45,16 +45,11 @@ producer_list(Producers, OrdKeyNum) ->
   lists:foreach(fun(Producer) -> spawn_loop_write(Producer, 4, rand_key(OrdKeyNum)) end,
                 XS),
   spawn_loop_write(X, 4, rand_key(OrdKeyNum)),
-        loop_write(X, 4, rand_key(OrdKeyNum)).
+  loop_write(X, 4, rand_key(OrdKeyNum)).
 
 spawn_loop_write(Producer, Size, OrdKey) ->
-  spawn(fun() -> loop_write(Producer, Size, OrdKey) end),
-  spawn(fun() -> loop_write(Producer, Size, OrdKey) end),
-  spawn(fun() -> loop_write(Producer, Size, OrdKey) end),
-  spawn(fun() -> loop_write(Producer, Size, OrdKey) end),
-  spawn(fun() -> loop_write(Producer, Size, OrdKey) end),
-  spawn(fun() -> loop_write(Producer, Size, OrdKey) end),
-  spawn(fun() -> loop_write(Producer, Size, OrdKey) end).
+  lists:foreach(fun(_) -> spawn(fun() -> loop_write(Producer, Size, OrdKey) end) end,
+                seq_list(200)).
 
 loop_write(Producer, Size, OrdKey) ->
   hstreamdb:append(Producer, OrdKey, raw, rand_bytes(Size, k)),
