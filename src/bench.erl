@@ -16,7 +16,7 @@ start() ->
                  _ = create_stream(ClientName, Stream),
                  Stream
               end,
-              seq_list(20)),
+              seq_list(1)),
   Producers =
     lists:map(fun(Stream) ->
                  {ok, Producer} =
@@ -29,7 +29,7 @@ start() ->
                  Producer
               end,
               Streams),
-  producer_list(Producers, 12),
+  producer_list(Producers, 400),
   error_return.
 
 cb(_) ->
@@ -50,6 +50,9 @@ spawn_loop_write(Producer, Size, OrdKey) ->
   spawn(fun() -> loop_write(Producer, Size, OrdKey) end),
   spawn(fun() -> loop_write(Producer, Size, OrdKey) end),
   spawn(fun() -> loop_write(Producer, Size, OrdKey) end),
+  spawn(fun() -> loop_write(Producer, Size, OrdKey) end),
+  spawn(fun() -> loop_write(Producer, Size, OrdKey) end),
+  spawn(fun() -> loop_write(Producer, Size, OrdKey) end),
   spawn(fun() -> loop_write(Producer, Size, OrdKey) end).
 
 loop_write(Producer, Size, OrdKey) ->
@@ -63,7 +66,7 @@ client_opts(PoolSize) ->
 producer_opts(StreamName, ByteSizeRef) ->
   [{stream, StreamName},
    {callback, {?MODULE, cb}},
-   {max_records, 250},
+   {max_records, 16},
    {interval, 1000},
    {byte_size_ref, ByteSizeRef},
    {flow_control_interval, 1000},
