@@ -48,7 +48,13 @@ producer_list(Producers, OrdKeyNum) ->
   loop_write(X, 4, rand_key(OrdKeyNum)).
 
 spawn_loop_write(Producer, Size, OrdKey) ->
-  lists:foreach(fun(_) -> spawn(fun() -> loop_write(Producer, Size, OrdKey) end) end,
+  lists:foreach(fun(_) ->
+                   io:format("spawn"),
+                   spawn(fun() ->
+                            loop_write(Producer, Size, OrdKey),
+                            io:format("error")
+                         end)
+                end,
                 seq_list(200)).
 
 loop_write(Producer, Size, OrdKey) ->
