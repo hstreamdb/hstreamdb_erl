@@ -50,7 +50,7 @@ code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 handle_info({flush, OrderingKey}, State) ->
-    do_flush(OrderingKey, State);
+    {noreply, do_flush(OrderingKey, State)};
 handle_info(_Request, State) ->
     {noreply, State}.
 
