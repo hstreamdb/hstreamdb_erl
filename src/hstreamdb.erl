@@ -19,7 +19,7 @@
 -export([ start_client/2
         , stop_client/1
         , start_producer/3
-        % , stop_producer/1
+        , stop_producer/1
         ]).
 
 -export([ echo/1
@@ -28,8 +28,7 @@
 -export([ to_record/3
         , append/2
         , append/4
-        % , flush/1
-        % , append_flush/2
+        , flush/1
         ]).
 
 start_client(Name, Options) when is_list(Options) ->
@@ -71,8 +70,8 @@ start_producer(Client, Producer, ProducerOptions) ->
         R -> R
     end.
 
-% stop_producer(Producer) ->
-%     hstreamdb_producer:stop(Producer).
+stop_producer(Producer) ->
+    hstreamdb_producer:stop(Producer).
 
 to_record(OrderingKey, PayloadType, Payload) ->
     {OrderingKey, #{
@@ -102,13 +101,9 @@ append(ProducerRef, Record) ->
     end,
     hstreamdb_producer:append(Producer, Record).
 
-% flush(ProducerRef) ->
-%     #hstream_producer{producer = Producer} = ProducerRef,
-%     hstreamdb_producer:flush(Producer).
-
-% append_flush(ProducerRef, Data) ->
-%     #hstream_producer{producer = Producer} = ProducerRef,
-%     hstreamdb_producer:append_flush(Producer, Data).
+flush(ProducerRef) ->
+    #hstream_producer{producer = Producer} = ProducerRef,
+    hstreamdb_producer:flush(Producer).
 
 %% -------------------------------------------------------------------------------------------------
 %% internal
