@@ -19,9 +19,7 @@
 -export([ start_client/2
         , stop_client/1
         , start_producer/3
-        , stop_producer/1
-        , start_consumer/3
-        , stop_consumer/1
+        % , stop_producer/1
         ]).
 
 -export([ echo/1
@@ -30,8 +28,8 @@
 -export([ to_record/3
         , append/2
         , append/4
-        , flush/1
-        , append_flush/2
+        % , flush/1
+        % , append_flush/2
         ]).
 
 start_client(Name, Options) when is_list(Options) ->
@@ -60,17 +58,21 @@ stop_client(Name) ->
     Channel =  hstreamdb_channel_mgr:channel_name(Name),
     grpc_client_sup:stop_channel_pool(Channel).
 
+-record(hstream_producer, {producer, flow_controller}).
+
 start_producer(Client, Producer, ProducerOptions) ->
-    hstreamdb_producer:start(Producer, [{client, Client} | ProducerOptions]).
+    case gen_server:start(hstreamdb_flow_controller, ProducerOptions, []) of
+        {ok, FlowControllerRef} ->
+            case hstreamdb_producer:start(Producer, [{client, Client} | ProducerOptions]) of
+                {ok, ProducerRef} ->
+                    {ok, #hstream_producer{producer = ProducerRef, flow_controller = FlowControllerRef}};
+                R -> R
+            end;
+        R -> R
+    end.
 
-stop_producer(Producer) ->
-    hstreamdb_producer:stop(Producer).
-
-start_consumer(_Client, Consumer, _ConsumerOptions) ->
-    {ok, Consumer}.
-
-stop_consumer(_) ->
-    ok.
+% stop_producer(Producer) ->
+%     hstreamdb_producer:stop(Producer).
 
 to_record(OrderingKey, PayloadType, Payload) ->
     {OrderingKey, #{
@@ -87,18 +89,26 @@ to_record(OrderingKey, PayloadType, Payload) ->
 echo(Client) ->
     do_echo(Client).
 
-append(Producer, OrderingKey, PayloadType, Payload) ->
+append(ProducerRef, OrderingKey, PayloadType, Payload) ->
     Record = to_record(OrderingKey, PayloadType, Payload),
-    append(Producer, Record).
+    append(ProducerRef, Record).
 
-append(Producer, Record) ->
+append(ProducerRef, Record) ->
+    #hstream_producer{producer = Producer, flow_controller = FlowController} = ProducerRef,
+    {_, #{payload := Payload}} = Record,
+    gen_server:call(FlowController, {check, erlang:byte_size(Payload)}),
+    receive
+        {flow_control, ok} -> ok
+    end,
     hstreamdb_producer:append(Producer, Record).
 
-flush(Producer) ->
-    hstreamdb_producer:flush(Producer).
+% flush(ProducerRef) ->
+%     #hstream_producer{producer = Producer} = ProducerRef,
+%     hstreamdb_producer:flush(Producer).
 
-append_flush(Producer, Data) ->
-    hstreamdb_producer:append_flush(Producer, Data).
+% append_flush(ProducerRef, Data) ->
+%     #hstream_producer{producer = Producer} = ProducerRef,
+%     hstreamdb_producer:append_flush(Producer, Data).
 
 %% -------------------------------------------------------------------------------------------------
 %% internal
