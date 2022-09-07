@@ -7,7 +7,7 @@
 
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2,
          code_change/3]).
--export([start/2, append/2]).
+-export([start/2, stop/1, append/2, flush/1]).
 
 -record(state,
         {stream, callback, max_records, interval, record_map, worker_pool, timer_ref_map}).
@@ -15,8 +15,14 @@
 start(Producer, Options) ->
     gen_server:start(?MODULE, [{producer, Producer} | Options], []).
 
+stop(Producer) ->
+    gen_server:stop(Producer).
+
 append(Producer, Record) ->
     gen_server:call(Producer, {append, Record}).
+
+flush(Producer) ->
+    gen_server:call(Producer, flush).
 
 init(Options) ->
     StreamName = proplists:get_value(stream, Options),
