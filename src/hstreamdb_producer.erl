@@ -76,8 +76,8 @@ handle_call({append, Record}, _From, State) ->
 handle_call(flush, _From, State) ->
     {reply, ok, do_flush(State)};
 handle_call({append_flush, Records}, _From, State) ->
-    {Res, NState} = do_append_flush(Records, State),
-    {reply, Res, NState}.
+    NState = do_append_flush(Records, State),
+    {reply, ok, NState}.
 
 do_append({OrderingKey, Record},
           State =
