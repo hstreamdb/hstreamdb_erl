@@ -119,7 +119,7 @@ do_flush(OrderingKey,
     _ = timer:cancel(
             maps:get(OrderingKey, TimerRefMap)),
     NState = State#state{record_map = maps:remove(OrderingKey, RecordMap)},
-    wpool:cast(Workers, {append, {Stream, OrderingKey, Records}}, {hash_worker, OrderingKey}),
+    wpool:cast(Workers, {append, {Stream, OrderingKey, Records}}, random_worker),
     NState.
 
 do_append_flush({OrderingKey, NewRecords},
@@ -137,7 +137,7 @@ do_append_flush({OrderingKey, NewRecords},
     NState = State#state{record_map = maps:remove(OrderingKey, RecordMap)},
     wpool:cast(Workers,
                {append, {Stream, OrderingKey, Records ++ NewRecords}},
-               {hash_worker, OrderingKey}),
+               random_worker),
     NState;
 do_append_flush({OrderingKey, Record}, State) ->
     do_append_flush({OrderingKey, [Record]}, State).
