@@ -7,7 +7,7 @@
 
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2,
          code_change/3]).
--export([start/2, append/2]).
+-export([start/2, append/2, flush/1, stop/1, append_flush/2]).
 
 -record(state,
         {stream, callback, max_records, interval, record_map, worker_pool, timer_ref_map}).
@@ -17,6 +17,15 @@ start(Producer, Options) ->
 
 append(Producer, Record) ->
     gen_server:call(Producer, {append, Record}).
+
+flush(Producer) ->
+    gen_server:call(Producer, flush).
+
+stop(Producer) ->
+    gen_server:stop(Producer).
+
+append_flush(Producer, Data) ->
+    gen_server:call(Producer, {append_flush, Data}).
 
 init(Options) ->
     StreamName = proplists:get_value(stream, Options),
@@ -65,7 +74,10 @@ handle_call({append, Record}, _From, State) ->
             {reply, ok, NState}
     end;
 handle_call(flush, _From, State) ->
-    {reply, ok, do_flush(State)}.
+    {reply, ok, do_flush(State)};
+handle_call({append_flush, Records}, _From, State) ->
+    {Res, NState} = do_append_flush(Records, State),
+    {reply, Res, NState}.
 
 do_append({OrderingKey, Record},
           State =
@@ -109,3 +121,23 @@ do_flush(OrderingKey,
     NState = State#state{record_map = maps:remove(OrderingKey, RecordMap)},
     wpool:cast(Workers, {append, {Stream, OrderingKey, Records}}, {hash_worker, OrderingKey}),
     NState.
+
+do_append_flush({OrderingKey, NewRecords},
+                #state{worker_pool = Workers,
+                       stream = Stream,
+                       record_map = RecordMap,
+                       timer_ref_map = TimerRefMap} =
+                    State)
+    when is_list(NewRecords) ->
+    Records =
+        lists:reverse(
+            maps:get(OrderingKey, RecordMap)),
+    _ = timer:cancel(
+            maps:get(OrderingKey, TimerRefMap)),
+    NState = State#state{record_map = maps:remove(OrderingKey, RecordMap)},
+    wpool:cast(Workers,
+               {append, {Stream, OrderingKey, Records ++ NewRecords}},
+               {hash_worker, OrderingKey}),
+    NState;
+do_append_flush({OrderingKey, Record}, State) ->
+    do_append_flush({OrderingKey, [Record]}, State).
