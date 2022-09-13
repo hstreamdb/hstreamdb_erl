@@ -96,7 +96,14 @@ do_append({OrderingKey, Record},
                         TimerRefMap#{OrderingKey => TimerRef}
                 end,
             NRecordMap = RecordMap#{OrderingKey => [Record]},
-            {State#state{record_map = NRecordMap, timer_ref_map = NTimerRefMap}, Interval};
+            TimeoutInterval =
+                case Interval == -1 of
+                    true ->
+                        infinity;
+                    false ->
+                        Interval
+                end,
+            {State#state{record_map = NRecordMap, timer_ref_map = NTimerRefMap}, TimeoutInterval};
         Records ->
             NRecords = [Record | Records],
             NRecordMap = RecordMap#{OrderingKey => NRecords},
