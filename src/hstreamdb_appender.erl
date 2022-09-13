@@ -7,12 +7,14 @@
 
 -type compression_type() :: none | gzip | zstd.
 
--record(state, {channel_manager, compression_type :: compression_type()}).
+-record(state, {channel_manager, callback, compression_type :: compression_type()}).
 
 init(Options) ->
   CompressionType = proplists:get_value(compression_type, Options, gzip),
+  Callback = proplists:get_value(callback, Options),
   {ok,
    #state{channel_manager = hstreamdb_channel_mgr:start(Options),
+          callback = Callback,
           compression_type = CompressionType}}.
 
 handle_call(Request, _From, State) ->
@@ -20,10 +22,15 @@ handle_call(Request, _From, State) ->
   {reply, ok, NState}.
 
 handle_cast({append, {Stream, OrderingKey, Records}},
-            State = #state{channel_manager = ChannelM, compression_type = CompressionType}) ->
+            State =
+              #state{channel_manager = ChannelM,
+                     callback = Callback,
+                     compression_type = CompressionType}) ->
   case hstreamdb_channel_mgr:lookup_channel(OrderingKey, ChannelM) of
     {ok, Channel} ->
-      case call_rpc_append(Stream, OrderingKey, Records, Channel, CompressionType) of
+      RpcResp = call_rpc_append(Stream, OrderingKey, Records, Channel, CompressionType),
+      _ = apply_callback(Callback, {{flush, Stream, Records}, RpcResp}),
+      case RpcResp of
         {ok, _} ->
           {noreply, State};
         {error, _} ->
@@ -31,7 +38,9 @@ handle_cast({append, {Stream, OrderingKey, Records}},
           {noreply, State#state{channel_manager = NChannelM}}
       end;
     {ok, Channel, NChannelM} ->
-      case call_rpc_append(Stream, OrderingKey, Records, Channel, CompressionType) of
+      RpcResp = call_rpc_append(Stream, OrderingKey, Records, Channel, CompressionType),
+      _ = apply_callback(Callback, {{flush, Stream, Records}, RpcResp}),
+      case RpcResp of
         {ok, _} ->
           {noreply, State#state{channel_manager = NChannelM}};
         {error, _} ->
@@ -39,6 +48,7 @@ handle_cast({append, {Stream, OrderingKey, Records}},
           {noreply, State#state{channel_manager = ErrNChannelM}}
       end;
     {error, Error} ->
+      _ = apply_callback(Callback, {{flush, Stream, Records}, {error, Error}}),
       {stop, Error, State}
   end.
 
@@ -104,3 +114,10 @@ compression_type_to_enum(CompressionType) ->
     zstd ->
       2
   end.
+
+apply_callback({M, F}, R) ->
+  erlang:apply(M, F, [R]);
+apply_callback({M, F, A}, R) ->
+  erlang:apply(M, F, [R | A]);
+apply_callback(F, R) ->
+  F(R).
