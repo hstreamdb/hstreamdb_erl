@@ -10,7 +10,7 @@
 -record(state, {channel_manager, callback, compression_type :: compression_type()}).
 
 init(Options) ->
-  CompressionType = proplists:get_value(compression_type, Options, gzip),
+  CompressionType = proplists:get_value(compression_type, Options, zstd),
   Callback = proplists:get_value(callback, Options),
   {ok,
    #state{channel_manager = hstreamdb_channel_mgr:start(Options),
