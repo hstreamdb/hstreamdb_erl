@@ -87,8 +87,14 @@ do_append({OrderingKey, Record},
                      max_records = MaxRecords}) ->
     case maps:get(OrderingKey, RecordMap, undefined) of
         undefined ->
-            {ok, TimerRef} = timer:send_after(Interval, self(), {flush, OrderingKey}),
-            NTimerRefMap = TimerRefMap#{OrderingKey => TimerRef},
+            NTimerRefMap =
+                case Interval == -1 of
+                    true ->
+                        {ok, TimerRef} = timer:send_after(Interval, self(), {flush, OrderingKey}),
+                        TimerRefMap#{OrderingKey => TimerRef};
+                    false ->
+                        TimerRefMap
+                end,
             NRecordMap = RecordMap#{OrderingKey => [Record]},
             {State#state{record_map = NRecordMap, timer_ref_map = NTimerRefMap}, Interval};
         Records ->
@@ -116,8 +122,12 @@ do_flush(OrderingKey,
     Records =
         lists:reverse(
             maps:get(OrderingKey, RecordMap)),
-    _ = timer:cancel(
-            maps:get(OrderingKey, TimerRefMap)),
+    _ = case maps:get(OrderingKey, TimerRefMap, undefined) of
+            undefined ->
+                ok;
+            TimerRef ->
+                timer:cancel(TimerRef)
+        end,
     NState = State#state{record_map = maps:remove(OrderingKey, RecordMap)},
     wpool:cast(Workers, {append, {Stream, OrderingKey, Records}}, random_worker),
     NState.
