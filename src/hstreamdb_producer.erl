@@ -90,10 +90,10 @@ do_append({OrderingKey, Record},
             NTimerRefMap =
                 case Interval == -1 of
                     true ->
-                        {ok, TimerRef} = timer:send_after(Interval, self(), {flush, OrderingKey}),
-                        TimerRefMap#{OrderingKey => TimerRef};
+                        TimerRefMap;
                     false ->
-                        TimerRefMap
+                        {ok, TimerRef} = timer:send_after(Interval, self(), {flush, OrderingKey}),
+                        TimerRefMap#{OrderingKey => TimerRef}
                 end,
             NRecordMap = RecordMap#{OrderingKey => [Record]},
             {State#state{record_map = NRecordMap, timer_ref_map = NTimerRefMap}, Interval};
