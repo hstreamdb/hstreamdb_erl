@@ -36,6 +36,8 @@
 
 -define(GRPC_TIMEOUT, 5000).
 
+-include("hstreamdb.hrl").
+
 start_client(Name, Options) when is_list(Options) ->
     start_client(Name, maps:from_list(Options));
 start_client(Name, Options) ->
@@ -117,7 +119,7 @@ url_prefix(<<"http://", _/binary>>) ->
     "http://".
 
 do_echo(#{channel := Channel, grpc_timeout := Timeout}) ->
-    case hstreamdb_client:echo(#{}, #{channel => Channel, timeout => Timeout}) of
+    case ?HSTREAMDB_CLIENT:echo(#{}, #{channel => Channel, timeout => Timeout}) of
         {ok, #{msg := _}, _} ->
             {ok, echo};
         {error, R} ->

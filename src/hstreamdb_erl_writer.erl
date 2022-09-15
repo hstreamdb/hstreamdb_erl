@@ -34,6 +34,8 @@
 
 -define(DEFAULT_GRPC_TIMEOUT, 30000).
 
+-include("hstreamdb.hrl").
+
 -record(state, {
     stream,
     grpc_timeout,
@@ -97,10 +99,12 @@ do_write({OrderingKey, Records},
                          stream = Stream,
                          grpc_timeout = GRPCTimeout}) ->
     case hstreamdb_ordkey_mgr:lookup_channel(OrderingKey, OrderingKeyM0) of
-        {ok, Node} ->
+        {ok, {ShardId, Node}} ->
             case hstreamdb_channel_mgr:lookup_channel(Node, ChannelM0) of
                 {ok, Channel, ChannelM1} ->
-                    case flush_request(OrderingKey, Stream, Records, Channel, GRPCTimeout) of
+                    Req = #{streamName => Stream, records => Records, shardId => ShardId},
+                    Options = #{channel => Channel, timeout => GRPCTimeout},
+                    case flush(OrderingKey, Req, Options) of
                         {ok, _} = Res ->
                             {Res, State#state{channel_manager = ChannelM1}};
                         {error, _} = Error ->
@@ -114,10 +118,10 @@ do_write({OrderingKey, Records},
             {Error, State}
     end.
 
-flush_request(OrderingKey, Stream, Records, Channel, Timeout) ->
-    Req = #{streamName => Stream, records => Records},
-    Options = #{channel => Channel, timeout => Timeout},
-    case timer:tc(fun() -> hstreamdb_client:append(Req, Options) end) of
+flush(OrderingKey,
+      #{records := Records} = Req,
+      #{channel := Channel, timeout := Timeout} = Options) ->
+    case timer:tc(fun() -> ?HSTREAMDB_CLIENT:append(Req, Options) end) of
         {Time, {ok, Resp, _MetaData}} ->
             logger:info("flush_request[~p, ~p], pid=~p, SUCCESS, ~p records in ~p ms~n", [Channel, OrderingKey, self(), length(Records), Time div 1000]),
             {ok, Resp};

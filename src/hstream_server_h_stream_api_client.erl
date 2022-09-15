@@ -5,7 +5,7 @@
 
 %% this module was generated and should not be modified manually
 
--module(hstreamdb_client).
+-module(hstream_server_h_stream_api_client).
 
 -compile(export_all).
 -compile(nowarn_export_all).
@@ -13,7 +13,7 @@
 -include_lib("grpc/include/grpc.hrl").
 
 -define(SERVICE, 'hstream.server.HStreamApi').
--define(PROTO_MODULE, hstreamdb_api).
+-define(PROTO_MODULE, 'hstreamdb_api').
 -define(MARSHAL(T), fun(I) -> ?PROTO_MODULE:encode_msg(I, T) end).
 -define(UNMARSHAL(T), fun(I) -> ?PROTO_MODULE:decode_msg(I, T) end).
 -define(DEF(Path, Req, Resp, MessageType),
@@ -103,24 +103,24 @@ list_streams(Req, Metadata, Options) ->
                            list_streams_request, list_streams_response, <<"hstream.server.ListStreamsRequest">>),
                       Req, Metadata, Options).
 
--spec lookup_stream(hstreamdb_api:lookup_stream_request())
-    -> {ok, hstreamdb_api:lookup_stream_response(), grpc:metadata()}
+-spec lookup_shard(hstreamdb_api:lookup_shard_request())
+    -> {ok, hstreamdb_api:lookup_shard_response(), grpc:metadata()}
      | {error, term()}.
-lookup_stream(Req) ->
-    lookup_stream(Req, #{}, #{}).
+lookup_shard(Req) ->
+    lookup_shard(Req, #{}, #{}).
 
--spec lookup_stream(hstreamdb_api:lookup_stream_request(), grpc:options())
-    -> {ok, hstreamdb_api:lookup_stream_response(), grpc:metadata()}
+-spec lookup_shard(hstreamdb_api:lookup_shard_request(), grpc:options())
+    -> {ok, hstreamdb_api:lookup_shard_response(), grpc:metadata()}
      | {error, term()}.
-lookup_stream(Req, Options) ->
-    lookup_stream(Req, #{}, Options).
+lookup_shard(Req, Options) ->
+    lookup_shard(Req, #{}, Options).
 
--spec lookup_stream(hstreamdb_api:lookup_stream_request(), grpc:metadata(), grpc_client:options())
-    -> {ok, hstreamdb_api:lookup_stream_response(), grpc:metadata()}
+-spec lookup_shard(hstreamdb_api:lookup_shard_request(), grpc:metadata(), grpc_client:options())
+    -> {ok, hstreamdb_api:lookup_shard_response(), grpc:metadata()}
      | {error, term()}.
-lookup_stream(Req, Metadata, Options) ->
-    grpc_client:unary(?DEF(<<"/hstream.server.HStreamApi/LookupStream">>,
-                           lookup_stream_request, lookup_stream_response, <<"hstream.server.LookupStreamRequest">>),
+lookup_shard(Req, Metadata, Options) ->
+    grpc_client:unary(?DEF(<<"/hstream.server.HStreamApi/LookupShard">>,
+                           lookup_shard_request, lookup_shard_response, <<"hstream.server.LookupShardRequest">>),
                       Req, Metadata, Options).
 
 -spec append(hstreamdb_api:append_request())
@@ -143,44 +143,104 @@ append(Req, Metadata, Options) ->
                            append_request, append_response, <<"hstream.server.AppendRequest">>),
                       Req, Metadata, Options).
 
--spec append_0(hstreamdb_api:append_request())
-    -> {ok, hstreamdb_api:append_response(), grpc:metadata()}
+-spec list_shards(hstreamdb_api:list_shards_request())
+    -> {ok, hstreamdb_api:list_shards_response(), grpc:metadata()}
      | {error, term()}.
-append_0(Req) ->
-    append_0(Req, #{}, #{}).
+list_shards(Req) ->
+    list_shards(Req, #{}, #{}).
 
--spec append_0(hstreamdb_api:append_request(), grpc:options())
-    -> {ok, hstreamdb_api:append_response(), grpc:metadata()}
+-spec list_shards(hstreamdb_api:list_shards_request(), grpc:options())
+    -> {ok, hstreamdb_api:list_shards_response(), grpc:metadata()}
      | {error, term()}.
-append_0(Req, Options) ->
-    append_0(Req, #{}, Options).
+list_shards(Req, Options) ->
+    list_shards(Req, #{}, Options).
 
--spec append_0(hstreamdb_api:append_request(), grpc:metadata(), grpc_client:options())
-    -> {ok, hstreamdb_api:append_response(), grpc:metadata()}
+-spec list_shards(hstreamdb_api:list_shards_request(), grpc:metadata(), grpc_client:options())
+    -> {ok, hstreamdb_api:list_shards_response(), grpc:metadata()}
      | {error, term()}.
-append_0(Req, Metadata, Options) ->
-    grpc_client:unary(?DEF(<<"/hstream.server.HStreamApi/Append0">>,
-                           append_request, append_response, <<"hstream.server.AppendRequest">>),
+list_shards(Req, Metadata, Options) ->
+    grpc_client:unary(?DEF(<<"/hstream.server.HStreamApi/ListShards">>,
+                           list_shards_request, list_shards_response, <<"hstream.server.ListShardsRequest">>),
                       Req, Metadata, Options).
 
--spec create_query_stream(hstreamdb_api:create_query_stream_request())
-    -> {ok, hstreamdb_api:create_query_stream_response(), grpc:metadata()}
+-spec create_shard_reader(hstreamdb_api:create_shard_reader_request())
+    -> {ok, hstreamdb_api:create_shard_reader_response(), grpc:metadata()}
      | {error, term()}.
-create_query_stream(Req) ->
-    create_query_stream(Req, #{}, #{}).
+create_shard_reader(Req) ->
+    create_shard_reader(Req, #{}, #{}).
 
--spec create_query_stream(hstreamdb_api:create_query_stream_request(), grpc:options())
-    -> {ok, hstreamdb_api:create_query_stream_response(), grpc:metadata()}
+-spec create_shard_reader(hstreamdb_api:create_shard_reader_request(), grpc:options())
+    -> {ok, hstreamdb_api:create_shard_reader_response(), grpc:metadata()}
      | {error, term()}.
-create_query_stream(Req, Options) ->
-    create_query_stream(Req, #{}, Options).
+create_shard_reader(Req, Options) ->
+    create_shard_reader(Req, #{}, Options).
 
--spec create_query_stream(hstreamdb_api:create_query_stream_request(), grpc:metadata(), grpc_client:options())
-    -> {ok, hstreamdb_api:create_query_stream_response(), grpc:metadata()}
+-spec create_shard_reader(hstreamdb_api:create_shard_reader_request(), grpc:metadata(), grpc_client:options())
+    -> {ok, hstreamdb_api:create_shard_reader_response(), grpc:metadata()}
      | {error, term()}.
-create_query_stream(Req, Metadata, Options) ->
-    grpc_client:unary(?DEF(<<"/hstream.server.HStreamApi/CreateQueryStream">>,
-                           create_query_stream_request, create_query_stream_response, <<"hstream.server.CreateQueryStreamRequest">>),
+create_shard_reader(Req, Metadata, Options) ->
+    grpc_client:unary(?DEF(<<"/hstream.server.HStreamApi/CreateShardReader">>,
+                           create_shard_reader_request, create_shard_reader_response, <<"hstream.server.CreateShardReaderRequest">>),
+                      Req, Metadata, Options).
+
+-spec lookup_shard_reader(hstreamdb_api:lookup_shard_reader_request())
+    -> {ok, hstreamdb_api:lookup_shard_reader_response(), grpc:metadata()}
+     | {error, term()}.
+lookup_shard_reader(Req) ->
+    lookup_shard_reader(Req, #{}, #{}).
+
+-spec lookup_shard_reader(hstreamdb_api:lookup_shard_reader_request(), grpc:options())
+    -> {ok, hstreamdb_api:lookup_shard_reader_response(), grpc:metadata()}
+     | {error, term()}.
+lookup_shard_reader(Req, Options) ->
+    lookup_shard_reader(Req, #{}, Options).
+
+-spec lookup_shard_reader(hstreamdb_api:lookup_shard_reader_request(), grpc:metadata(), grpc_client:options())
+    -> {ok, hstreamdb_api:lookup_shard_reader_response(), grpc:metadata()}
+     | {error, term()}.
+lookup_shard_reader(Req, Metadata, Options) ->
+    grpc_client:unary(?DEF(<<"/hstream.server.HStreamApi/LookupShardReader">>,
+                           lookup_shard_reader_request, lookup_shard_reader_response, <<"hstream.server.LookupShardReaderRequest">>),
+                      Req, Metadata, Options).
+
+-spec read_shard(hstreamdb_api:read_shard_request())
+    -> {ok, hstreamdb_api:read_shard_response(), grpc:metadata()}
+     | {error, term()}.
+read_shard(Req) ->
+    read_shard(Req, #{}, #{}).
+
+-spec read_shard(hstreamdb_api:read_shard_request(), grpc:options())
+    -> {ok, hstreamdb_api:read_shard_response(), grpc:metadata()}
+     | {error, term()}.
+read_shard(Req, Options) ->
+    read_shard(Req, #{}, Options).
+
+-spec read_shard(hstreamdb_api:read_shard_request(), grpc:metadata(), grpc_client:options())
+    -> {ok, hstreamdb_api:read_shard_response(), grpc:metadata()}
+     | {error, term()}.
+read_shard(Req, Metadata, Options) ->
+    grpc_client:unary(?DEF(<<"/hstream.server.HStreamApi/ReadShard">>,
+                           read_shard_request, read_shard_response, <<"hstream.server.ReadShardRequest">>),
+                      Req, Metadata, Options).
+
+-spec delete_shard_reader(hstreamdb_api:delete_shard_reader_request())
+    -> {ok, hstreamdb_api:empty(), grpc:metadata()}
+     | {error, term()}.
+delete_shard_reader(Req) ->
+    delete_shard_reader(Req, #{}, #{}).
+
+-spec delete_shard_reader(hstreamdb_api:delete_shard_reader_request(), grpc:options())
+    -> {ok, hstreamdb_api:empty(), grpc:metadata()}
+     | {error, term()}.
+delete_shard_reader(Req, Options) ->
+    delete_shard_reader(Req, #{}, Options).
+
+-spec delete_shard_reader(hstreamdb_api:delete_shard_reader_request(), grpc:metadata(), grpc_client:options())
+    -> {ok, hstreamdb_api:empty(), grpc:metadata()}
+     | {error, term()}.
+delete_shard_reader(Req, Metadata, Options) ->
+    grpc_client:unary(?DEF(<<"/hstream.server.HStreamApi/DeleteShardReader">>,
+                           delete_shard_reader_request, empty, <<"hstream.server.DeleteShardReaderRequest">>),
                       Req, Metadata, Options).
 
 -spec create_subscription(hstreamdb_api:subscription())
@@ -317,6 +377,26 @@ describe_cluster(Req, Metadata, Options) ->
                            empty, describe_cluster_response, <<"google.protobuf.Empty">>),
                       Req, Metadata, Options).
 
+-spec send_admin_command(hstreamdb_api:admin_command_request())
+    -> {ok, hstreamdb_api:admin_command_response(), grpc:metadata()}
+     | {error, term()}.
+send_admin_command(Req) ->
+    send_admin_command(Req, #{}, #{}).
+
+-spec send_admin_command(hstreamdb_api:admin_command_request(), grpc:options())
+    -> {ok, hstreamdb_api:admin_command_response(), grpc:metadata()}
+     | {error, term()}.
+send_admin_command(Req, Options) ->
+    send_admin_command(Req, #{}, Options).
+
+-spec send_admin_command(hstreamdb_api:admin_command_request(), grpc:metadata(), grpc_client:options())
+    -> {ok, hstreamdb_api:admin_command_response(), grpc:metadata()}
+     | {error, term()}.
+send_admin_command(Req, Metadata, Options) ->
+    grpc_client:unary(?DEF(<<"/hstream.server.HStreamApi/SendAdminCommand">>,
+                           admin_command_request, admin_command_response, <<"hstream.server.AdminCommandRequest">>),
+                      Req, Metadata, Options).
+
 -spec per_stream_time_series_stats(hstreamdb_api:per_stream_time_series_stats_request())
     -> {ok, hstreamdb_api:per_stream_time_series_stats_response(), grpc:metadata()}
      | {error, term()}.
@@ -357,26 +437,6 @@ per_stream_time_series_stats_all(Req, Metadata, Options) ->
                            per_stream_time_series_stats_all_request, per_stream_time_series_stats_all_response, <<"hstream.server.PerStreamTimeSeriesStatsAllRequest">>),
                       Req, Metadata, Options).
 
--spec send_admin_command(hstreamdb_api:admin_command_request())
-    -> {ok, hstreamdb_api:admin_command_response(), grpc:metadata()}
-     | {error, term()}.
-send_admin_command(Req) ->
-    send_admin_command(Req, #{}, #{}).
-
--spec send_admin_command(hstreamdb_api:admin_command_request(), grpc:options())
-    -> {ok, hstreamdb_api:admin_command_response(), grpc:metadata()}
-     | {error, term()}.
-send_admin_command(Req, Options) ->
-    send_admin_command(Req, #{}, Options).
-
--spec send_admin_command(hstreamdb_api:admin_command_request(), grpc:metadata(), grpc_client:options())
-    -> {ok, hstreamdb_api:admin_command_response(), grpc:metadata()}
-     | {error, term()}.
-send_admin_command(Req, Metadata, Options) ->
-    grpc_client:unary(?DEF(<<"/hstream.server.HStreamApi/SendAdminCommand">>,
-                           admin_command_request, admin_command_response, <<"hstream.server.AdminCommandRequest">>),
-                      Req, Metadata, Options).
-
 -spec execute_push_query(grpc_client:options())
     -> {ok, grpc_client:grpcstream()}
      | {error, term()}.
@@ -409,26 +469,6 @@ execute_query(Req, Options) ->
 execute_query(Req, Metadata, Options) ->
     grpc_client:unary(?DEF(<<"/hstream.server.HStreamApi/ExecuteQuery">>,
                            command_query, command_query_response, <<"hstream.server.CommandQuery">>),
-                      Req, Metadata, Options).
-
--spec create_query(hstreamdb_api:create_query_request())
-    -> {ok, hstreamdb_api:query(), grpc:metadata()}
-     | {error, term()}.
-create_query(Req) ->
-    create_query(Req, #{}, #{}).
-
--spec create_query(hstreamdb_api:create_query_request(), grpc:options())
-    -> {ok, hstreamdb_api:query(), grpc:metadata()}
-     | {error, term()}.
-create_query(Req, Options) ->
-    create_query(Req, #{}, Options).
-
--spec create_query(hstreamdb_api:create_query_request(), grpc:metadata(), grpc_client:options())
-    -> {ok, hstreamdb_api:query(), grpc:metadata()}
-     | {error, term()}.
-create_query(Req, Metadata, Options) ->
-    grpc_client:unary(?DEF(<<"/hstream.server.HStreamApi/CreateQuery">>,
-                           create_query_request, query, <<"hstream.server.CreateQueryRequest">>),
                       Req, Metadata, Options).
 
 -spec list_queries(hstreamdb_api:list_queries_request())
@@ -531,24 +571,24 @@ restart_query(Req, Metadata, Options) ->
                            restart_query_request, empty, <<"hstream.server.RestartQueryRequest">>),
                       Req, Metadata, Options).
 
--spec create_sink_connector(hstreamdb_api:create_sink_connector_request())
+-spec create_connector(hstreamdb_api:create_connector_request())
     -> {ok, hstreamdb_api:connector(), grpc:metadata()}
      | {error, term()}.
-create_sink_connector(Req) ->
-    create_sink_connector(Req, #{}, #{}).
+create_connector(Req) ->
+    create_connector(Req, #{}, #{}).
 
--spec create_sink_connector(hstreamdb_api:create_sink_connector_request(), grpc:options())
+-spec create_connector(hstreamdb_api:create_connector_request(), grpc:options())
     -> {ok, hstreamdb_api:connector(), grpc:metadata()}
      | {error, term()}.
-create_sink_connector(Req, Options) ->
-    create_sink_connector(Req, #{}, Options).
+create_connector(Req, Options) ->
+    create_connector(Req, #{}, Options).
 
--spec create_sink_connector(hstreamdb_api:create_sink_connector_request(), grpc:metadata(), grpc_client:options())
+-spec create_connector(hstreamdb_api:create_connector_request(), grpc:metadata(), grpc_client:options())
     -> {ok, hstreamdb_api:connector(), grpc:metadata()}
      | {error, term()}.
-create_sink_connector(Req, Metadata, Options) ->
-    grpc_client:unary(?DEF(<<"/hstream.server.HStreamApi/CreateSinkConnector">>,
-                           create_sink_connector_request, connector, <<"hstream.server.CreateSinkConnectorRequest">>),
+create_connector(Req, Metadata, Options) ->
+    grpc_client:unary(?DEF(<<"/hstream.server.HStreamApi/CreateConnector">>,
+                           create_connector_request, connector, <<"hstream.server.CreateConnectorRequest">>),
                       Req, Metadata, Options).
 
 -spec list_connectors(hstreamdb_api:list_connectors_request())
@@ -611,64 +651,64 @@ delete_connector(Req, Metadata, Options) ->
                            delete_connector_request, empty, <<"hstream.server.DeleteConnectorRequest">>),
                       Req, Metadata, Options).
 
--spec restart_connector(hstreamdb_api:restart_connector_request())
+-spec pause_connector(hstreamdb_api:pause_connector_request())
     -> {ok, hstreamdb_api:empty(), grpc:metadata()}
      | {error, term()}.
-restart_connector(Req) ->
-    restart_connector(Req, #{}, #{}).
+pause_connector(Req) ->
+    pause_connector(Req, #{}, #{}).
 
--spec restart_connector(hstreamdb_api:restart_connector_request(), grpc:options())
+-spec pause_connector(hstreamdb_api:pause_connector_request(), grpc:options())
     -> {ok, hstreamdb_api:empty(), grpc:metadata()}
      | {error, term()}.
-restart_connector(Req, Options) ->
-    restart_connector(Req, #{}, Options).
+pause_connector(Req, Options) ->
+    pause_connector(Req, #{}, Options).
 
--spec restart_connector(hstreamdb_api:restart_connector_request(), grpc:metadata(), grpc_client:options())
+-spec pause_connector(hstreamdb_api:pause_connector_request(), grpc:metadata(), grpc_client:options())
     -> {ok, hstreamdb_api:empty(), grpc:metadata()}
      | {error, term()}.
-restart_connector(Req, Metadata, Options) ->
-    grpc_client:unary(?DEF(<<"/hstream.server.HStreamApi/RestartConnector">>,
-                           restart_connector_request, empty, <<"hstream.server.RestartConnectorRequest">>),
+pause_connector(Req, Metadata, Options) ->
+    grpc_client:unary(?DEF(<<"/hstream.server.HStreamApi/PauseConnector">>,
+                           pause_connector_request, empty, <<"hstream.server.PauseConnectorRequest">>),
                       Req, Metadata, Options).
 
--spec terminate_connector(hstreamdb_api:terminate_connector_request())
+-spec resume_connector(hstreamdb_api:resume_connector_request())
     -> {ok, hstreamdb_api:empty(), grpc:metadata()}
      | {error, term()}.
-terminate_connector(Req) ->
-    terminate_connector(Req, #{}, #{}).
+resume_connector(Req) ->
+    resume_connector(Req, #{}, #{}).
 
--spec terminate_connector(hstreamdb_api:terminate_connector_request(), grpc:options())
+-spec resume_connector(hstreamdb_api:resume_connector_request(), grpc:options())
     -> {ok, hstreamdb_api:empty(), grpc:metadata()}
      | {error, term()}.
-terminate_connector(Req, Options) ->
-    terminate_connector(Req, #{}, Options).
+resume_connector(Req, Options) ->
+    resume_connector(Req, #{}, Options).
 
--spec terminate_connector(hstreamdb_api:terminate_connector_request(), grpc:metadata(), grpc_client:options())
+-spec resume_connector(hstreamdb_api:resume_connector_request(), grpc:metadata(), grpc_client:options())
     -> {ok, hstreamdb_api:empty(), grpc:metadata()}
      | {error, term()}.
-terminate_connector(Req, Metadata, Options) ->
-    grpc_client:unary(?DEF(<<"/hstream.server.HStreamApi/TerminateConnector">>,
-                           terminate_connector_request, empty, <<"hstream.server.TerminateConnectorRequest">>),
+resume_connector(Req, Metadata, Options) ->
+    grpc_client:unary(?DEF(<<"/hstream.server.HStreamApi/ResumeConnector">>,
+                           resume_connector_request, empty, <<"hstream.server.ResumeConnectorRequest">>),
                       Req, Metadata, Options).
 
--spec create_view(hstreamdb_api:create_view_request())
-    -> {ok, hstreamdb_api:view(), grpc:metadata()}
+-spec lookup_connector(hstreamdb_api:lookup_connector_request())
+    -> {ok, hstreamdb_api:lookup_connector_response(), grpc:metadata()}
      | {error, term()}.
-create_view(Req) ->
-    create_view(Req, #{}, #{}).
+lookup_connector(Req) ->
+    lookup_connector(Req, #{}, #{}).
 
--spec create_view(hstreamdb_api:create_view_request(), grpc:options())
-    -> {ok, hstreamdb_api:view(), grpc:metadata()}
+-spec lookup_connector(hstreamdb_api:lookup_connector_request(), grpc:options())
+    -> {ok, hstreamdb_api:lookup_connector_response(), grpc:metadata()}
      | {error, term()}.
-create_view(Req, Options) ->
-    create_view(Req, #{}, Options).
+lookup_connector(Req, Options) ->
+    lookup_connector(Req, #{}, Options).
 
--spec create_view(hstreamdb_api:create_view_request(), grpc:metadata(), grpc_client:options())
-    -> {ok, hstreamdb_api:view(), grpc:metadata()}
+-spec lookup_connector(hstreamdb_api:lookup_connector_request(), grpc:metadata(), grpc_client:options())
+    -> {ok, hstreamdb_api:lookup_connector_response(), grpc:metadata()}
      | {error, term()}.
-create_view(Req, Metadata, Options) ->
-    grpc_client:unary(?DEF(<<"/hstream.server.HStreamApi/CreateView">>,
-                           create_view_request, view, <<"hstream.server.CreateViewRequest">>),
+lookup_connector(Req, Metadata, Options) ->
+    grpc_client:unary(?DEF(<<"/hstream.server.HStreamApi/LookupConnector">>,
+                           lookup_connector_request, lookup_connector_response, <<"hstream.server.LookupConnectorRequest">>),
                       Req, Metadata, Options).
 
 -spec list_views(hstreamdb_api:list_views_request())
