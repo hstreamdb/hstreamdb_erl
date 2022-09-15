@@ -65,9 +65,10 @@ init(Options) ->
             {stop, Error}
     end.
 
-terminate(_Reason, #state{worker_pool = Producer}) ->
+terminate(_Reason, #state{worker_pool = Producer, channel_manager = ChannelM}) ->
     _ = wpool:broadcast(Producer, stop),
     wpool:stop_sup_pool(Producer),
+    _ = hstreamdb_channel_mgr:stop(ChannelM),
     ok.
 
 code_change(_OldVsn, State, _Extra) ->

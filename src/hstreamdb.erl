@@ -37,17 +37,17 @@
 start_client(Name, Options) when is_list(Options) ->
     start_client(Name, maps:from_list(Options));
 start_client(Name, Options) ->
-    ServerURL = maps:get(url, Options),
+    ServerUrl = maps:get(url, Options),
     RPCOptions = maps:get(rpc_options, Options),
     ChannelName = hstreamdb_channel_mgr:channel_name(Name),
     Client =
         #{
             channel => ChannelName,
-            url => ServerURL,
+            url => ServerUrl,
             rpc_options => RPCOptions,
-            url_prefix => url_prefix(ServerURL)
+            url_prefix => url_prefix(ServerUrl)
         },
-    case hstreamdb_channel_mgr:start_channel(ChannelName, ServerURL, RPCOptions) of
+    case hstreamdb_channel_mgr:start_channel(ChannelName, ServerUrl, RPCOptions) of
         {ok,_} ->
             {ok, Client};
         {error, Reason} ->

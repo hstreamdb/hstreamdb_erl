@@ -32,7 +32,7 @@
 
 -export([terminate/2, handle_cast/2, handle_call/3]).
 
--record(state, {channel, channels, pool_size, stream, url_prefix, rpc_options, grpc_pool_size}).
+-record(state, {channel, channels, pool_size, stream, url_prefix, rpc_options, grpc_pool_size, url_map}).
 
 lookup_ordering_key(ServerRef, OrderingKey) ->
     gen_server:call(ServerRef, {get, OrderingKey}).
@@ -57,7 +57,8 @@ init(Options) ->
                 rpc_options = RPCOptions,
                 url_prefix = UrlPrefix,
                 grpc_pool_size = GrpcPoolSize,
-                pool_size = PoolSize
+                pool_size = PoolSize,
+                url_map = #{}
             }} end;
         C ->
             {error, {bad_options, {bad_client, C}}}
@@ -95,30 +96,45 @@ lookup_channel(OrderingKey, ChannelM = #state{channels = Channels,
                                          rpc_options = RPCOptions0,
                                          url_prefix = UrlPrefix,
                                          pool_size = PoolSize,
-                                         grpc_pool_size = GrpcPoolSize
+                                         grpc_pool_size = GrpcPoolSize,
+                                         url_map = UrlMap
                                         }) ->
-    case maps:get(OrderingKey, Channels, undefined) of
+    RPCOptions = RPCOptions0#{pool_size => PoolSize * GrpcPoolSize},
+    case maps:get(OrderingKey, UrlMap, undefined) of
         undefined ->
             case lookup_stream(OrderingKey, Stream, ChannelM) of
                 {ok, #{host := Host, port := Port}} ->
-                    ServerURL = lists:concat(io_lib:format("~s~s~s~p", [UrlPrefix, Host, ":", Port])),
-                    RPCOptions = RPCOptions0#{pool_size => PoolSize * GrpcPoolSize},
-                    case start_channel(random_channel_name(OrderingKey), ServerURL, RPCOptions) of
+                    ServerUrl = lists:concat(io_lib:format("~s~s~s~p", [UrlPrefix, Host, ":", Port])),
+                    case start_channel(random_channel_name(OrderingKey), ServerUrl, RPCOptions) of
                         {ok, Channel} ->
-                            {ok, Channel, ChannelM#state{channels = Channels#{OrderingKey => Channel}}};
+                            {ok, Channel, ChannelM#state{url_map = UrlMap#{OrderingKey => ServerUrl}, channels = Channels#{ServerUrl => Channel}}};
                         {error, Reason} ->
                             {error, Reason}
                     end;
                 {error, Error} ->
                     {error, Error}
             end;
-        Channel ->
-            {ok, Channel}
+        ServerUrl ->
+            case maps:get(ServerUrl, UrlMap, undefined) of
+                undefined ->
+                    case start_channel(random_channel_name(OrderingKey), ServerUrl, RPCOptions) of
+                        {ok, Channel} ->
+                            {ok, Channel, ChannelM#state{channels = Channels#{ServerUrl => Channel}}};
+                        {error, Reason} ->
+                            {error, Reason};
+                Channel -> {ok, Channel}
+                    end
+            end
     end.
 
-bad_channel(OrderingKey, ChannelM = #state{channels = Channels}) ->
-    ok = stop_channel(maps:get(OrderingKey, Channels, undefined)),
-    ChannelM#state{channels = maps:remove(OrderingKey, Channels)}.
+bad_channel(OrderingKey, ChannelM = #state{channels = Channels, url_map = UrlMap}) ->
+    case maps:get(OrderingKey, UrlMap, Channels) of
+        undefined ->
+            ChannelM#state{url_map = maps:remove(OrderingKey, UrlMap)};
+        ServerUrl ->
+            ok = stop_channel(maps:get(ServerUrl, Channels, undefined)),
+            ChannelM#state{url_map = maps:remove(OrderingKey, UrlMap), channels = maps:remove(ServerUrl, Channels)}
+    end.
 
 stop_channel(undefined) -> ok;
 stop_channel(Channel) ->
@@ -132,8 +148,8 @@ random_channel_name(Name) ->
 channel_name(Name) ->
     lists:concat([Name]).
 
-start_channel(ChannelName, ServerURL, RPCOptions) ->
-    case grpc_client_sup:create_channel_pool(ChannelName, ServerURL, RPCOptions) of
+start_channel(ChannelName, ServerUrl, RPCOptions) ->
+    case grpc_client_sup:create_channel_pool(ChannelName, ServerUrl, RPCOptions) of
         {ok, _, _} ->
             {ok, ChannelName};
         {ok, _} ->

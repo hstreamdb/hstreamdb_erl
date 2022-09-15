@@ -51,8 +51,8 @@ handle_info(Request, State) ->
       {noreply, State}
   end.
 
-terminate(_Reason, #state{channel_manager = ChannelM}) ->
-  hstreamdb_channel_mgr:stop(ChannelM).
+terminate(_Reason, _State) ->
+  ok.
 
 code_change(_OldVsn, State, _Extra) ->
   {ok, State}.
