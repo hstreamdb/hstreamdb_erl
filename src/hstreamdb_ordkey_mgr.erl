@@ -13,6 +13,7 @@
 %% See the License for the specific language governing permissions and
 %% limitations under the License.
 %%--------------------------------------------------------------------
+
 -module(hstreamdb_ordkey_mgr).
 
 -export([ start/1
@@ -20,6 +21,8 @@
         ]).
 
 -export([ lookup_channel/2 ]).
+
+-include("hstreamdb.hrl").
 
 -define(TAB, ?MODULE).
 
@@ -48,29 +51,42 @@ lookup_channel(OrderingKey, ChannelM = #{host_mapping := HostMapping,
     Key = {Stream, OrderingKey},
     case ets:lookup(?TAB, Key) of
         [] ->
-            case lookup_stream(OrderingKey, ChannelM) of
-               {ok, #{host := Host, port := Port}} ->
+            case lookup_shard(OrderingKey, Stream, ChannelM) of
+               {ok, ShardId, #{host := Host, port := Port}} ->
                     RealHost = maps:get(Host, HostMapping, Host),
-                    Node = {RealHost, Port},
-                    true = ets:insert(?TAB, {Key, Node}),
-                    {ok, Node};
+                    ShardNode = {ShardId, {RealHost, Port}},
+                    true = ets:insert(?TAB, {Key, ShardNode}),
+                    {ok, ShardNode};
                 {error, Reason} ->
                     {error, Reason}
             end;
-        [{Key, Node}] ->
-            {ok, Node}
+        [{Key, ShardNode}] ->
+            {ok, ShardNode}
     end.
 
-lookup_stream(OrderingKey,
-              #{stream := Stream, channel := Channel, grpc_timeout := GRPCTimeout}) ->
-    Req = #{'orderingKey' => OrderingKey, 'streamName' => Stream},
+lookup_shard(OrderingKey, Stream, #{channel := Channel, grpc_timeout := GRPCTimeout}) ->
+    Req = #{'streamName' => Stream},
     Options = #{channel => Channel, timeout => GRPCTimeout},
-    case hstreamdb_client:lookup_stream(Req, Options) of
-        {ok, Resp, _} ->
-            {ok, maps:get('serverNode', Resp)};
+    <<IntHash:128/big-unsigned-integer>> = crypto:hash(md5, OrderingKey),
+    case ?HSTREAMDB_CLIENT:list_shards(Req, Options) of
+        {ok, #{shards := Shards}, _} ->
+            [#{shardId := ShardId}] =
+            lists:filter(
+              fun(#{startHashRangeKey := SHRK,
+                    endHashRangeKey := EHRK}) ->
+                      IntHash >= binary_to_integer(SHRK) andalso
+                      IntHash =< binary_to_integer(EHRK)
+              end,
+              Shards),
+            case ?HSTREAMDB_CLIENT:lookup_shard(#{shardId => ShardId}, Options) of
+                {ok, #{serverNode := ServerNode}, _} ->
+                    {ok, ShardId, ServerNode};
+                {error, Error} ->
+                    {error, Error}
+            end;
         {error, Error} ->
+            logger:error("list_shards for stream ~p error: ~p~n", [Stream, Error]),
             {error, Error}
     end.
-
 
 

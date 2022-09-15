@@ -28,6 +28,8 @@
         , bad_channel/2
         ]).
 
+-include("hstreamdb.hrl").
+
 start(Options) ->
     case proplists:get_value(client, Options, undefined) of
         #{channel := Channel,
@@ -63,10 +65,8 @@ lookup_channel(Node, ChannelM = #{ channels_by_node := ChannelsByNode,
             RPCOptions = RPCOptions0#{pool_size => 1},
             case start_channel(random_channel_name(ServerURL), ServerURL, RPCOptions) of
                 {ok, Channel} ->
-                    _ = timer:sleep(100),
-                    case hstreamdb_client:echo(#{}, #{channel => Channel, timeout => ?GRPC_ECHO_TIMEOUT}) of
+                    case ?HSTREAMDB_CLIENT:echo(#{}, #{channel => Channel, timeout => ?GRPC_ECHO_TIMEOUT}) of
                         {ok, #{msg := _}, _} ->
-                            %% logger:info("Echo success for new channel=~p~n", [Channel]),
                             {ok, Channel, ChannelM#{channels_by_node => ChannelsByNode#{Node => Channel}}};
                         {error, Reason} ->
                             ok = stop_channel(Channel),
