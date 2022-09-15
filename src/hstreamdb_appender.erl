@@ -12,8 +12,9 @@
 init(Options) ->
   CompressionType = proplists:get_value(compression_type, Options, zstd),
   Callback = proplists:get_value(callback, Options),
+  ChannelM = proplists:get_value(channel_manager, Options),
   {ok,
-   #state{channel_manager = hstreamdb_channel_mgr:start(Options),
+   #state{channel_manager = ChannelM,
           callback = Callback,
           compression_type = CompressionType}}.
 
@@ -26,7 +27,7 @@ handle_cast({append, {Stream, OrderingKey, Records}},
               #state{channel_manager = ChannelM,
                      callback = Callback,
                      compression_type = CompressionType}) ->
-  case hstreamdb_channel_mgr:lookup_channel(OrderingKey, ChannelM) of
+  case hstreamdb_channel_mgr:lookup_ordering_key(ChannelM, OrderingKey) of
     {ok, Channel} ->
       RpcResp = call_rpc_append(Stream, OrderingKey, Records, Channel, CompressionType),
       _ = apply_callback(Callback, {{flush, Stream, Records}, RpcResp}),
@@ -34,18 +35,8 @@ handle_cast({append, {Stream, OrderingKey, Records}},
         {ok, _} ->
           {noreply, State};
         {error, _} ->
-          NChannelM = hstreamdb_channel_mgr:bad_channel(OrderingKey, ChannelM),
-          {noreply, State#state{channel_manager = NChannelM}}
-      end;
-    {ok, Channel, NChannelM} ->
-      RpcResp = call_rpc_append(Stream, OrderingKey, Records, Channel, CompressionType),
-      _ = apply_callback(Callback, {{flush, Stream, Records}, RpcResp}),
-      case RpcResp of
-        {ok, _} ->
-          {noreply, State#state{channel_manager = NChannelM}};
-        {error, _} ->
-          ErrNChannelM = hstreamdb_channel_mgr:bad_channel(OrderingKey, ChannelM),
-          {noreply, State#state{channel_manager = ErrNChannelM}}
+          _ = hstreamdb_channel_mgr:mark_as_bad_channel(ChannelM, OrderingKey),
+          {noreply, State}
       end;
     {error, Error} ->
       _ = apply_callback(Callback, {{flush, Stream, Records}, {error, Error}}),

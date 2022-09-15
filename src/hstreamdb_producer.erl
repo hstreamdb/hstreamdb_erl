@@ -10,7 +10,14 @@
 -export([start/2, append/2, flush/1, stop/1, append_flush/2]).
 
 -record(state,
-        {stream, callback, max_records, interval, record_map, worker_pool, timer_ref_map}).
+        {stream,
+         callback,
+         max_records,
+         interval,
+         record_map,
+         worker_pool,
+         timer_ref_map,
+         channel_manager}).
 
 start(Producer, Options) ->
     gen_server:start(?MODULE, [{producer, Producer} | Options], []).
@@ -34,18 +41,26 @@ init(Options) ->
     MaxInterval = proplists:get_value(interval, Options, ?DEFAULT_INTERVAL),
     Workers = proplists:get_value(pool_size, Options, 8),
     Producer = proplists:get_value(producer, Options),
-    PoolOptions =
-        [{workers, Workers}, {worker_type, gen_server}, {worker, {hstreamdb_appender, Options}}],
-    case wpool:start_sup_pool(Producer, PoolOptions) of
-        {ok, _Pid} ->
-            {ok,
-             #state{stream = StreamName,
-                    callback = Callback,
-                    max_records = MaxRecords,
-                    interval = MaxInterval,
-                    record_map = #{},
-                    timer_ref_map = #{},
-                    worker_pool = Producer}};
+    case hstreamdb_channel_mgr:start([{pool_size, Workers} | Options]) of
+        {ok, ChannelM} ->
+            PoolOptions =
+                [{workers, Workers},
+                 {worker_type, gen_server},
+                 {worker, {hstreamdb_appender, [{channel_manager, ChannelM} | Options]}}],
+            case wpool:start_sup_pool(Producer, PoolOptions) of
+                {ok, _Pid} ->
+                    {ok,
+                     #state{stream = StreamName,
+                            callback = Callback,
+                            max_records = MaxRecords,
+                            interval = MaxInterval,
+                            record_map = #{},
+                            timer_ref_map = #{},
+                            channel_manager = ChannelM,
+                            worker_pool = Producer}};
+                {error, Error} ->
+                    {stop, Error}
+            end;
         {error, Error} ->
             {stop, Error}
     end.
