@@ -16,3 +16,13 @@
 
 -define(HSTREAMDB_CLIENT, hstream_server_h_stream_api_client).
 
+-type append_record() :: map().
+
+-record(batch, {
+          id :: reference(),
+          from :: gen_server:from(),
+          records :: list(append_record()),
+          deadline :: integer()
+         }).
+
+

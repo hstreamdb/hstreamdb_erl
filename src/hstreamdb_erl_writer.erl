@@ -39,15 +39,14 @@
 -record(state, {
     stream,
     grpc_timeout,
-    ordkey_manager,
     channel_manager
 }).
 
 start_link(Opts) ->
     gen_server:start_link(?MODULE, [Opts], []).
 
-write(Pid, BatchId, Records) ->
-    gen_server:cast(Pid, {write, BatchId, Records, self()}).
+write(Pid, ShardId, Records) ->
+    gen_server:cast(Pid, {write, ShardId, Records, self()}).
 
 stop(Pid) ->
     gen_server:call(Pid, stop).
@@ -68,13 +67,12 @@ init([Opts]) ->
     {ok, #state{
             stream = StreamName,
             grpc_timeout = GRPCTimeout,
-            ordkey_manager = hstreamdb_ordkey_mgr:start(Opts),
             channel_manager = hstreamdb_channel_mgr:start(Opts)
            }}.
 
-handle_cast({write, BatchId, Batch, Caller}, State) ->
-    {Result, NState} = do_write(Batch, State),
-    ok = gen_server:cast(Caller, {write_result, BatchId, Result}),
+handle_cast({write, ShardId, #batch{id = BatchId} = Batch, Caller}, State) ->
+    {Result, NState} = do_write(ShardId, Batch, State),
+    ok = gen_server:cast(Caller, {write_result, ShardId, BatchId, Result}),
     {noreply, NState}.
 
 handle_call(stop, _From, State) ->
@@ -93,40 +91,34 @@ code_change(_OldVsn, State, _Extra) ->
 %% -------------------------------------------------------------------------------------------------
 %% internal functions
 
-do_write({OrderingKey, Records},
-          State = #state{channel_manager = ChannelM0,
-                         ordkey_manager = OrderingKeyM0,
-                         stream = Stream,
-                         grpc_timeout = GRPCTimeout}) ->
-    case hstreamdb_ordkey_mgr:lookup_channel(OrderingKey, OrderingKeyM0) of
-        {ok, {ShardId, Node}} ->
-            case hstreamdb_channel_mgr:lookup_channel(Node, ChannelM0) of
-                {ok, Channel, ChannelM1} ->
-                    Req = #{streamName => Stream, records => Records, shardId => ShardId},
-                    Options = #{channel => Channel, timeout => GRPCTimeout},
-                    case flush(OrderingKey, Req, Options) of
-                        {ok, _} = Res ->
-                            {Res, State#state{channel_manager = ChannelM1}};
-                        {error, _} = Error ->
-                            ChannelM2 = hstreamdb_channel_mgr:bad_channel(Channel, ChannelM1),
-                            {Error, State#state{channel_manager = ChannelM2}}
-                    end;
+do_write(ShardId, #batch{records = Records},
+         State = #state{channel_manager = ChannelM0,
+                        stream = Stream,
+                        grpc_timeout = GRPCTimeout}) ->
+    case hstreamdb_channel_mgr:lookup_channel(ShardId, ChannelM0) of
+        {ok, Channel, ChannelM1} ->
+            Req = #{streamName => Stream, records => Records, shardId => ShardId},
+            Options = #{channel => Channel, timeout => GRPCTimeout},
+            case flush(ShardId, Req, Options) of
+                {ok, _} = Res ->
+                    {Res, State#state{channel_manager = ChannelM1}};
                 {error, _} = Error ->
-                    {Error, State}
+                    ChannelM2 = hstreamdb_channel_mgr:bad_channel(Channel, ChannelM1),
+                    {Error, State#state{channel_manager = ChannelM2}}
             end;
         {error, _} = Error ->
             {Error, State}
     end.
 
-flush(OrderingKey,
+flush(ShardId,
       #{records := Records} = Req,
       #{channel := Channel, timeout := Timeout} = Options) ->
     case timer:tc(fun() -> ?HSTREAMDB_CLIENT:append(Req, Options) end) of
         {Time, {ok, Resp, _MetaData}} ->
-            logger:info("flush_request[~p, ~p], pid=~p, SUCCESS, ~p records in ~p ms~n", [Channel, OrderingKey, self(), length(Records), Time div 1000]),
+            logger:info("flush_request[~p, ~p], pid=~p, SUCCESS, ~p records in ~p ms~n", [Channel, ShardId, self(), length(Records), Time div 1000]),
             {ok, Resp};
         {Time, {error, R}} ->
-            logger:error("flush_request[~p, ~p], pid=~p, timeout=~p, ERROR: ~p, in ~p ms~n", [Channel, OrderingKey, self(), Timeout, R, Time div 1000]),
+            logger:error("flush_request[~p, ~p], pid=~p, timeout=~p, ERROR: ~p, in ~p ms~n", [Channel, ShardId, self(), Timeout, R, Time div 1000]),
             {error, R}
     end.
 

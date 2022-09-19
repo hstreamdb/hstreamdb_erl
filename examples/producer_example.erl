@@ -33,7 +33,11 @@ start() ->
     % io:format("start client3  ~p~n", [Start3]),
 
     Echo = hstreamdb:echo(Client),
-    io:format("echo  ~p~n", [Echo]),
+    io:format("echo: ~p~n", [Echo]),
+    
+    CreateStream = hstreamdb:create_stream( Client, "demo2", 2, 24*60*60, 2),
+    io:format("create_stream: ~p~n", [CreateStream]),
+
     ProducerOptions = [
         {pool_size, 4},
         {stream, "demo2"},
@@ -44,28 +48,32 @@ start() ->
     {ok, Producer} = hstreamdb:start_producer(Client, test_producer, ProducerOptions),
     io:format("start producer  ~p~n", [Producer]),
 
-    OrderingKey = "ok1",
+    PartitioningKey = "ok1",
     PayloadType = raw,
     Payload = <<"hello stream !">>,
-    Record1 = hstreamdb:to_record(OrderingKey, PayloadType, Payload),
-    Record2 = hstreamdb:to_record(OrderingKey, PayloadType, <<"batch 1">>),
+    Record1 = hstreamdb:to_record(PartitioningKey, PayloadType, Payload),
+    Record2 = hstreamdb:to_record(PartitioningKey, PayloadType, <<"batch 1">>),
     io:format("to record ~p~n", [Record1]),
-    Append1 = hstreamdb:append(Producer, Record1),
-    Append2 = hstreamdb:append(Producer, Record2),
+
+    do_n(1000,
+         fun() ->
+                 _Append1 = hstreamdb:append(Producer, Record1),
+                 _Append2 = hstreamdb:append(Producer, Record2)
+         end),
     % Append = [
     %     begin
-    %         RecordN = hstreamdb:to_record(OrderingKey, PayloadType, list_to_binary(io_lib:format("message ~p", [N]))),
+    %         RecordN = hstreamdb:to_record(PartitioningKey, PayloadType, list_to_binary(io_lib:format("message ~p", [N]))),
     %         hstreamdb:append(Producer, RecordN)
     %     end || N <- lists:seq(0, 100)],
-    io:format("append1 ~p~n", [Append1]),
-    io:format("append2 ~p~n", [Append2]),
+    % io:format("append1 ~p~n", [Append1]),
+    % io:format("append2 ~p~n", [Append2]),
 
     timer:sleep(3000),
 
     io:format("start append flush ~n"),
 
-    {BatchK, R1} = hstreamdb:to_record(OrderingKey, PayloadType, Payload),
-    {BatchK, R2} = hstreamdb:to_record(OrderingKey, PayloadType, <<"batch 1">>),
+    {BatchK, R1} = hstreamdb:to_record(PartitioningKey, PayloadType, Payload),
+    {BatchK, R2} = hstreamdb:to_record(PartitioningKey, PayloadType, <<"batch 1">>),
 
     AppendFlushSingle = hstreamdb:append_flush(Producer, Record1),
     AppendFlush = hstreamdb:append_flush(Producer, {BatchK, [R1, R2]}),
@@ -91,3 +99,8 @@ start() ->
 
 callback(A) ->
     io:format("callback ~p~n", [A]).
+
+do_n(N, _Fun) when N =< 0 -> ok;
+do_n(N, Fun) ->
+    _ = Fun(),
+    do_n(N - 1, Fun).

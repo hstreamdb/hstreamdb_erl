@@ -15,8 +15,6 @@
 %%--------------------------------------------------------------------
 -module(hstreamdb_channel_mgr).
 
--define(GRPC_ECHO_TIMEOUT, 500).
-
 -export([ start/1
         , stop/1
         ]).
@@ -34,12 +32,16 @@ start(Options) ->
     case proplists:get_value(client, Options, undefined) of
         #{channel := Channel,
           rpc_options := RPCOptions,
+          host_mapping := HostMapping,
+          grpc_timeout := GRPCTimeout,
           url_prefix := UrlPrefix} ->
             Stream = proplists:get_value(stream, Options, undefined),
             Stream == undefined andalso erlang:error({bad_options, no_stream_name}),
             #{
                 channel => Channel,
-                channels_by_node => #{},
+                channels_by_shard => #{},
+                host_mapping => HostMapping,
+                grpc_timeout => GRPCTimeout,
                 stream => Stream,
                 rpc_options => RPCOptions,
                 url_prefix => UrlPrefix
@@ -48,43 +50,68 @@ start(Options) ->
             erlang:error({bad_options, {bad_client, C}})
     end.
 
-stop(#{channels_by_node := Channels}) ->
+stop(#{channels_by_shard := Channels}) ->
     _ = [grpc_client_sup:stop_channel_pool(Channel) || Channel <- maps:values(Channels)],
     ok.
 
-lookup_channel(Node, ChannelM = #{ channels_by_node := ChannelsByNode,
-                                   rpc_options := RPCOptions0,
-                                   url_prefix := UrlPrefix
-                                 }) ->
-    case maps:get(Node, ChannelsByNode, undefined) of
+lookup_channel(ShardId, ChannelM = #{channels_by_shard := Channels,
+                                     host_mapping := HostMapping,
+                                     rpc_options := RPCOptions0,
+                                     url_prefix := UrlPrefix
+                                    }) ->
+    case maps:get(ShardId, Channels, undefined) of
         undefined ->
-            {Host, Port} = Node,
-            %% Producer need only one channel. Because it is sync call.
-            ServerURL = lists:concat(io_lib:format("~s~s~s~p", [UrlPrefix, Host, ":", Port])),
-            logger:info("ServerURL for new channel: ~p~n", [ServerURL]),
-            RPCOptions = RPCOptions0#{pool_size => 1},
-            case start_channel(random_channel_name(ServerURL), ServerURL, RPCOptions) of
-                {ok, Channel} ->
-                    case ?HSTREAMDB_CLIENT:echo(#{}, #{channel => Channel, timeout => ?GRPC_ECHO_TIMEOUT}) of
-                        {ok, #{msg := _}, _} ->
-                            {ok, Channel, ChannelM#{channels_by_node => ChannelsByNode#{Node => Channel}}};
-                        {error, Reason} ->
-                            ok = stop_channel(Channel),
-                            logger:info("Echo failed for new channel=~p: ~p~n", [Channel, Reason]),
-                            {error, Reason}
+            case lookup_shard(ShardId, ChannelM) of
+                {ok, {Host, Port}} ->
+                    %% Producer need only one channel. Because it is a sync call.
+                    ServerURL = lists:concat(
+                                  io_lib:format("~s~s~s~p",
+                                                [UrlPrefix, maybe_map_host(HostMapping, Host), ":", Port])),
+                    logger:info("ServerURL for new channel: ~p~n", [ServerURL]),
+                    RPCOptions = RPCOptions0#{pool_size => 1},
+                    case start_channel(random_channel_name(ServerURL), ServerURL, RPCOptions) of
+                        {ok, Channel} ->
+                            case echo(Channel, ChannelM) of
+                                ok ->
+                                    {ok, Channel, ChannelM#{channels_by_shard => Channels#{ShardId => Channel}}};
+                                {error, Reason} ->
+                                    ok = stop_channel(Channel),
+                                    logger:info("Echo failed for new channel=~p: ~p~n", [Channel, Reason]),
+                                    {error, Reason}
+                            end;
+                        {error, _} = Error ->
+                            Error
                     end;
-                {error, Reason} ->
-                    {error, Reason}
+                {error, _} = Error ->
+                    Error
             end;
         Channel ->
             {ok, Channel, ChannelM}
     end.
 
-bad_channel(BadChannel, ChannelM = #{channels_by_node := ChannelsByNode}) ->
+echo(Channel, #{grpc_timeout := Timeout}) ->
+    case ?HSTREAMDB_CLIENT:echo(#{}, #{channel => Channel, timeout => Timeout}) of
+        {ok, #{msg := _}, _} ->
+            ok;
+        {error, _} = Error ->
+            Error
+    end.
+
+lookup_shard(ShardId, #{channel := Channel, grpc_timeout := Timeout}) ->
+    Req = #{shardId => ShardId},
+    Options = #{channel => Channel, timeout => Timeout},
+    case ?HSTREAMDB_CLIENT:lookup_shard(Req, Options) of
+        {ok, #{serverNode := #{host := Host, port := Port}}, _} ->
+            {ok, {Host, Port}};
+        {error, Error} ->
+            {error, Error}
+    end.
+
+bad_channel(BadChannel, ChannelM = #{channels_by_shard := ChannelsByShard}) ->
     ok = stop_channel(BadChannel),
-    BadNodes = [Node || {Node, Ch} <- maps:to_list(ChannelsByNode), Ch =:= BadChannel],
-    logger:info("BadChannel: ~p, BadNodes: ~p~n", [BadChannel, BadNodes]),
-    NChannelM = ChannelM#{channels_by_node => maps:without(BadNodes, ChannelsByNode)},
+    BadShards = [ShardId || {ShardId, Ch} <- maps:to_list(ChannelsByShard), Ch =:= BadChannel],
+    logger:info("BadChannel: ~p, BadShards: ~p~n", [BadChannel, BadShards]),
+    NChannelM = ChannelM#{channels_by_shard => maps:without(BadShards, ChannelsByShard)},
     NChannelM.
 
 stop_channel(undefined) -> ok;
@@ -101,6 +128,9 @@ random_channel_name(Name) ->
     lists:concat([Name, erlang:unique_integer()]). 
 channel_name(Name) ->
     lists:concat([Name]).
+
+maybe_map_host(HostMapping, Host) ->
+    maps:get(Host, HostMapping, Host).
 
 start_channel(ChannelName, ServerURL, RPCOptions) ->
     case grpc_client_sup:create_channel_pool(ChannelName, ServerURL, RPCOptions) of

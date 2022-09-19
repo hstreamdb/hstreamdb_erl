@@ -16,6 +16,8 @@
 
 -module(hstreamdb_producer).
 
+-include("hstreamdb.hrl").
+
 -define(DEFAULT_MAX_RECORDS, 100).
 -define(DEFAULT_MAX_BATCHES, 500).
 -define(DEFAULT_INTERVAL, 3000).
@@ -52,9 +54,12 @@
     batch_reap_timeout,
     record_map,
     flush_deadline_map,
+    key_manager,
     batches,
+    current_batches,
     timer_ref
 }).
+
 
 start(Producer, Options) ->
     case ecpool:start_sup_pool(Producer, ?MODULE, [{producer_name, Producer} | Options]) of
@@ -86,15 +91,15 @@ flush(Producer) ->
       fun(Pid) -> gen_server:call(Pid, flush) end,
       Producer).
 
-append_flush(Producer, {OrderingKey, Records}) when is_list(Records) ->
+append_flush(Producer, {PartitioningKey, Records}) when is_list(Records) ->
     ecpool:with_client(
       Producer,
       fun(Pid) ->
-              gen_server:call(Pid, {append_flush, {OrderingKey, Records}})
+              gen_server:call(Pid, {append_flush, {PartitioningKey, Records}})
       end);
 
-append_flush(Producer, {OrderingKey, Record}) ->
-    append_flush(Producer, {OrderingKey, [Record]}).
+append_flush(Producer, {PartitioningKey, Record}) ->
+    append_flush(Producer, {PartitioningKey, [Record]}).
 
 connect(Options) ->
     gen_server:start_link(?MODULE, Options, []).
@@ -123,7 +128,9 @@ init(Options) ->
         record_map = #{},
         flush_deadline_map = #{}, 
         timer_ref = erlang:send_after(MaxInterval, self(), flush),
-        batches = #{}
+        key_manager = hstreamdb_key_mgr:start(Options),
+        batches = #{},
+        current_batches = #{}
     }}.
 
 handle_call({append, Record}, _From, State) ->
@@ -140,7 +147,7 @@ handle_call(flush, _From, State) ->
 handle_call({append_flush, Records}, From, State) ->
     if_not_overflooded(
       fun() ->
-              NState = do_append_flush(Records, From, State),
+              NState = do_append_sync(Records, From, State),
               {noreply, NState}
       end,
       State);
@@ -152,13 +159,14 @@ handle_call(stop, _From, State) ->
 handle_call(_Request, _From, State) ->
     {reply, ok, State}.
 
-handle_cast({write_result, BatchId, Result}, #state{batches = Batches} = State) ->
-    case maps:get(BatchId, Batches, undefined) of
-        undefined ->
-            %% should not happen
-            {noreply, State};
-        BatchInfo ->
-            {noreply, handle_write_result(State, BatchId, BatchInfo, Result)}
+handle_cast({write_result, ShardId, BatchId, Result},
+            #state{current_batches = CurrentBatches} = State) ->
+    case CurrentBatches of
+        #{ShardId := #batch{id = Id} = Batch} when Id =:= BatchId ->
+            {noreply, handle_write_result(State, ShardId, Batch, Result)};
+        #{} ->
+            %% reaped batch
+            {noreply, State}
     end;
 
 handle_cast(Request, State) ->
@@ -189,47 +197,53 @@ foreach_worker(Fun, Pool) ->
       end,
       ecpool:workers(Pool)).
 
-do_append({OrderingKey, Record},
+do_append({PartitioningKey, Record},
           State = #state{interval = Interval,
                          record_map = RecordMap,
                          max_records = MaxRecords,
+                         key_manager = KeyManager0,
                          flush_deadline_map = FlushDeadlineMap}) ->
-    case maps:get(OrderingKey, RecordMap, undefined) of
+    {ShardId, KeyManager1} = hstreamdb_key_mgr:choose_shard(PartitioningKey, KeyManager0),
+    case maps:get(ShardId, RecordMap, undefined) of
         undefined ->
-            NRecordMap = RecordMap#{OrderingKey => [Record]},
+            NRecordMap = RecordMap#{ShardId => [Record]},
             NFlushDeadlineMap = FlushDeadlineMap#{
-                                  OrderingKey => Interval + erlang:monotonic_time(millisecond)
+                                  ShardId => Interval + erlang:monotonic_time(millisecond)
                                  },
 
             State#state{record_map = NRecordMap,
-                        flush_deadline_map = NFlushDeadlineMap};
+                        flush_deadline_map = NFlushDeadlineMap,
+                        key_manager = KeyManager1};
         Records ->
             NRecords = [Record | Records],
-            NRecordMap = RecordMap#{OrderingKey => NRecords},
-            NState = State#state{record_map = NRecordMap},
+            NRecordMap = RecordMap#{ShardId => NRecords},
+            NState = State#state{record_map = NRecordMap, key_manager = KeyManager1},
             case length(NRecords) >= MaxRecords of
                 true ->
-                    do_flush_key(OrderingKey, NState);
+                    do_flush_key(ShardId, NState);
                 _ ->
                     NState
             end
     end.
 
-do_append_flush({OrderingKey, Records},
+do_append_sync({PartitioningKey, Records},
                 From,
-                State = #state{ batches = Batches
-                               }) ->
-            BatchId = make_ref(),
-            NBatches = Batches#{BatchId => {From, length(Records), batch_reap_deadline(State)}},
-            ok = write(State, BatchId, {OrderingKey, Records}),
-            State#state{batches = NBatches}.
+                State = #state{key_manager = KeyManager0}) ->
+            {ShardId, KeyManager1} = hstreamdb_key_mgr:choose_shard(PartitioningKey, KeyManager0),
+            Batch = batch(Records, From, State),
+            append_new_batch(ShardId, Batch, State#state{key_manager = KeyManager1}).
 
-write(#state{writer_name = WriterName}, BatchId, Batch) ->
+
+write(ShardId, Batch, #state{writer_name = WriterName, current_batches = CurrentBatches} = State) ->
     ecpool:with_client(
       WriterName,
       fun(WriterPid) ->
-            ok = hstreamdb_erl_writer:write(WriterPid, BatchId, Batch)
-      end).
+            ok = hstreamdb_erl_writer:write(WriterPid, ShardId, Batch)
+      end),
+    State#state{
+      current_batches = CurrentBatches#{ShardId => Batch}
+     }.
+
 
 batch_reap_deadline(#state{batch_reap_timeout = Timeout}) ->
     erlang:monotonic_time(millisecond) + Timeout.
@@ -242,7 +256,7 @@ do_flush(State = #state{flush_deadline_map = FlushDeadlineMap,
     KeysToFlush = case WhichKeys of
                       deadline ->
                           CurrentTime = erlang:monotonic_time(millisecond),
-                          [OrderingKey || {OrderingKey, Deadline} <- maps:to_list(FlushDeadlineMap),
+                          [ShardId || {ShardId, Deadline} <- maps:to_list(FlushDeadlineMap),
                                           Deadline < CurrentTime ];
                       all ->
                           maps:keys(FlushDeadlineMap)
@@ -254,12 +268,12 @@ do_flush(State = #state{flush_deadline_map = FlushDeadlineMap,
 reap_batches(#state{batches = Batches} = State) ->
     Result = {error, reaped},
     Now = erlang:monotonic_time(millisecond),
-    BatchIdsToReap = [BatchId || {BatchId, {_From,_N, ReapDealine}} <- maps:to_list(Batches),
-                                 ReapDealine < Now],
+    BatchIdsToReap = [{ShardId, Batch} 
+                      || {ShardId, #batch{deadline = ReapDealine} = Batch} <- maps:to_list(Batches),
+                         ReapDealine < Now],
     lists:foldl(
-      fun(BatchId, St) ->
-              BatchInfo = maps:get(BatchId, Batches),
-              handle_write_result(St, BatchId, BatchInfo, Result)
+      fun({ShardId, Batch}, St) ->
+              handle_write_result(St, ShardId, Batch, Result)
       end,
       State,
       BatchIdsToReap).
@@ -269,29 +283,30 @@ cancel_timer(undefined) -> ok;
 cancel_timer(TimerRef) ->
     erlang:cancel_timer(TimerRef).
 
-do_flush_key(OrderingKey,
-             State = #state{record_map = RecordMap,
-                            flush_deadline_map = FlushDeadlineMap,
-                            batches = Batches}) ->
-    Records = lists:reverse(maps:get(OrderingKey, RecordMap)),
-    BatchId = make_ref(),
-    NBatches = Batches#{BatchId => {undefined, length(Records), batch_reap_deadline(State)}},
-    ok = write(State, BatchId, {OrderingKey, Records}),
-    State#state{record_map = maps:remove(OrderingKey, RecordMap),
-                flush_deadline_map = maps:remove(OrderingKey, FlushDeadlineMap),
-                batches = NBatches}.
+do_flush_key(ShardId,
+             #state{record_map = RecordMap,
+                    flush_deadline_map = FlushDeadlineMap} = State0) ->
+    Records = lists:reverse(maps:get(ShardId, RecordMap)),
+    Batch = batch(Records, State0),
+    State1 = append_new_batch(ShardId, Batch, State0),
+    State1#state{record_map = maps:remove(ShardId, RecordMap),
+                 flush_deadline_map = maps:remove(ShardId, FlushDeadlineMap)}.
 
-
-handle_write_result(#state{batches = Batches, stream = Stream, callback = Callback} = State,
-                    BatchId, BatchInfo, Result) ->
-    case BatchInfo of
-        {undefined, NRecords, _ReapDeadline} ->
-            _ = apply_callback(Callback, {{flush, Stream, NRecords}, Result});
-        {From, NRecords, _ReapDeadline} ->
-            _ = apply_callback(Callback, {{flush, Stream, NRecords}, Result}),
+handle_write_result(#state{current_batches = CurrentBatches,
+                           stream = Stream,
+                           callback = Callback} = State,
+                    ShardId,
+                    #batch{from = From, records = Records},
+                    Result) ->
+    case From of
+        undefined ->
+            _ = apply_callback(Callback, {{flush, Stream, length(Records)}, Result});
+        _From ->
+            _ = apply_callback(Callback, {{flush, Stream, length(Records)}, Result}),
             ok = gen_server:reply(From, Result)
     end,
-    State#state{batches = maps:remove(BatchId, Batches)}.
+    NState = State#state{current_batches = maps:remove(ShardId, CurrentBatches)},
+    send_batch_from_queue(ShardId, NState).
 
 apply_callback({M, F}, R) ->
     erlang:apply(M, F, [R]);
@@ -300,11 +315,57 @@ apply_callback({M, F, A}, R) ->
 apply_callback(F, R) ->
     F(R).
 
-if_not_overflooded(Fun, #state{batches = Batches, max_batches = MaxBatches} = State) ->
-    case maps:size(Batches) >= MaxBatches of
-        true -> {reply, {error, {overflooded, maps:size(Batches)}}, State};
+batch(Records, State) ->
+    batch(Records, undefined, State).
+
+batch(Records, From, State) ->
+    #batch{
+       id = make_ref(),
+       from = From,
+       records = Records,
+       deadline = batch_reap_deadline(State)
+      }.
+
+append_new_batch(ShardId, Batch, #state{current_batches = CurrentBatches} = State) ->
+    case CurrentBatches of
+        #{ShardId := _Batch} ->
+            enqueue_batch(ShardId, Batch, State);
+        #{} ->
+            write(ShardId, Batch, State)
+    end.
+
+send_batch_from_queue(ShardId,
+                      #state{batches = Batches} = State) ->
+    Queue = maps:get(ShardId, Batches, queue:new()),
+    case queue:len(Queue) of
+        0 ->
+            State;
+        _N ->
+            {{value, Batch}, NQueue} = queue:out(Queue),
+            NBatches = Batches#{ShardId => NQueue},
+            write(ShardId, Batch, State#state{batches = NBatches})
+    end.
+
+enqueue_batch(ShardId, Batch, #state{batches = Batches} = State) ->
+    ShardBatchesQ = maps:get(ShardId, Batches, queue:new()),
+    NBatches = Batches#{ShardId => queue:in(Batch, ShardBatchesQ)},
+    State#state{batches = NBatches}.
+
+if_not_overflooded(Fun, #state{max_batches = MaxBatches} = State) ->
+    PendingBatchCount = pending_batch_count(State),
+    case PendingBatchCount >= MaxBatches of
+        true -> {reply, {error, {overflooded, PendingBatchCount}}, State};
         false -> Fun()
     end.
+
+pending_batch_count(#state{batches = Batches, current_batches = CurrentBatches}) ->
+    lists:foldl(
+      fun(Q, N) ->
+              N + queue:len(Q)
+      end,
+      0,
+      maps:values(Batches))
+    + maps:size(CurrentBatches).
 
 writer_name(ProducerName) ->
     list_to_atom(atom_to_list(ProducerName) ++ "-writer").
