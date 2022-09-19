@@ -24,7 +24,8 @@
         , stop_consumer/1
         ]).
 
--export([ echo/1
+-export([ echo/1,
+          create_stream/5
         ]).
 
 -export([ to_record/3
@@ -80,14 +81,14 @@ start_consumer(_Client, Consumer, _ConsumerOptions) ->
 stop_consumer(_) ->
     ok.
 
-to_record(OrderingKey, PayloadType, Payload) ->
-    {OrderingKey, #{
+to_record(PartitioningKey, PayloadType, Payload) ->
+    {PartitioningKey, #{
         header => #{
             flag => case PayloadType of
                         json -> 0;
                         raw -> 1
                     end,
-            key => OrderingKey
+            key => PartitioningKey
             },
         payload => Payload
     }}.
@@ -95,8 +96,11 @@ to_record(OrderingKey, PayloadType, Payload) ->
 echo(Client) ->
     do_echo(Client).
 
-append(Producer, OrderingKey, PayloadType, Payload) ->
-    Record = to_record(OrderingKey, PayloadType, Payload),
+create_stream(Client, Name, ReplFactor, BacklogDuration, ShardCount) ->
+    do_create_stream(Client, Name, ReplFactor, BacklogDuration, ShardCount).
+
+append(Producer, PartitioningKey, PayloadType, Payload) ->
+    Record = to_record(PartitioningKey, PayloadType, Payload),
     append(Producer, Record).
 
 append(Producer, Record) ->
@@ -125,3 +129,21 @@ do_echo(#{channel := Channel, grpc_timeout := Timeout}) ->
         {error, R} ->
             {error, R}
     end.
+
+do_create_stream(#{channel := Channel, grpc_timeout := Timeout},
+                 Name, ReplFactor, BacklogDuration, ShardCount) ->
+    Req = #{
+      streamName => Name,
+      replicationFactor => ReplFactor,
+      backlogDuration => BacklogDuration,
+      shardCount => ShardCount
+     },
+    Options = #{channel => Channel, timeout => Timeout},
+    case ?HSTREAMDB_CLIENT:echo(Req, Options) of
+        {ok, _, _} ->
+            ok;
+        {error, R} ->
+            {error, R}
+    end.
+
+
