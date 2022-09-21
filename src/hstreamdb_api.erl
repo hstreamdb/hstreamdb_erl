@@ -17,6 +17,7 @@
 -export([find_enum_def/1, fetch_enum_def/1]).
 -export([enum_symbol_by_value/2, enum_value_by_symbol/2]).
 -export(['enum_symbol_by_value_hstream.server.SpecialOffset'/1, 'enum_value_by_symbol_hstream.server.SpecialOffset'/1]).
+-export(['enum_symbol_by_value_hstream.server.CompressionType'/1, 'enum_value_by_symbol_hstream.server.CompressionType'/1]).
 -export(['enum_symbol_by_value_h_stream_record_header.Flag'/1, 'enum_value_by_symbol_h_stream_record_header.Flag'/1]).
 -export(['enum_symbol_by_value_hstream.server.TaskStatusPB'/1, 'enum_value_by_symbol_hstream.server.TaskStatusPB'/1]).
 -export(['enum_symbol_by_value_hstream.server.NodeState'/1, 'enum_value_by_symbol_hstream.server.NodeState'/1]).
@@ -143,12 +144,15 @@ encode_msg(Msg, MsgName, Opts) ->
                                                    TrUserData);
         stream ->
             encode_msg_stream(id(Msg, TrUserData), TrUserData);
-        h_stream_record_batch ->
-            encode_msg_h_stream_record_batch(id(Msg, TrUserData),
-                                             TrUserData);
+        batched_record ->
+            encode_msg_batched_record(id(Msg, TrUserData),
+                                      TrUserData);
         h_stream_record ->
             encode_msg_h_stream_record(id(Msg, TrUserData),
                                        TrUserData);
+        batch_h_stream_records ->
+            encode_msg_batch_h_stream_records(id(Msg, TrUserData),
+                                              TrUserData);
         h_stream_record_header ->
             encode_msg_h_stream_record_header(id(Msg, TrUserData),
                                               TrUserData);
@@ -586,10 +590,14 @@ encode_msg_append_request(#{} = M, Bin, TrUserData) ->
          end,
     case M of
         #{records := F3} ->
-            TrF3 = id(F3, TrUserData),
-            if TrF3 == [] -> B2;
-               true ->
-                   e_field_append_request_records(TrF3, B2, TrUserData)
+            begin
+                TrF3 = id(F3, TrUserData),
+                if TrF3 =:= undefined -> B2;
+                   true ->
+                       e_mfield_append_request_records(TrF3,
+                                                       <<B2/binary, 26>>,
+                                                       TrUserData)
+                end
             end;
         _ -> B2
     end.
@@ -824,12 +832,15 @@ encode_msg_streaming_fetch_response(#{} = M, Bin,
                                     TrUserData) ->
     case M of
         #{receivedRecords := F1} ->
-            TrF1 = id(F1, TrUserData),
-            if TrF1 == [] -> Bin;
-               true ->
-                   e_field_streaming_fetch_response_receivedRecords(TrF1,
-                                                                    Bin,
-                                                                    TrUserData)
+            begin
+                TrF1 = id(F1, TrUserData),
+                if TrF1 =:= undefined -> Bin;
+                   true ->
+                       e_mfield_streaming_fetch_response_receivedRecords(TrF1,
+                                                                         <<Bin/binary,
+                                                                           10>>,
+                                                                         TrUserData)
+                end
             end;
         _ -> Bin
     end.
@@ -840,16 +851,11 @@ encode_msg_received_record(Msg, TrUserData) ->
 
 encode_msg_received_record(#{} = M, Bin, TrUserData) ->
     B1 = case M of
-             #{recordId := F1} ->
-                 begin
-                     TrF1 = id(F1, TrUserData),
-                     if TrF1 =:= undefined -> Bin;
-                        true ->
-                            e_mfield_received_record_recordId(TrF1,
-                                                              <<Bin/binary,
-                                                                10>>,
-                                                              TrUserData)
-                     end
+             #{recordIds := F1} ->
+                 TrF1 = id(F1, TrUserData),
+                 if TrF1 == [] -> Bin;
+                    true ->
+                        e_field_received_record_recordIds(TrF1, Bin, TrUserData)
                  end;
              _ -> Bin
          end,
@@ -857,9 +863,11 @@ encode_msg_received_record(#{} = M, Bin, TrUserData) ->
         #{record := F2} ->
             begin
                 TrF2 = id(F2, TrUserData),
-                case iolist_size(TrF2) of
-                    0 -> B1;
-                    _ -> e_type_bytes(TrF2, <<B1/binary, 18>>, TrUserData)
+                if TrF2 =:= undefined -> B1;
+                   true ->
+                       e_mfield_received_record_record(TrF2,
+                                                       <<B1/binary, 18>>,
+                                                       TrUserData)
                 end
             end;
         _ -> B1
@@ -998,22 +1006,59 @@ encode_msg_stream(#{} = M, Bin, TrUserData) ->
         _ -> B3
     end.
 
-encode_msg_h_stream_record_batch(Msg, TrUserData) ->
-    encode_msg_h_stream_record_batch(Msg, <<>>, TrUserData).
+encode_msg_batched_record(Msg, TrUserData) ->
+    encode_msg_batched_record(Msg, <<>>, TrUserData).
 
 
-encode_msg_h_stream_record_batch(#{} = M, Bin,
-                                 TrUserData) ->
+encode_msg_batched_record(#{} = M, Bin, TrUserData) ->
+    B1 = case M of
+             #{compressionType := F1} ->
+                 begin
+                     TrF1 = id(F1, TrUserData),
+                     if TrF1 =:= 'None'; TrF1 =:= 0 -> Bin;
+                        true ->
+                            'e_enum_hstream.server.CompressionType'(TrF1,
+                                                                    <<Bin/binary,
+                                                                      8>>,
+                                                                    TrUserData)
+                     end
+                 end;
+             _ -> Bin
+         end,
+    B2 = case M of
+             #{publishTime := F2} ->
+                 begin
+                     TrF2 = id(F2, TrUserData),
+                     if TrF2 =:= undefined -> B1;
+                        true ->
+                            e_mfield_batched_record_publishTime(TrF2,
+                                                                <<B1/binary,
+                                                                  18>>,
+                                                                TrUserData)
+                     end
+                 end;
+             _ -> B1
+         end,
+    B3 = case M of
+             #{batchSize := F3} ->
+                 begin
+                     TrF3 = id(F3, TrUserData),
+                     if TrF3 =:= 0 -> B2;
+                        true -> e_varint(TrF3, <<B2/binary, 24>>, TrUserData)
+                     end
+                 end;
+             _ -> B2
+         end,
     case M of
-        #{batch := F1} ->
-            TrF1 = id(F1, TrUserData),
-            if TrF1 == [] -> Bin;
-               true ->
-                   e_field_h_stream_record_batch_batch(TrF1,
-                                                       Bin,
-                                                       TrUserData)
+        #{payload := F4} ->
+            begin
+                TrF4 = id(F4, TrUserData),
+                case iolist_size(TrF4) of
+                    0 -> B3;
+                    _ -> e_type_bytes(TrF4, <<B3/binary, 34>>, TrUserData)
+                end
             end;
-        _ -> Bin
+        _ -> B3
     end.
 
 encode_msg_h_stream_record(Msg, TrUserData) ->
@@ -1044,6 +1089,26 @@ encode_msg_h_stream_record(#{} = M, Bin, TrUserData) ->
                 end
             end;
         _ -> B1
+    end.
+
+encode_msg_batch_h_stream_records(Msg, TrUserData) ->
+    encode_msg_batch_h_stream_records(Msg,
+                                      <<>>,
+                                      TrUserData).
+
+
+encode_msg_batch_h_stream_records(#{} = M, Bin,
+                                  TrUserData) ->
+    case M of
+        #{records := F1} ->
+            TrF1 = id(F1, TrUserData),
+            if TrF1 == [] -> Bin;
+               true ->
+                   e_field_batch_h_stream_records_records(TrF1,
+                                                          Bin,
+                                                          TrUserData)
+            end;
+        _ -> Bin
     end.
 
 encode_msg_h_stream_record_header(Msg, TrUserData) ->
@@ -1080,31 +1145,17 @@ encode_msg_h_stream_record_header(#{} = M, Bin,
                  end;
              _ -> B1
          end,
-    B3 = case M of
-             #{publish_time := F3} ->
-                 begin
-                     TrF3 = id(F3, TrUserData),
-                     if TrF3 =:= undefined -> B2;
-                        true ->
-                            e_mfield_h_stream_record_header_publish_time(TrF3,
-                                                                         <<B2/binary,
-                                                                           26>>,
-                                                                         TrUserData)
-                     end
-                 end;
-             _ -> B2
-         end,
     case M of
-        #{key := F4} ->
+        #{key := F3} ->
             begin
-                TrF4 = id(F4, TrUserData),
-                case is_empty_string(TrF4) of
-                    true -> B3;
+                TrF3 = id(F3, TrUserData),
+                case is_empty_string(TrF3) of
+                    true -> B2;
                     false ->
-                        e_type_string(TrF4, <<B3/binary, 34>>, TrUserData)
+                        e_type_string(TrF3, <<B2/binary, 26>>, TrUserData)
                 end
             end;
-        _ -> B3
+        _ -> B2
     end.
 
 encode_msg_record_id(Msg, TrUserData) ->
@@ -2724,22 +2775,11 @@ e_field_command_query_response_result_set([], Bin,
     Bin.
 
 e_mfield_append_request_records(Msg, Bin, TrUserData) ->
-    SubBin = encode_msg_h_stream_record(Msg,
-                                        <<>>,
-                                        TrUserData),
+    SubBin = encode_msg_batched_record(Msg,
+                                       <<>>,
+                                       TrUserData),
     Bin2 = e_varint(byte_size(SubBin), Bin),
     <<Bin2/binary, SubBin/binary>>.
-
-e_field_append_request_records([Elem | Rest], Bin,
-                               TrUserData) ->
-    Bin2 = <<Bin/binary, 26>>,
-    Bin3 = e_mfield_append_request_records(id(Elem,
-                                              TrUserData),
-                                           Bin2,
-                                           TrUserData),
-    e_field_append_request_records(Rest, Bin3, TrUserData);
-e_field_append_request_records([], Bin, _TrUserData) ->
-    Bin.
 
 e_mfield_append_response_recordIds(Msg, Bin,
                                    TrUserData) ->
@@ -2789,25 +2829,30 @@ e_mfield_streaming_fetch_response_receivedRecords(Msg,
     Bin2 = e_varint(byte_size(SubBin), Bin),
     <<Bin2/binary, SubBin/binary>>.
 
-e_field_streaming_fetch_response_receivedRecords([Elem
-                                                  | Rest],
-                                                 Bin, TrUserData) ->
+e_mfield_received_record_recordIds(Msg, Bin,
+                                   TrUserData) ->
+    SubBin = encode_msg_record_id(Msg, <<>>, TrUserData),
+    Bin2 = e_varint(byte_size(SubBin), Bin),
+    <<Bin2/binary, SubBin/binary>>.
+
+e_field_received_record_recordIds([Elem | Rest], Bin,
+                                  TrUserData) ->
     Bin2 = <<Bin/binary, 10>>,
-    Bin3 =
-        e_mfield_streaming_fetch_response_receivedRecords(id(Elem,
-                                                             TrUserData),
-                                                          Bin2,
-                                                          TrUserData),
-    e_field_streaming_fetch_response_receivedRecords(Rest,
-                                                     Bin3,
-                                                     TrUserData);
-e_field_streaming_fetch_response_receivedRecords([],
-                                                 Bin, _TrUserData) ->
+    Bin3 = e_mfield_received_record_recordIds(id(Elem,
+                                                 TrUserData),
+                                              Bin2,
+                                              TrUserData),
+    e_field_received_record_recordIds(Rest,
+                                      Bin3,
+                                      TrUserData);
+e_field_received_record_recordIds([], Bin,
+                                  _TrUserData) ->
     Bin.
 
-e_mfield_received_record_recordId(Msg, Bin,
-                                  TrUserData) ->
-    SubBin = encode_msg_record_id(Msg, <<>>, TrUserData),
+e_mfield_received_record_record(Msg, Bin, TrUserData) ->
+    SubBin = encode_msg_batched_record(Msg,
+                                       <<>>,
+                                       TrUserData),
     Bin2 = e_varint(byte_size(SubBin), Bin),
     <<Bin2/binary, SubBin/binary>>.
 
@@ -2853,18 +2898,11 @@ e_field_list_subscriptions_response_subscription([],
                                                  Bin, _TrUserData) ->
     Bin.
 
-e_field_h_stream_record_batch_batch([Elem | Rest], Bin,
+e_mfield_batched_record_publishTime(Msg, Bin,
                                     TrUserData) ->
-    Bin2 = <<Bin/binary, 10>>,
-    Bin3 = e_type_bytes(id(Elem, TrUserData),
-                        Bin2,
-                        TrUserData),
-    e_field_h_stream_record_batch_batch(Rest,
-                                        Bin3,
-                                        TrUserData);
-e_field_h_stream_record_batch_batch([], Bin,
-                                    _TrUserData) ->
-    Bin.
+    SubBin = encode_msg_timestamp(Msg, <<>>, TrUserData),
+    Bin2 = e_varint(byte_size(SubBin), Bin),
+    <<Bin2/binary, SubBin/binary>>.
 
 e_mfield_h_stream_record_header(Msg, Bin, TrUserData) ->
     SubBin = encode_msg_h_stream_record_header(Msg,
@@ -2872,6 +2910,28 @@ e_mfield_h_stream_record_header(Msg, Bin, TrUserData) ->
                                                TrUserData),
     Bin2 = e_varint(byte_size(SubBin), Bin),
     <<Bin2/binary, SubBin/binary>>.
+
+e_mfield_batch_h_stream_records_records(Msg, Bin,
+                                        TrUserData) ->
+    SubBin = encode_msg_h_stream_record(Msg,
+                                        <<>>,
+                                        TrUserData),
+    Bin2 = e_varint(byte_size(SubBin), Bin),
+    <<Bin2/binary, SubBin/binary>>.
+
+e_field_batch_h_stream_records_records([Elem | Rest],
+                                       Bin, TrUserData) ->
+    Bin2 = <<Bin/binary, 10>>,
+    Bin3 = e_mfield_batch_h_stream_records_records(id(Elem,
+                                                      TrUserData),
+                                                   Bin2,
+                                                   TrUserData),
+    e_field_batch_h_stream_records_records(Rest,
+                                           Bin3,
+                                           TrUserData);
+e_field_batch_h_stream_records_records([], Bin,
+                                       _TrUserData) ->
+    Bin.
 
 e_mfield_h_stream_record_header_attributes(Msg, Bin,
                                            TrUserData) ->
@@ -2895,12 +2955,6 @@ e_field_h_stream_record_header_attributes([Elem | Rest],
 e_field_h_stream_record_header_attributes([], Bin,
                                           _TrUserData) ->
     Bin.
-
-e_mfield_h_stream_record_header_publish_time(Msg, Bin,
-                                             TrUserData) ->
-    SubBin = encode_msg_timestamp(Msg, <<>>, TrUserData),
-    Bin2 = e_varint(byte_size(SubBin), Bin),
-    <<Bin2/binary, SubBin/binary>>.
 
 e_mfield_list_shards_response_shards(Msg, Bin,
                                      TrUserData) ->
@@ -3372,6 +3426,19 @@ e_field_list_value_values([], Bin, _TrUserData) -> Bin.
                                       _TrUserData) ->
     e_varint(V, Bin).
 
+'e_enum_hstream.server.CompressionType'('None', Bin,
+                                        _TrUserData) ->
+    <<Bin/binary, 0>>;
+'e_enum_hstream.server.CompressionType'('Gzip', Bin,
+                                        _TrUserData) ->
+    <<Bin/binary, 1>>;
+'e_enum_hstream.server.CompressionType'('Zstd', Bin,
+                                        _TrUserData) ->
+    <<Bin/binary, 2>>;
+'e_enum_hstream.server.CompressionType'(V, Bin,
+                                        _TrUserData) ->
+    e_varint(V, Bin).
+
 'e_enum_h_stream_record_header.Flag'('JSON', Bin,
                                      _TrUserData) ->
     <<Bin/binary, 0>>;
@@ -3654,12 +3721,15 @@ decode_msg_2_doit(list_subscriptions_response, Bin,
        TrUserData);
 decode_msg_2_doit(stream, Bin, TrUserData) ->
     id(decode_msg_stream(Bin, TrUserData), TrUserData);
-decode_msg_2_doit(h_stream_record_batch, Bin,
-                  TrUserData) ->
-    id(decode_msg_h_stream_record_batch(Bin, TrUserData),
+decode_msg_2_doit(batched_record, Bin, TrUserData) ->
+    id(decode_msg_batched_record(Bin, TrUserData),
        TrUserData);
 decode_msg_2_doit(h_stream_record, Bin, TrUserData) ->
     id(decode_msg_h_stream_record(Bin, TrUserData),
+       TrUserData);
+decode_msg_2_doit(batch_h_stream_records, Bin,
+                  TrUserData) ->
+    id(decode_msg_batch_h_stream_records(Bin, TrUserData),
        TrUserData);
 decode_msg_2_doit(h_stream_record_header, Bin,
                   TrUserData) ->
@@ -5688,7 +5758,7 @@ decode_msg_append_request(Bin, TrUserData) ->
                                       0,
                                       id(<<>>, TrUserData),
                                       id(0, TrUserData),
-                                      id([], TrUserData),
+                                      id('$undef', TrUserData),
                                       TrUserData).
 
 dfp_read_field_def_append_request(<<10, Rest/binary>>,
@@ -5719,10 +5789,10 @@ dfp_read_field_def_append_request(<<26, Rest/binary>>,
                                    F@_3,
                                    TrUserData);
 dfp_read_field_def_append_request(<<>>, 0, 0, F@_1,
-                                  F@_2, R1, TrUserData) ->
+                                  F@_2, F@_3, _) ->
     S1 = #{streamName => F@_1, shardId => F@_2},
-    if R1 == '$undef' -> S1;
-       true -> S1#{records => lists_reverse(R1, TrUserData)}
+    if F@_3 == '$undef' -> S1;
+       true -> S1#{records => F@_3}
     end;
 dfp_read_field_def_append_request(Other, Z1, Z2, F@_1,
                                   F@_2, F@_3, TrUserData) ->
@@ -5819,10 +5889,10 @@ dg_read_field_def_append_request(<<0:1, X:7,
             end
     end;
 dg_read_field_def_append_request(<<>>, 0, 0, F@_1, F@_2,
-                                 R1, TrUserData) ->
+                                 F@_3, _) ->
     S1 = #{streamName => F@_1, shardId => F@_2},
-    if R1 == '$undef' -> S1;
-       true -> S1#{records => lists_reverse(R1, TrUserData)}
+    if F@_3 == '$undef' -> S1;
+       true -> S1#{records => F@_3}
     end.
 
 d_field_append_request_streamName(<<1:1, X:7,
@@ -5893,7 +5963,7 @@ d_field_append_request_records(<<0:1, X:7,
     {NewFValue, RestF} = begin
                              Len = X bsl N + Acc,
                              <<Bs:Len/binary, Rest2/binary>> = Rest,
-                             {id(decode_msg_h_stream_record(Bs, TrUserData),
+                             {id(decode_msg_batched_record(Bs, TrUserData),
                                  TrUserData),
                               Rest2}
                          end,
@@ -5902,7 +5972,12 @@ d_field_append_request_records(<<0:1, X:7,
                                       0,
                                       F@_1,
                                       F@_2,
-                                      cons(NewFValue, Prev, TrUserData),
+                                      if Prev == '$undef' -> NewFValue;
+                                         true ->
+                                             merge_msg_batched_record(Prev,
+                                                                      NewFValue,
+                                                                      TrUserData)
+                                      end,
                                       TrUserData).
 
 skip_varint_append_request(<<1:1, _:7, Rest/binary>>,
@@ -7652,7 +7727,7 @@ decode_msg_streaming_fetch_response(Bin, TrUserData) ->
     dfp_read_field_def_streaming_fetch_response(Bin,
                                                 0,
                                                 0,
-                                                id([], TrUserData),
+                                                id('$undef', TrUserData),
                                                 TrUserData).
 
 dfp_read_field_def_streaming_fetch_response(<<10,
@@ -7664,11 +7739,10 @@ dfp_read_field_def_streaming_fetch_response(<<10,
                                                      F@_1,
                                                      TrUserData);
 dfp_read_field_def_streaming_fetch_response(<<>>, 0, 0,
-                                            R1, TrUserData) ->
+                                            F@_1, _) ->
     S1 = #{},
-    if R1 == '$undef' -> S1;
-       true ->
-           S1#{receivedRecords => lists_reverse(R1, TrUserData)}
+    if F@_1 == '$undef' -> S1;
+       true -> S1#{receivedRecords => F@_1}
     end;
 dfp_read_field_def_streaming_fetch_response(Other, Z1,
                                             Z2, F@_1, TrUserData) ->
@@ -7733,11 +7807,10 @@ dg_read_field_def_streaming_fetch_response(<<0:1, X:7,
             end
     end;
 dg_read_field_def_streaming_fetch_response(<<>>, 0, 0,
-                                           R1, TrUserData) ->
+                                           F@_1, _) ->
     S1 = #{},
-    if R1 == '$undef' -> S1;
-       true ->
-           S1#{receivedRecords => lists_reverse(R1, TrUserData)}
+    if F@_1 == '$undef' -> S1;
+       true -> S1#{receivedRecords => F@_1}
     end.
 
 d_field_streaming_fetch_response_receivedRecords(<<1:1,
@@ -7762,9 +7835,13 @@ d_field_streaming_fetch_response_receivedRecords(<<0:1,
     dfp_read_field_def_streaming_fetch_response(RestF,
                                                 0,
                                                 0,
-                                                cons(NewFValue,
-                                                     Prev,
-                                                     TrUserData),
+                                                if Prev == '$undef' ->
+                                                       NewFValue;
+                                                   true ->
+                                                       merge_msg_received_record(Prev,
+                                                                                 NewFValue,
+                                                                                 TrUserData)
+                                                end,
                                                 TrUserData).
 
 skip_varint_streaming_fetch_response(<<1:1, _:7,
@@ -7833,18 +7910,18 @@ decode_msg_received_record(Bin, TrUserData) ->
     dfp_read_field_def_received_record(Bin,
                                        0,
                                        0,
+                                       id([], TrUserData),
                                        id('$undef', TrUserData),
-                                       id(<<>>, TrUserData),
                                        TrUserData).
 
 dfp_read_field_def_received_record(<<10, Rest/binary>>,
                                    Z1, Z2, F@_1, F@_2, TrUserData) ->
-    d_field_received_record_recordId(Rest,
-                                     Z1,
-                                     Z2,
-                                     F@_1,
-                                     F@_2,
-                                     TrUserData);
+    d_field_received_record_recordIds(Rest,
+                                      Z1,
+                                      Z2,
+                                      F@_1,
+                                      F@_2,
+                                      TrUserData);
 dfp_read_field_def_received_record(<<18, Rest/binary>>,
                                    Z1, Z2, F@_1, F@_2, TrUserData) ->
     d_field_received_record_record(Rest,
@@ -7853,11 +7930,14 @@ dfp_read_field_def_received_record(<<18, Rest/binary>>,
                                    F@_1,
                                    F@_2,
                                    TrUserData);
-dfp_read_field_def_received_record(<<>>, 0, 0, F@_1,
-                                   F@_2, _) ->
-    S1 = #{record => F@_2},
-    if F@_1 == '$undef' -> S1;
-       true -> S1#{recordId => F@_1}
+dfp_read_field_def_received_record(<<>>, 0, 0, R1, F@_2,
+                                   TrUserData) ->
+    S1 = #{},
+    S2 = if R1 == '$undef' -> S1;
+            true -> S1#{recordIds => lists_reverse(R1, TrUserData)}
+         end,
+    if F@_2 == '$undef' -> S2;
+       true -> S2#{record => F@_2}
     end;
 dfp_read_field_def_received_record(Other, Z1, Z2, F@_1,
                                    F@_2, TrUserData) ->
@@ -7884,12 +7964,12 @@ dg_read_field_def_received_record(<<0:1, X:7,
     Key = X bsl N + Acc,
     case Key of
         10 ->
-            d_field_received_record_recordId(Rest,
-                                             0,
-                                             0,
-                                             F@_1,
-                                             F@_2,
-                                             TrUserData);
+            d_field_received_record_recordIds(Rest,
+                                              0,
+                                              0,
+                                              F@_1,
+                                              F@_2,
+                                              TrUserData);
         18 ->
             d_field_received_record_record(Rest,
                                            0,
@@ -7936,26 +8016,29 @@ dg_read_field_def_received_record(<<0:1, X:7,
                                             TrUserData)
             end
     end;
-dg_read_field_def_received_record(<<>>, 0, 0, F@_1,
-                                  F@_2, _) ->
-    S1 = #{record => F@_2},
-    if F@_1 == '$undef' -> S1;
-       true -> S1#{recordId => F@_1}
+dg_read_field_def_received_record(<<>>, 0, 0, R1, F@_2,
+                                  TrUserData) ->
+    S1 = #{},
+    S2 = if R1 == '$undef' -> S1;
+            true -> S1#{recordIds => lists_reverse(R1, TrUserData)}
+         end,
+    if F@_2 == '$undef' -> S2;
+       true -> S2#{record => F@_2}
     end.
 
-d_field_received_record_recordId(<<1:1, X:7,
-                                   Rest/binary>>,
-                                 N, Acc, F@_1, F@_2, TrUserData)
+d_field_received_record_recordIds(<<1:1, X:7,
+                                    Rest/binary>>,
+                                  N, Acc, F@_1, F@_2, TrUserData)
     when N < 57 ->
-    d_field_received_record_recordId(Rest,
-                                     N + 7,
-                                     X bsl N + Acc,
-                                     F@_1,
-                                     F@_2,
-                                     TrUserData);
-d_field_received_record_recordId(<<0:1, X:7,
-                                   Rest/binary>>,
-                                 N, Acc, Prev, F@_2, TrUserData) ->
+    d_field_received_record_recordIds(Rest,
+                                      N + 7,
+                                      X bsl N + Acc,
+                                      F@_1,
+                                      F@_2,
+                                      TrUserData);
+d_field_received_record_recordIds(<<0:1, X:7,
+                                    Rest/binary>>,
+                                  N, Acc, Prev, F@_2, TrUserData) ->
     {NewFValue, RestF} = begin
                              Len = X bsl N + Acc,
                              <<Bs:Len/binary, Rest2/binary>> = Rest,
@@ -7966,12 +8049,7 @@ d_field_received_record_recordId(<<0:1, X:7,
     dfp_read_field_def_received_record(RestF,
                                        0,
                                        0,
-                                       if Prev == '$undef' -> NewFValue;
-                                          true ->
-                                              merge_msg_record_id(Prev,
-                                                                  NewFValue,
-                                                                  TrUserData)
-                                       end,
+                                       cons(NewFValue, Prev, TrUserData),
                                        F@_2,
                                        TrUserData).
 
@@ -7987,17 +8065,24 @@ d_field_received_record_record(<<1:1, X:7,
                                    TrUserData);
 d_field_received_record_record(<<0:1, X:7,
                                  Rest/binary>>,
-                               N, Acc, F@_1, _, TrUserData) ->
+                               N, Acc, F@_1, Prev, TrUserData) ->
     {NewFValue, RestF} = begin
                              Len = X bsl N + Acc,
-                             <<Bytes:Len/binary, Rest2/binary>> = Rest,
-                             {id(binary:copy(Bytes), TrUserData), Rest2}
+                             <<Bs:Len/binary, Rest2/binary>> = Rest,
+                             {id(decode_msg_batched_record(Bs, TrUserData),
+                                 TrUserData),
+                              Rest2}
                          end,
     dfp_read_field_def_received_record(RestF,
                                        0,
                                        0,
                                        F@_1,
-                                       NewFValue,
+                                       if Prev == '$undef' -> NewFValue;
+                                          true ->
+                                              merge_msg_batched_record(Prev,
+                                                                       NewFValue,
+                                                                       TrUserData)
+                                       end,
                                        TrUserData).
 
 skip_varint_received_record(<<1:1, _:7, Rest/binary>>,
@@ -9305,174 +9390,392 @@ skip_64_stream(<<_:64, Rest/binary>>, Z1, Z2, F@_1,
                               F@_4,
                               TrUserData).
 
-decode_msg_h_stream_record_batch(Bin, TrUserData) ->
-    dfp_read_field_def_h_stream_record_batch(Bin,
-                                             0,
-                                             0,
-                                             id([], TrUserData),
-                                             TrUserData).
+decode_msg_batched_record(Bin, TrUserData) ->
+    dfp_read_field_def_batched_record(Bin,
+                                      0,
+                                      0,
+                                      id('None', TrUserData),
+                                      id('$undef', TrUserData),
+                                      id(0, TrUserData),
+                                      id(<<>>, TrUserData),
+                                      TrUserData).
 
-dfp_read_field_def_h_stream_record_batch(<<10,
-                                           Rest/binary>>,
-                                         Z1, Z2, F@_1, TrUserData) ->
-    d_field_h_stream_record_batch_batch(Rest,
-                                        Z1,
-                                        Z2,
-                                        F@_1,
-                                        TrUserData);
-dfp_read_field_def_h_stream_record_batch(<<>>, 0, 0, R1,
-                                         TrUserData) ->
-    #{batch => lists_reverse(R1, TrUserData)};
-dfp_read_field_def_h_stream_record_batch(Other, Z1, Z2,
-                                         F@_1, TrUserData) ->
-    dg_read_field_def_h_stream_record_batch(Other,
-                                            Z1,
-                                            Z2,
-                                            F@_1,
-                                            TrUserData).
+dfp_read_field_def_batched_record(<<8, Rest/binary>>,
+                                  Z1, Z2, F@_1, F@_2, F@_3, F@_4, TrUserData) ->
+    d_field_batched_record_compressionType(Rest,
+                                           Z1,
+                                           Z2,
+                                           F@_1,
+                                           F@_2,
+                                           F@_3,
+                                           F@_4,
+                                           TrUserData);
+dfp_read_field_def_batched_record(<<18, Rest/binary>>,
+                                  Z1, Z2, F@_1, F@_2, F@_3, F@_4, TrUserData) ->
+    d_field_batched_record_publishTime(Rest,
+                                       Z1,
+                                       Z2,
+                                       F@_1,
+                                       F@_2,
+                                       F@_3,
+                                       F@_4,
+                                       TrUserData);
+dfp_read_field_def_batched_record(<<24, Rest/binary>>,
+                                  Z1, Z2, F@_1, F@_2, F@_3, F@_4, TrUserData) ->
+    d_field_batched_record_batchSize(Rest,
+                                     Z1,
+                                     Z2,
+                                     F@_1,
+                                     F@_2,
+                                     F@_3,
+                                     F@_4,
+                                     TrUserData);
+dfp_read_field_def_batched_record(<<34, Rest/binary>>,
+                                  Z1, Z2, F@_1, F@_2, F@_3, F@_4, TrUserData) ->
+    d_field_batched_record_payload(Rest,
+                                   Z1,
+                                   Z2,
+                                   F@_1,
+                                   F@_2,
+                                   F@_3,
+                                   F@_4,
+                                   TrUserData);
+dfp_read_field_def_batched_record(<<>>, 0, 0, F@_1,
+                                  F@_2, F@_3, F@_4, _) ->
+    S1 = #{compressionType => F@_1, batchSize => F@_3,
+           payload => F@_4},
+    if F@_2 == '$undef' -> S1;
+       true -> S1#{publishTime => F@_2}
+    end;
+dfp_read_field_def_batched_record(Other, Z1, Z2, F@_1,
+                                  F@_2, F@_3, F@_4, TrUserData) ->
+    dg_read_field_def_batched_record(Other,
+                                     Z1,
+                                     Z2,
+                                     F@_1,
+                                     F@_2,
+                                     F@_3,
+                                     F@_4,
+                                     TrUserData).
 
-dg_read_field_def_h_stream_record_batch(<<1:1, X:7,
-                                          Rest/binary>>,
-                                        N, Acc, F@_1, TrUserData)
+dg_read_field_def_batched_record(<<1:1, X:7,
+                                   Rest/binary>>,
+                                 N, Acc, F@_1, F@_2, F@_3, F@_4, TrUserData)
     when N < 32 - 7 ->
-    dg_read_field_def_h_stream_record_batch(Rest,
-                                            N + 7,
-                                            X bsl N + Acc,
-                                            F@_1,
-                                            TrUserData);
-dg_read_field_def_h_stream_record_batch(<<0:1, X:7,
-                                          Rest/binary>>,
-                                        N, Acc, F@_1, TrUserData) ->
+    dg_read_field_def_batched_record(Rest,
+                                     N + 7,
+                                     X bsl N + Acc,
+                                     F@_1,
+                                     F@_2,
+                                     F@_3,
+                                     F@_4,
+                                     TrUserData);
+dg_read_field_def_batched_record(<<0:1, X:7,
+                                   Rest/binary>>,
+                                 N, Acc, F@_1, F@_2, F@_3, F@_4, TrUserData) ->
     Key = X bsl N + Acc,
     case Key of
-        10 ->
-            d_field_h_stream_record_batch_batch(Rest,
-                                                0,
-                                                0,
-                                                F@_1,
-                                                TrUserData);
+        8 ->
+            d_field_batched_record_compressionType(Rest,
+                                                   0,
+                                                   0,
+                                                   F@_1,
+                                                   F@_2,
+                                                   F@_3,
+                                                   F@_4,
+                                                   TrUserData);
+        18 ->
+            d_field_batched_record_publishTime(Rest,
+                                               0,
+                                               0,
+                                               F@_1,
+                                               F@_2,
+                                               F@_3,
+                                               F@_4,
+                                               TrUserData);
+        24 ->
+            d_field_batched_record_batchSize(Rest,
+                                             0,
+                                             0,
+                                             F@_1,
+                                             F@_2,
+                                             F@_3,
+                                             F@_4,
+                                             TrUserData);
+        34 ->
+            d_field_batched_record_payload(Rest,
+                                           0,
+                                           0,
+                                           F@_1,
+                                           F@_2,
+                                           F@_3,
+                                           F@_4,
+                                           TrUserData);
         _ ->
             case Key band 7 of
                 0 ->
-                    skip_varint_h_stream_record_batch(Rest,
-                                                      0,
-                                                      0,
-                                                      F@_1,
-                                                      TrUserData);
+                    skip_varint_batched_record(Rest,
+                                               0,
+                                               0,
+                                               F@_1,
+                                               F@_2,
+                                               F@_3,
+                                               F@_4,
+                                               TrUserData);
                 1 ->
-                    skip_64_h_stream_record_batch(Rest,
-                                                  0,
-                                                  0,
-                                                  F@_1,
-                                                  TrUserData);
+                    skip_64_batched_record(Rest,
+                                           0,
+                                           0,
+                                           F@_1,
+                                           F@_2,
+                                           F@_3,
+                                           F@_4,
+                                           TrUserData);
                 2 ->
-                    skip_length_delimited_h_stream_record_batch(Rest,
-                                                                0,
-                                                                0,
-                                                                F@_1,
-                                                                TrUserData);
+                    skip_length_delimited_batched_record(Rest,
+                                                         0,
+                                                         0,
+                                                         F@_1,
+                                                         F@_2,
+                                                         F@_3,
+                                                         F@_4,
+                                                         TrUserData);
                 3 ->
-                    skip_group_h_stream_record_batch(Rest,
-                                                     Key bsr 3,
-                                                     0,
-                                                     F@_1,
-                                                     TrUserData);
+                    skip_group_batched_record(Rest,
+                                              Key bsr 3,
+                                              0,
+                                              F@_1,
+                                              F@_2,
+                                              F@_3,
+                                              F@_4,
+                                              TrUserData);
                 5 ->
-                    skip_32_h_stream_record_batch(Rest,
-                                                  0,
-                                                  0,
-                                                  F@_1,
-                                                  TrUserData)
+                    skip_32_batched_record(Rest,
+                                           0,
+                                           0,
+                                           F@_1,
+                                           F@_2,
+                                           F@_3,
+                                           F@_4,
+                                           TrUserData)
             end
     end;
-dg_read_field_def_h_stream_record_batch(<<>>, 0, 0, R1,
-                                        TrUserData) ->
-    #{batch => lists_reverse(R1, TrUserData)}.
+dg_read_field_def_batched_record(<<>>, 0, 0, F@_1, F@_2,
+                                 F@_3, F@_4, _) ->
+    S1 = #{compressionType => F@_1, batchSize => F@_3,
+           payload => F@_4},
+    if F@_2 == '$undef' -> S1;
+       true -> S1#{publishTime => F@_2}
+    end.
 
-d_field_h_stream_record_batch_batch(<<1:1, X:7,
-                                      Rest/binary>>,
-                                    N, Acc, F@_1, TrUserData)
+d_field_batched_record_compressionType(<<1:1, X:7,
+                                         Rest/binary>>,
+                                       N, Acc, F@_1, F@_2, F@_3, F@_4,
+                                       TrUserData)
     when N < 57 ->
-    d_field_h_stream_record_batch_batch(Rest,
-                                        N + 7,
-                                        X bsl N + Acc,
-                                        F@_1,
-                                        TrUserData);
-d_field_h_stream_record_batch_batch(<<0:1, X:7,
-                                      Rest/binary>>,
-                                    N, Acc, Prev, TrUserData) ->
+    d_field_batched_record_compressionType(Rest,
+                                           N + 7,
+                                           X bsl N + Acc,
+                                           F@_1,
+                                           F@_2,
+                                           F@_3,
+                                           F@_4,
+                                           TrUserData);
+d_field_batched_record_compressionType(<<0:1, X:7,
+                                         Rest/binary>>,
+                                       N, Acc, _, F@_2, F@_3, F@_4,
+                                       TrUserData) ->
+    {NewFValue, RestF} =
+        {id('d_enum_hstream.server.CompressionType'(begin
+                                                        <<Res:32/signed-native>> =
+                                                            <<(X bsl N +
+                                                                   Acc):32/unsigned-native>>,
+                                                        id(Res, TrUserData)
+                                                    end),
+            TrUserData),
+         Rest},
+    dfp_read_field_def_batched_record(RestF,
+                                      0,
+                                      0,
+                                      NewFValue,
+                                      F@_2,
+                                      F@_3,
+                                      F@_4,
+                                      TrUserData).
+
+d_field_batched_record_publishTime(<<1:1, X:7,
+                                     Rest/binary>>,
+                                   N, Acc, F@_1, F@_2, F@_3, F@_4, TrUserData)
+    when N < 57 ->
+    d_field_batched_record_publishTime(Rest,
+                                       N + 7,
+                                       X bsl N + Acc,
+                                       F@_1,
+                                       F@_2,
+                                       F@_3,
+                                       F@_4,
+                                       TrUserData);
+d_field_batched_record_publishTime(<<0:1, X:7,
+                                     Rest/binary>>,
+                                   N, Acc, F@_1, Prev, F@_3, F@_4,
+                                   TrUserData) ->
+    {NewFValue, RestF} = begin
+                             Len = X bsl N + Acc,
+                             <<Bs:Len/binary, Rest2/binary>> = Rest,
+                             {id(decode_msg_timestamp(Bs, TrUserData),
+                                 TrUserData),
+                              Rest2}
+                         end,
+    dfp_read_field_def_batched_record(RestF,
+                                      0,
+                                      0,
+                                      F@_1,
+                                      if Prev == '$undef' -> NewFValue;
+                                         true ->
+                                             merge_msg_timestamp(Prev,
+                                                                 NewFValue,
+                                                                 TrUserData)
+                                      end,
+                                      F@_3,
+                                      F@_4,
+                                      TrUserData).
+
+d_field_batched_record_batchSize(<<1:1, X:7,
+                                   Rest/binary>>,
+                                 N, Acc, F@_1, F@_2, F@_3, F@_4, TrUserData)
+    when N < 57 ->
+    d_field_batched_record_batchSize(Rest,
+                                     N + 7,
+                                     X bsl N + Acc,
+                                     F@_1,
+                                     F@_2,
+                                     F@_3,
+                                     F@_4,
+                                     TrUserData);
+d_field_batched_record_batchSize(<<0:1, X:7,
+                                   Rest/binary>>,
+                                 N, Acc, F@_1, F@_2, _, F@_4, TrUserData) ->
+    {NewFValue, RestF} = {id(X bsl N + Acc, TrUserData),
+                          Rest},
+    dfp_read_field_def_batched_record(RestF,
+                                      0,
+                                      0,
+                                      F@_1,
+                                      F@_2,
+                                      NewFValue,
+                                      F@_4,
+                                      TrUserData).
+
+d_field_batched_record_payload(<<1:1, X:7,
+                                 Rest/binary>>,
+                               N, Acc, F@_1, F@_2, F@_3, F@_4, TrUserData)
+    when N < 57 ->
+    d_field_batched_record_payload(Rest,
+                                   N + 7,
+                                   X bsl N + Acc,
+                                   F@_1,
+                                   F@_2,
+                                   F@_3,
+                                   F@_4,
+                                   TrUserData);
+d_field_batched_record_payload(<<0:1, X:7,
+                                 Rest/binary>>,
+                               N, Acc, F@_1, F@_2, F@_3, _, TrUserData) ->
     {NewFValue, RestF} = begin
                              Len = X bsl N + Acc,
                              <<Bytes:Len/binary, Rest2/binary>> = Rest,
                              {id(binary:copy(Bytes), TrUserData), Rest2}
                          end,
-    dfp_read_field_def_h_stream_record_batch(RestF,
-                                             0,
-                                             0,
-                                             cons(NewFValue, Prev, TrUserData),
-                                             TrUserData).
+    dfp_read_field_def_batched_record(RestF,
+                                      0,
+                                      0,
+                                      F@_1,
+                                      F@_2,
+                                      F@_3,
+                                      NewFValue,
+                                      TrUserData).
 
-skip_varint_h_stream_record_batch(<<1:1, _:7,
-                                    Rest/binary>>,
-                                  Z1, Z2, F@_1, TrUserData) ->
-    skip_varint_h_stream_record_batch(Rest,
+skip_varint_batched_record(<<1:1, _:7, Rest/binary>>,
+                           Z1, Z2, F@_1, F@_2, F@_3, F@_4, TrUserData) ->
+    skip_varint_batched_record(Rest,
+                               Z1,
+                               Z2,
+                               F@_1,
+                               F@_2,
+                               F@_3,
+                               F@_4,
+                               TrUserData);
+skip_varint_batched_record(<<0:1, _:7, Rest/binary>>,
+                           Z1, Z2, F@_1, F@_2, F@_3, F@_4, TrUserData) ->
+    dfp_read_field_def_batched_record(Rest,
                                       Z1,
                                       Z2,
                                       F@_1,
-                                      TrUserData);
-skip_varint_h_stream_record_batch(<<0:1, _:7,
-                                    Rest/binary>>,
-                                  Z1, Z2, F@_1, TrUserData) ->
-    dfp_read_field_def_h_stream_record_batch(Rest,
-                                             Z1,
-                                             Z2,
-                                             F@_1,
-                                             TrUserData).
+                                      F@_2,
+                                      F@_3,
+                                      F@_4,
+                                      TrUserData).
 
-skip_length_delimited_h_stream_record_batch(<<1:1, X:7,
-                                              Rest/binary>>,
-                                            N, Acc, F@_1, TrUserData)
+skip_length_delimited_batched_record(<<1:1, X:7,
+                                       Rest/binary>>,
+                                     N, Acc, F@_1, F@_2, F@_3, F@_4, TrUserData)
     when N < 57 ->
-    skip_length_delimited_h_stream_record_batch(Rest,
-                                                N + 7,
-                                                X bsl N + Acc,
-                                                F@_1,
-                                                TrUserData);
-skip_length_delimited_h_stream_record_batch(<<0:1, X:7,
-                                              Rest/binary>>,
-                                            N, Acc, F@_1, TrUserData) ->
+    skip_length_delimited_batched_record(Rest,
+                                         N + 7,
+                                         X bsl N + Acc,
+                                         F@_1,
+                                         F@_2,
+                                         F@_3,
+                                         F@_4,
+                                         TrUserData);
+skip_length_delimited_batched_record(<<0:1, X:7,
+                                       Rest/binary>>,
+                                     N, Acc, F@_1, F@_2, F@_3, F@_4,
+                                     TrUserData) ->
     Length = X bsl N + Acc,
     <<_:Length/binary, Rest2/binary>> = Rest,
-    dfp_read_field_def_h_stream_record_batch(Rest2,
-                                             0,
-                                             0,
-                                             F@_1,
-                                             TrUserData).
+    dfp_read_field_def_batched_record(Rest2,
+                                      0,
+                                      0,
+                                      F@_1,
+                                      F@_2,
+                                      F@_3,
+                                      F@_4,
+                                      TrUserData).
 
-skip_group_h_stream_record_batch(Bin, FNum, Z2, F@_1,
-                                 TrUserData) ->
+skip_group_batched_record(Bin, FNum, Z2, F@_1, F@_2,
+                          F@_3, F@_4, TrUserData) ->
     {_, Rest} = read_group(Bin, FNum),
-    dfp_read_field_def_h_stream_record_batch(Rest,
-                                             0,
-                                             Z2,
-                                             F@_1,
-                                             TrUserData).
+    dfp_read_field_def_batched_record(Rest,
+                                      0,
+                                      Z2,
+                                      F@_1,
+                                      F@_2,
+                                      F@_3,
+                                      F@_4,
+                                      TrUserData).
 
-skip_32_h_stream_record_batch(<<_:32, Rest/binary>>, Z1,
-                              Z2, F@_1, TrUserData) ->
-    dfp_read_field_def_h_stream_record_batch(Rest,
-                                             Z1,
-                                             Z2,
-                                             F@_1,
-                                             TrUserData).
+skip_32_batched_record(<<_:32, Rest/binary>>, Z1, Z2,
+                       F@_1, F@_2, F@_3, F@_4, TrUserData) ->
+    dfp_read_field_def_batched_record(Rest,
+                                      Z1,
+                                      Z2,
+                                      F@_1,
+                                      F@_2,
+                                      F@_3,
+                                      F@_4,
+                                      TrUserData).
 
-skip_64_h_stream_record_batch(<<_:64, Rest/binary>>, Z1,
-                              Z2, F@_1, TrUserData) ->
-    dfp_read_field_def_h_stream_record_batch(Rest,
-                                             Z1,
-                                             Z2,
-                                             F@_1,
-                                             TrUserData).
+skip_64_batched_record(<<_:64, Rest/binary>>, Z1, Z2,
+                       F@_1, F@_2, F@_3, F@_4, TrUserData) ->
+    dfp_read_field_def_batched_record(Rest,
+                                      Z1,
+                                      Z2,
+                                      F@_1,
+                                      F@_2,
+                                      F@_3,
+                                      F@_4,
+                                      TrUserData).
 
 decode_msg_h_stream_record(Bin, TrUserData) ->
     dfp_read_field_def_h_stream_record(Bin,
@@ -9713,6 +10016,183 @@ skip_64_h_stream_record(<<_:64, Rest/binary>>, Z1, Z2,
                                        F@_2,
                                        TrUserData).
 
+decode_msg_batch_h_stream_records(Bin, TrUserData) ->
+    dfp_read_field_def_batch_h_stream_records(Bin,
+                                              0,
+                                              0,
+                                              id([], TrUserData),
+                                              TrUserData).
+
+dfp_read_field_def_batch_h_stream_records(<<10,
+                                            Rest/binary>>,
+                                          Z1, Z2, F@_1, TrUserData) ->
+    d_field_batch_h_stream_records_records(Rest,
+                                           Z1,
+                                           Z2,
+                                           F@_1,
+                                           TrUserData);
+dfp_read_field_def_batch_h_stream_records(<<>>, 0, 0,
+                                          R1, TrUserData) ->
+    S1 = #{},
+    if R1 == '$undef' -> S1;
+       true -> S1#{records => lists_reverse(R1, TrUserData)}
+    end;
+dfp_read_field_def_batch_h_stream_records(Other, Z1, Z2,
+                                          F@_1, TrUserData) ->
+    dg_read_field_def_batch_h_stream_records(Other,
+                                             Z1,
+                                             Z2,
+                                             F@_1,
+                                             TrUserData).
+
+dg_read_field_def_batch_h_stream_records(<<1:1, X:7,
+                                           Rest/binary>>,
+                                         N, Acc, F@_1, TrUserData)
+    when N < 32 - 7 ->
+    dg_read_field_def_batch_h_stream_records(Rest,
+                                             N + 7,
+                                             X bsl N + Acc,
+                                             F@_1,
+                                             TrUserData);
+dg_read_field_def_batch_h_stream_records(<<0:1, X:7,
+                                           Rest/binary>>,
+                                         N, Acc, F@_1, TrUserData) ->
+    Key = X bsl N + Acc,
+    case Key of
+        10 ->
+            d_field_batch_h_stream_records_records(Rest,
+                                                   0,
+                                                   0,
+                                                   F@_1,
+                                                   TrUserData);
+        _ ->
+            case Key band 7 of
+                0 ->
+                    skip_varint_batch_h_stream_records(Rest,
+                                                       0,
+                                                       0,
+                                                       F@_1,
+                                                       TrUserData);
+                1 ->
+                    skip_64_batch_h_stream_records(Rest,
+                                                   0,
+                                                   0,
+                                                   F@_1,
+                                                   TrUserData);
+                2 ->
+                    skip_length_delimited_batch_h_stream_records(Rest,
+                                                                 0,
+                                                                 0,
+                                                                 F@_1,
+                                                                 TrUserData);
+                3 ->
+                    skip_group_batch_h_stream_records(Rest,
+                                                      Key bsr 3,
+                                                      0,
+                                                      F@_1,
+                                                      TrUserData);
+                5 ->
+                    skip_32_batch_h_stream_records(Rest,
+                                                   0,
+                                                   0,
+                                                   F@_1,
+                                                   TrUserData)
+            end
+    end;
+dg_read_field_def_batch_h_stream_records(<<>>, 0, 0, R1,
+                                         TrUserData) ->
+    S1 = #{},
+    if R1 == '$undef' -> S1;
+       true -> S1#{records => lists_reverse(R1, TrUserData)}
+    end.
+
+d_field_batch_h_stream_records_records(<<1:1, X:7,
+                                         Rest/binary>>,
+                                       N, Acc, F@_1, TrUserData)
+    when N < 57 ->
+    d_field_batch_h_stream_records_records(Rest,
+                                           N + 7,
+                                           X bsl N + Acc,
+                                           F@_1,
+                                           TrUserData);
+d_field_batch_h_stream_records_records(<<0:1, X:7,
+                                         Rest/binary>>,
+                                       N, Acc, Prev, TrUserData) ->
+    {NewFValue, RestF} = begin
+                             Len = X bsl N + Acc,
+                             <<Bs:Len/binary, Rest2/binary>> = Rest,
+                             {id(decode_msg_h_stream_record(Bs, TrUserData),
+                                 TrUserData),
+                              Rest2}
+                         end,
+    dfp_read_field_def_batch_h_stream_records(RestF,
+                                              0,
+                                              0,
+                                              cons(NewFValue, Prev, TrUserData),
+                                              TrUserData).
+
+skip_varint_batch_h_stream_records(<<1:1, _:7,
+                                     Rest/binary>>,
+                                   Z1, Z2, F@_1, TrUserData) ->
+    skip_varint_batch_h_stream_records(Rest,
+                                       Z1,
+                                       Z2,
+                                       F@_1,
+                                       TrUserData);
+skip_varint_batch_h_stream_records(<<0:1, _:7,
+                                     Rest/binary>>,
+                                   Z1, Z2, F@_1, TrUserData) ->
+    dfp_read_field_def_batch_h_stream_records(Rest,
+                                              Z1,
+                                              Z2,
+                                              F@_1,
+                                              TrUserData).
+
+skip_length_delimited_batch_h_stream_records(<<1:1, X:7,
+                                               Rest/binary>>,
+                                             N, Acc, F@_1, TrUserData)
+    when N < 57 ->
+    skip_length_delimited_batch_h_stream_records(Rest,
+                                                 N + 7,
+                                                 X bsl N + Acc,
+                                                 F@_1,
+                                                 TrUserData);
+skip_length_delimited_batch_h_stream_records(<<0:1, X:7,
+                                               Rest/binary>>,
+                                             N, Acc, F@_1, TrUserData) ->
+    Length = X bsl N + Acc,
+    <<_:Length/binary, Rest2/binary>> = Rest,
+    dfp_read_field_def_batch_h_stream_records(Rest2,
+                                              0,
+                                              0,
+                                              F@_1,
+                                              TrUserData).
+
+skip_group_batch_h_stream_records(Bin, FNum, Z2, F@_1,
+                                  TrUserData) ->
+    {_, Rest} = read_group(Bin, FNum),
+    dfp_read_field_def_batch_h_stream_records(Rest,
+                                              0,
+                                              Z2,
+                                              F@_1,
+                                              TrUserData).
+
+skip_32_batch_h_stream_records(<<_:32, Rest/binary>>,
+                               Z1, Z2, F@_1, TrUserData) ->
+    dfp_read_field_def_batch_h_stream_records(Rest,
+                                              Z1,
+                                              Z2,
+                                              F@_1,
+                                              TrUserData).
+
+skip_64_batch_h_stream_records(<<_:64, Rest/binary>>,
+                               Z1, Z2, F@_1, TrUserData) ->
+    dfp_read_field_def_batch_h_stream_records(Rest,
+                                              Z1,
+                                              Z2,
+                                              F@_1,
+                                              TrUserData).
+
 decode_msg_h_stream_record_header(Bin, TrUserData) ->
     dfp_read_field_def_h_stream_record_header(Bin,
                                               0,
@@ -9720,13 +10200,12 @@ decode_msg_h_stream_record_header(Bin, TrUserData) ->
                                               id('JSON', TrUserData),
                                               'tr_decode_init_default_h_stream_record_header.attributes'([],
                                                                                                          TrUserData),
-                                              id('$undef', TrUserData),
                                               id(<<>>, TrUserData),
                                               TrUserData).
 
 dfp_read_field_def_h_stream_record_header(<<8,
                                             Rest/binary>>,
-                                          Z1, Z2, F@_1, F@_2, F@_3, F@_4,
+                                          Z1, Z2, F@_1, F@_2, F@_3,
                                           TrUserData) ->
     d_field_h_stream_record_header_flag(Rest,
                                         Z1,
@@ -9734,11 +10213,10 @@ dfp_read_field_def_h_stream_record_header(<<8,
                                         F@_1,
                                         F@_2,
                                         F@_3,
-                                        F@_4,
                                         TrUserData);
 dfp_read_field_def_h_stream_record_header(<<18,
                                             Rest/binary>>,
-                                          Z1, Z2, F@_1, F@_2, F@_3, F@_4,
+                                          Z1, Z2, F@_1, F@_2, F@_3,
                                           TrUserData) ->
     d_field_h_stream_record_header_attributes(Rest,
                                               Z1,
@@ -9746,23 +10224,10 @@ dfp_read_field_def_h_stream_record_header(<<18,
                                               F@_1,
                                               F@_2,
                                               F@_3,
-                                              F@_4,
                                               TrUserData);
 dfp_read_field_def_h_stream_record_header(<<26,
                                             Rest/binary>>,
-                                          Z1, Z2, F@_1, F@_2, F@_3, F@_4,
-                                          TrUserData) ->
-    d_field_h_stream_record_header_publish_time(Rest,
-                                                Z1,
-                                                Z2,
-                                                F@_1,
-                                                F@_2,
-                                                F@_3,
-                                                F@_4,
-                                                TrUserData);
-dfp_read_field_def_h_stream_record_header(<<34,
-                                            Rest/binary>>,
-                                          Z1, Z2, F@_1, F@_2, F@_3, F@_4,
+                                          Z1, Z2, F@_1, F@_2, F@_3,
                                           TrUserData) ->
     d_field_h_stream_record_header_key(Rest,
                                        Z1,
@@ -9770,33 +10235,27 @@ dfp_read_field_def_h_stream_record_header(<<34,
                                        F@_1,
                                        F@_2,
                                        F@_3,
-                                       F@_4,
                                        TrUserData);
 dfp_read_field_def_h_stream_record_header(<<>>, 0, 0,
-                                          F@_1, R1, F@_3, F@_4, TrUserData) ->
-    S1 = #{flag => F@_1,
-           attributes =>
-               'tr_decode_repeated_finalize_h_stream_record_header.attributes'(R1,
-                                                                               TrUserData),
-           key => F@_4},
-    if F@_3 == '$undef' -> S1;
-       true -> S1#{publish_time => F@_3}
-    end;
+                                          F@_1, R1, F@_3, TrUserData) ->
+    #{flag => F@_1,
+      attributes =>
+          'tr_decode_repeated_finalize_h_stream_record_header.attributes'(R1,
+                                                                          TrUserData),
+      key => F@_3};
 dfp_read_field_def_h_stream_record_header(Other, Z1, Z2,
-                                          F@_1, F@_2, F@_3, F@_4, TrUserData) ->
+                                          F@_1, F@_2, F@_3, TrUserData) ->
     dg_read_field_def_h_stream_record_header(Other,
                                              Z1,
                                              Z2,
                                              F@_1,
                                              F@_2,
                                              F@_3,
-                                             F@_4,
                                              TrUserData).
 
 dg_read_field_def_h_stream_record_header(<<1:1, X:7,
                                            Rest/binary>>,
-                                         N, Acc, F@_1, F@_2, F@_3, F@_4,
-                                         TrUserData)
+                                         N, Acc, F@_1, F@_2, F@_3, TrUserData)
     when N < 32 - 7 ->
     dg_read_field_def_h_stream_record_header(Rest,
                                              N + 7,
@@ -9804,11 +10263,10 @@ dg_read_field_def_h_stream_record_header(<<1:1, X:7,
                                              F@_1,
                                              F@_2,
                                              F@_3,
-                                             F@_4,
                                              TrUserData);
 dg_read_field_def_h_stream_record_header(<<0:1, X:7,
                                            Rest/binary>>,
-                                         N, Acc, F@_1, F@_2, F@_3, F@_4,
+                                         N, Acc, F@_1, F@_2, F@_3,
                                          TrUserData) ->
     Key = X bsl N + Acc,
     case Key of
@@ -9819,7 +10277,6 @@ dg_read_field_def_h_stream_record_header(<<0:1, X:7,
                                                 F@_1,
                                                 F@_2,
                                                 F@_3,
-                                                F@_4,
                                                 TrUserData);
         18 ->
             d_field_h_stream_record_header_attributes(Rest,
@@ -9828,25 +10285,14 @@ dg_read_field_def_h_stream_record_header(<<0:1, X:7,
                                                       F@_1,
                                                       F@_2,
                                                       F@_3,
-                                                      F@_4,
                                                       TrUserData);
         26 ->
-            d_field_h_stream_record_header_publish_time(Rest,
-                                                        0,
-                                                        0,
-                                                        F@_1,
-                                                        F@_2,
-                                                        F@_3,
-                                                        F@_4,
-                                                        TrUserData);
-        34 ->
             d_field_h_stream_record_header_key(Rest,
                                                0,
                                                0,
                                                F@_1,
                                                F@_2,
                                                F@_3,
-                                               F@_4,
                                                TrUserData);
         _ ->
             case Key band 7 of
@@ -9857,7 +10303,6 @@ dg_read_field_def_h_stream_record_header(<<0:1, X:7,
                                                        F@_1,
                                                        F@_2,
                                                        F@_3,
-                                                       F@_4,
                                                        TrUserData);
                 1 ->
                     skip_64_h_stream_record_header(Rest,
@@ -9866,7 +10311,6 @@ dg_read_field_def_h_stream_record_header(<<0:1, X:7,
                                                    F@_1,
                                                    F@_2,
                                                    F@_3,
-                                                   F@_4,
                                                    TrUserData);
                 2 ->
                     skip_length_delimited_h_stream_record_header(Rest,
@@ -9875,7 +10319,6 @@ dg_read_field_def_h_stream_record_header(<<0:1, X:7,
                                                                  F@_1,
                                                                  F@_2,
                                                                  F@_3,
-                                                                 F@_4,
                                                                  TrUserData);
                 3 ->
                     skip_group_h_stream_record_header(Rest,
@@ -9884,7 +10327,6 @@ dg_read_field_def_h_stream_record_header(<<0:1, X:7,
                                                       F@_1,
                                                       F@_2,
                                                       F@_3,
-                                                      F@_4,
                                                       TrUserData);
                 5 ->
                     skip_32_h_stream_record_header(Rest,
@@ -9893,24 +10335,20 @@ dg_read_field_def_h_stream_record_header(<<0:1, X:7,
                                                    F@_1,
                                                    F@_2,
                                                    F@_3,
-                                                   F@_4,
                                                    TrUserData)
             end
     end;
 dg_read_field_def_h_stream_record_header(<<>>, 0, 0,
-                                         F@_1, R1, F@_3, F@_4, TrUserData) ->
-    S1 = #{flag => F@_1,
-           attributes =>
-               'tr_decode_repeated_finalize_h_stream_record_header.attributes'(R1,
-                                                                               TrUserData),
-           key => F@_4},
-    if F@_3 == '$undef' -> S1;
-       true -> S1#{publish_time => F@_3}
-    end.
+                                         F@_1, R1, F@_3, TrUserData) ->
+    #{flag => F@_1,
+      attributes =>
+          'tr_decode_repeated_finalize_h_stream_record_header.attributes'(R1,
+                                                                          TrUserData),
+      key => F@_3}.
 
 d_field_h_stream_record_header_flag(<<1:1, X:7,
                                       Rest/binary>>,
-                                    N, Acc, F@_1, F@_2, F@_3, F@_4, TrUserData)
+                                    N, Acc, F@_1, F@_2, F@_3, TrUserData)
     when N < 57 ->
     d_field_h_stream_record_header_flag(Rest,
                                         N + 7,
@@ -9918,11 +10356,10 @@ d_field_h_stream_record_header_flag(<<1:1, X:7,
                                         F@_1,
                                         F@_2,
                                         F@_3,
-                                        F@_4,
                                         TrUserData);
 d_field_h_stream_record_header_flag(<<0:1, X:7,
                                       Rest/binary>>,
-                                    N, Acc, _, F@_2, F@_3, F@_4, TrUserData) ->
+                                    N, Acc, _, F@_2, F@_3, TrUserData) ->
     {NewFValue, RestF} =
         {id('d_enum_h_stream_record_header.Flag'(begin
                                                      <<Res:32/signed-native>> =
@@ -9938,13 +10375,11 @@ d_field_h_stream_record_header_flag(<<0:1, X:7,
                                               NewFValue,
                                               F@_2,
                                               F@_3,
-                                              F@_4,
                                               TrUserData).
 
 d_field_h_stream_record_header_attributes(<<1:1, X:7,
                                             Rest/binary>>,
-                                          N, Acc, F@_1, F@_2, F@_3, F@_4,
-                                          TrUserData)
+                                          N, Acc, F@_1, F@_2, F@_3, TrUserData)
     when N < 57 ->
     d_field_h_stream_record_header_attributes(Rest,
                                               N + 7,
@@ -9952,11 +10387,10 @@ d_field_h_stream_record_header_attributes(<<1:1, X:7,
                                               F@_1,
                                               F@_2,
                                               F@_3,
-                                              F@_4,
                                               TrUserData);
 d_field_h_stream_record_header_attributes(<<0:1, X:7,
                                             Rest/binary>>,
-                                          N, Acc, F@_1, Prev, F@_3, F@_4,
+                                          N, Acc, F@_1, Prev, F@_3,
                                           TrUserData) ->
     {NewFValue, RestF} = begin
                              Len = X bsl N + Acc,
@@ -9974,50 +10408,11 @@ d_field_h_stream_record_header_attributes(<<0:1, X:7,
                                                                                                               Prev,
                                                                                                               TrUserData),
                                               F@_3,
-                                              F@_4,
-                                              TrUserData).
-
-d_field_h_stream_record_header_publish_time(<<1:1, X:7,
-                                              Rest/binary>>,
-                                            N, Acc, F@_1, F@_2, F@_3, F@_4,
-                                            TrUserData)
-    when N < 57 ->
-    d_field_h_stream_record_header_publish_time(Rest,
-                                                N + 7,
-                                                X bsl N + Acc,
-                                                F@_1,
-                                                F@_2,
-                                                F@_3,
-                                                F@_4,
-                                                TrUserData);
-d_field_h_stream_record_header_publish_time(<<0:1, X:7,
-                                              Rest/binary>>,
-                                            N, Acc, F@_1, F@_2, Prev, F@_4,
-                                            TrUserData) ->
-    {NewFValue, RestF} = begin
-                             Len = X bsl N + Acc,
-                             <<Bs:Len/binary, Rest2/binary>> = Rest,
-                             {id(decode_msg_timestamp(Bs, TrUserData),
-                                 TrUserData),
-                              Rest2}
-                         end,
-    dfp_read_field_def_h_stream_record_header(RestF,
-                                              0,
-                                              0,
-                                              F@_1,
-                                              F@_2,
-                                              if Prev == '$undef' -> NewFValue;
-                                                 true ->
-                                                     merge_msg_timestamp(Prev,
-                                                                         NewFValue,
-                                                                         TrUserData)
-                                              end,
-                                              F@_4,
                                               TrUserData).
 
 d_field_h_stream_record_header_key(<<1:1, X:7,
                                      Rest/binary>>,
-                                   N, Acc, F@_1, F@_2, F@_3, F@_4, TrUserData)
+                                   N, Acc, F@_1, F@_2, F@_3, TrUserData)
     when N < 57 ->
     d_field_h_stream_record_header_key(Rest,
                                        N + 7,
@@ -10025,11 +10420,10 @@ d_field_h_stream_record_header_key(<<1:1, X:7,
                                        F@_1,
                                        F@_2,
                                        F@_3,
-                                       F@_4,
                                        TrUserData);
 d_field_h_stream_record_header_key(<<0:1, X:7,
                                      Rest/binary>>,
-                                   N, Acc, F@_1, F@_2, F@_3, _, TrUserData) ->
+                                   N, Acc, F@_1, F@_2, _, TrUserData) ->
     {NewFValue, RestF} = begin
                              Len = X bsl N + Acc,
                              <<Bytes:Len/binary, Rest2/binary>> = Rest,
@@ -10040,38 +10434,33 @@ d_field_h_stream_record_header_key(<<0:1, X:7,
                                               0,
                                               F@_1,
                                               F@_2,
-                                              F@_3,
                                               NewFValue,
                                               TrUserData).
 
 skip_varint_h_stream_record_header(<<1:1, _:7,
                                      Rest/binary>>,
-                                   Z1, Z2, F@_1, F@_2, F@_3, F@_4,
-                                   TrUserData) ->
+                                   Z1, Z2, F@_1, F@_2, F@_3, TrUserData) ->
     skip_varint_h_stream_record_header(Rest,
                                        Z1,
                                        Z2,
                                        F@_1,
                                        F@_2,
                                        F@_3,
-                                       F@_4,
                                        TrUserData);
 skip_varint_h_stream_record_header(<<0:1, _:7,
                                      Rest/binary>>,
-                                   Z1, Z2, F@_1, F@_2, F@_3, F@_4,
-                                   TrUserData) ->
+                                   Z1, Z2, F@_1, F@_2, F@_3, TrUserData) ->
     dfp_read_field_def_h_stream_record_header(Rest,
                                               Z1,
                                               Z2,
                                               F@_1,
                                               F@_2,
                                               F@_3,
-                                              F@_4,
                                               TrUserData).
 
 skip_length_delimited_h_stream_record_header(<<1:1, X:7,
                                                Rest/binary>>,
-                                             N, Acc, F@_1, F@_2, F@_3, F@_4,
+                                             N, Acc, F@_1, F@_2, F@_3,
                                              TrUserData)
     when N < 57 ->
     skip_length_delimited_h_stream_record_header(Rest,
@@ -10080,11 +10469,10 @@ skip_length_delimited_h_stream_record_header(<<1:1, X:7,
                                                  F@_1,
                                                  F@_2,
                                                  F@_3,
-                                                 F@_4,
                                                  TrUserData);
 skip_length_delimited_h_stream_record_header(<<0:1, X:7,
                                                Rest/binary>>,
-                                             N, Acc, F@_1, F@_2, F@_3, F@_4,
+                                             N, Acc, F@_1, F@_2, F@_3,
                                              TrUserData) ->
     Length = X bsl N + Acc,
     <<_:Length/binary, Rest2/binary>> = Rest,
@@ -10094,11 +10482,10 @@ skip_length_delimited_h_stream_record_header(<<0:1, X:7,
                                               F@_1,
                                               F@_2,
                                               F@_3,
-                                              F@_4,
                                               TrUserData).
 
 skip_group_h_stream_record_header(Bin, FNum, Z2, F@_1,
-                                  F@_2, F@_3, F@_4, TrUserData) ->
+                                  F@_2, F@_3, TrUserData) ->
     {_, Rest} = read_group(Bin, FNum),
     dfp_read_field_def_h_stream_record_header(Rest,
                                               0,
@@ -10106,29 +10493,26 @@ skip_group_h_stream_record_header(Bin, FNum, Z2, F@_1,
                                               F@_1,
                                               F@_2,
                                               F@_3,
-                                              F@_4,
                                               TrUserData).
 
 skip_32_h_stream_record_header(<<_:32, Rest/binary>>,
-                               Z1, Z2, F@_1, F@_2, F@_3, F@_4, TrUserData) ->
+                               Z1, Z2, F@_1, F@_2, F@_3, TrUserData) ->
     dfp_read_field_def_h_stream_record_header(Rest,
                                               Z1,
                                               Z2,
                                               F@_1,
                                               F@_2,
                                               F@_3,
-                                              F@_4,
                                               TrUserData).
 
 skip_64_h_stream_record_header(<<_:64, Rest/binary>>,
-                               Z1, Z2, F@_1, F@_2, F@_3, F@_4, TrUserData) ->
+                               Z1, Z2, F@_1, F@_2, F@_3, TrUserData) ->
     dfp_read_field_def_h_stream_record_header(Rest,
                                               Z1,
                                               Z2,
                                               F@_1,
                                               F@_2,
                                               F@_3,
-                                              F@_4,
                                               TrUserData).
 
 decode_msg_record_id(Bin, TrUserData) ->
@@ -24041,6 +24425,11 @@ skip_64_empty(<<_:64, Rest/binary>>, Z1, Z2,
 'd_enum_hstream.server.SpecialOffset'(1) -> 'LATEST';
 'd_enum_hstream.server.SpecialOffset'(V) -> V.
 
+'d_enum_hstream.server.CompressionType'(0) -> 'None';
+'d_enum_hstream.server.CompressionType'(1) -> 'Gzip';
+'d_enum_hstream.server.CompressionType'(2) -> 'Zstd';
+'d_enum_hstream.server.CompressionType'(V) -> V.
+
 'd_enum_h_stream_record_header.Flag'(0) -> 'JSON';
 'd_enum_h_stream_record_header.Flag'(1) -> 'RAW';
 'd_enum_h_stream_record_header.Flag'(V) -> V.
@@ -24197,10 +24586,12 @@ merge_msgs(Prev, New, MsgName, Opts) ->
                                                   New,
                                                   TrUserData);
         stream -> merge_msg_stream(Prev, New, TrUserData);
-        h_stream_record_batch ->
-            merge_msg_h_stream_record_batch(Prev, New, TrUserData);
+        batched_record ->
+            merge_msg_batched_record(Prev, New, TrUserData);
         h_stream_record ->
             merge_msg_h_stream_record(Prev, New, TrUserData);
+        batch_h_stream_records ->
+            merge_msg_batch_h_stream_records(Prev, New, TrUserData);
         h_stream_record_header ->
             merge_msg_h_stream_record_header(Prev, New, TrUserData);
         record_id -> merge_msg_record_id(Prev, New, TrUserData);
@@ -24507,7 +24898,9 @@ merge_msg_append_request(PMsg, NMsg, TrUserData) ->
     case {PMsg, NMsg} of
         {#{records := PFrecords}, #{records := NFrecords}} ->
             S3#{records =>
-                    'erlang_++'(PFrecords, NFrecords, TrUserData)};
+                    merge_msg_batched_record(PFrecords,
+                                             NFrecords,
+                                             TrUserData)};
         {_, #{records := NFrecords}} ->
             S3#{records => NFrecords};
         {#{records := PFrecords}, _} ->
@@ -24654,9 +25047,9 @@ merge_msg_streaming_fetch_response(PMsg, NMsg,
         {#{receivedRecords := PFreceivedRecords},
          #{receivedRecords := NFreceivedRecords}} ->
             S1#{receivedRecords =>
-                    'erlang_++'(PFreceivedRecords,
-                                NFreceivedRecords,
-                                TrUserData)};
+                    merge_msg_received_record(PFreceivedRecords,
+                                              NFreceivedRecords,
+                                              TrUserData)};
         {_, #{receivedRecords := NFreceivedRecords}} ->
             S1#{receivedRecords => NFreceivedRecords};
         {#{receivedRecords := PFreceivedRecords}, _} ->
@@ -24668,22 +25061,25 @@ merge_msg_streaming_fetch_response(PMsg, NMsg,
 merge_msg_received_record(PMsg, NMsg, TrUserData) ->
     S1 = #{},
     S2 = case {PMsg, NMsg} of
-             {#{recordId := PFrecordId},
-              #{recordId := NFrecordId}} ->
-                 S1#{recordId =>
-                         merge_msg_record_id(PFrecordId,
-                                             NFrecordId,
-                                             TrUserData)};
-             {_, #{recordId := NFrecordId}} ->
-                 S1#{recordId => NFrecordId};
-             {#{recordId := PFrecordId}, _} ->
-                 S1#{recordId => PFrecordId};
+             {#{recordIds := PFrecordIds},
+              #{recordIds := NFrecordIds}} ->
+                 S1#{recordIds =>
+                         'erlang_++'(PFrecordIds, NFrecordIds, TrUserData)};
+             {_, #{recordIds := NFrecordIds}} ->
+                 S1#{recordIds => NFrecordIds};
+             {#{recordIds := PFrecordIds}, _} ->
+                 S1#{recordIds => PFrecordIds};
              {_, _} -> S1
          end,
     case {PMsg, NMsg} of
+        {#{record := PFrecord}, #{record := NFrecord}} ->
+            S2#{record =>
+                    merge_msg_batched_record(PFrecord,
+                                             NFrecord,
+                                             TrUserData)};
         {_, #{record := NFrecord}} -> S2#{record => NFrecord};
         {#{record := PFrecord}, _} -> S2#{record => PFrecord};
-        _ -> S2
+        {_, _} -> S2
     end.
 
 -compile({nowarn_unused_function,merge_msg_delete_stream_request/3}).
@@ -24784,16 +25180,42 @@ merge_msg_stream(PMsg, NMsg, _) ->
         _ -> S4
     end.
 
--compile({nowarn_unused_function,merge_msg_h_stream_record_batch/3}).
-merge_msg_h_stream_record_batch(PMsg, NMsg,
-                                TrUserData) ->
+-compile({nowarn_unused_function,merge_msg_batched_record/3}).
+merge_msg_batched_record(PMsg, NMsg, TrUserData) ->
     S1 = #{},
+    S2 = case {PMsg, NMsg} of
+             {_, #{compressionType := NFcompressionType}} ->
+                 S1#{compressionType => NFcompressionType};
+             {#{compressionType := PFcompressionType}, _} ->
+                 S1#{compressionType => PFcompressionType};
+             _ -> S1
+         end,
+    S3 = case {PMsg, NMsg} of
+             {#{publishTime := PFpublishTime},
+              #{publishTime := NFpublishTime}} ->
+                 S2#{publishTime =>
+                         merge_msg_timestamp(PFpublishTime,
+                                             NFpublishTime,
+                                             TrUserData)};
+             {_, #{publishTime := NFpublishTime}} ->
+                 S2#{publishTime => NFpublishTime};
+             {#{publishTime := PFpublishTime}, _} ->
+                 S2#{publishTime => PFpublishTime};
+             {_, _} -> S2
+         end,
+    S4 = case {PMsg, NMsg} of
+             {_, #{batchSize := NFbatchSize}} ->
+                 S3#{batchSize => NFbatchSize};
+             {#{batchSize := PFbatchSize}, _} ->
+                 S3#{batchSize => PFbatchSize};
+             _ -> S3
+         end,
     case {PMsg, NMsg} of
-        {#{batch := PFbatch}, #{batch := NFbatch}} ->
-            S1#{batch => 'erlang_++'(PFbatch, NFbatch, TrUserData)};
-        {_, #{batch := NFbatch}} -> S1#{batch => NFbatch};
-        {#{batch := PFbatch}, _} -> S1#{batch => PFbatch};
-        {_, _} -> S1
+        {_, #{payload := NFpayload}} ->
+            S4#{payload => NFpayload};
+        {#{payload := PFpayload}, _} ->
+            S4#{payload => PFpayload};
+        _ -> S4
     end.
 
 -compile({nowarn_unused_function,merge_msg_h_stream_record/3}).
@@ -24815,6 +25237,21 @@ merge_msg_h_stream_record(PMsg, NMsg, TrUserData) ->
         {#{payload := PFpayload}, _} ->
             S2#{payload => PFpayload};
         _ -> S2
+    end.
+
+-compile({nowarn_unused_function,merge_msg_batch_h_stream_records/3}).
+merge_msg_batch_h_stream_records(PMsg, NMsg,
+                                 TrUserData) ->
+    S1 = #{},
+    case {PMsg, NMsg} of
+        {#{records := PFrecords}, #{records := NFrecords}} ->
+            S1#{records =>
+                    'erlang_++'(PFrecords, NFrecords, TrUserData)};
+        {_, #{records := NFrecords}} ->
+            S1#{records => NFrecords};
+        {#{records := PFrecords}, _} ->
+            S1#{records => PFrecords};
+        {_, _} -> S1
     end.
 
 -compile({nowarn_unused_function,merge_msg_h_stream_record_header/3}).
@@ -24839,23 +25276,10 @@ merge_msg_h_stream_record_header(PMsg, NMsg,
                  S2#{attributes => PFattributes};
              {_, _} -> S2
          end,
-    S4 = case {PMsg, NMsg} of
-             {#{publish_time := PFpublish_time},
-              #{publish_time := NFpublish_time}} ->
-                 S3#{publish_time =>
-                         merge_msg_timestamp(PFpublish_time,
-                                             NFpublish_time,
-                                             TrUserData)};
-             {_, #{publish_time := NFpublish_time}} ->
-                 S3#{publish_time => NFpublish_time};
-             {#{publish_time := PFpublish_time}, _} ->
-                 S3#{publish_time => PFpublish_time};
-             {_, _} -> S3
-         end,
     case {PMsg, NMsg} of
-        {_, #{key := NFkey}} -> S4#{key => NFkey};
-        {#{key := PFkey}, _} -> S4#{key => PFkey};
-        _ -> S4
+        {_, #{key := NFkey}} -> S3#{key => NFkey};
+        {#{key := PFkey}, _} -> S3#{key => PFkey};
+        _ -> S3
     end.
 
 -compile({nowarn_unused_function,merge_msg_record_id/3}).
@@ -25911,10 +26335,14 @@ verify_msg(Msg, MsgName, Opts) ->
                                               [MsgName],
                                               TrUserData);
         stream -> v_msg_stream(Msg, [MsgName], TrUserData);
-        h_stream_record_batch ->
-            v_msg_h_stream_record_batch(Msg, [MsgName], TrUserData);
+        batched_record ->
+            v_msg_batched_record(Msg, [MsgName], TrUserData);
         h_stream_record ->
             v_msg_h_stream_record(Msg, [MsgName], TrUserData);
+        batch_h_stream_records ->
+            v_msg_batch_h_stream_records(Msg,
+                                         [MsgName],
+                                         TrUserData);
         h_stream_record_header ->
             v_msg_h_stream_record_header(Msg,
                                          [MsgName],
@@ -26382,17 +26810,7 @@ v_msg_append_request(#{} = M, Path, TrUserData) ->
     end,
     case M of
         #{records := F3} ->
-            if is_list(F3) ->
-                   _ = [v_msg_h_stream_record(Elem,
-                                              [records | Path],
-                                              TrUserData)
-                        || Elem <- F3],
-                   ok;
-               true ->
-                   mk_type_error({invalid_list_of, {msg, h_stream_record}},
-                                 F3,
-                                 [records | Path])
-            end;
+            v_msg_batched_record(F3, [records | Path], TrUserData);
         _ -> ok
     end,
     lists:foreach(fun (streamName) -> ok;
@@ -26661,17 +27079,9 @@ v_msg_streaming_fetch_response(#{} = M, Path,
                                TrUserData) ->
     case M of
         #{receivedRecords := F1} ->
-            if is_list(F1) ->
-                   _ = [v_msg_received_record(Elem,
-                                              [receivedRecords | Path],
-                                              TrUserData)
-                        || Elem <- F1],
-                   ok;
-               true ->
-                   mk_type_error({invalid_list_of, {msg, received_record}},
-                                 F1,
-                                 [receivedRecords | Path])
-            end;
+            v_msg_received_record(F1,
+                                  [receivedRecords | Path],
+                                  TrUserData);
         _ -> ok
     end,
     lists:foreach(fun (receivedRecords) -> ok;
@@ -26696,16 +27106,26 @@ v_msg_streaming_fetch_response(X, Path, _TrUserData) ->
 -dialyzer({nowarn_function,v_msg_received_record/3}).
 v_msg_received_record(#{} = M, Path, TrUserData) ->
     case M of
-        #{recordId := F1} ->
-            v_msg_record_id(F1, [recordId | Path], TrUserData);
+        #{recordIds := F1} ->
+            if is_list(F1) ->
+                   _ = [v_msg_record_id(Elem,
+                                        [recordIds | Path],
+                                        TrUserData)
+                        || Elem <- F1],
+                   ok;
+               true ->
+                   mk_type_error({invalid_list_of, {msg, record_id}},
+                                 F1,
+                                 [recordIds | Path])
+            end;
         _ -> ok
     end,
     case M of
         #{record := F2} ->
-            v_type_bytes(F2, [record | Path], TrUserData);
+            v_msg_batched_record(F2, [record | Path], TrUserData);
         _ -> ok
     end,
-    lists:foreach(fun (recordId) -> ok;
+    lists:foreach(fun (recordIds) -> ok;
                       (record) -> ok;
                       (OtherKey) ->
                           mk_type_error({extraneous_key, OtherKey}, M, Path)
@@ -26920,40 +27340,49 @@ v_msg_stream(M, Path, _TrUserData) when is_map(M) ->
 v_msg_stream(X, Path, _TrUserData) ->
     mk_type_error({expected_msg, stream}, X, Path).
 
--compile({nowarn_unused_function,v_msg_h_stream_record_batch/3}).
--dialyzer({nowarn_function,v_msg_h_stream_record_batch/3}).
-v_msg_h_stream_record_batch(#{} = M, Path,
-                            TrUserData) ->
+-compile({nowarn_unused_function,v_msg_batched_record/3}).
+-dialyzer({nowarn_function,v_msg_batched_record/3}).
+v_msg_batched_record(#{} = M, Path, TrUserData) ->
     case M of
-        #{batch := F1} ->
-            if is_list(F1) ->
-                   _ = [v_type_bytes(Elem, [batch | Path], TrUserData)
-                        || Elem <- F1],
-                   ok;
-               true ->
-                   mk_type_error({invalid_list_of, bytes},
-                                 F1,
-                                 [batch | Path])
-            end;
+        #{compressionType := F1} ->
+            'v_enum_hstream.server.CompressionType'(F1,
+                                                    [compressionType | Path],
+                                                    TrUserData);
         _ -> ok
     end,
-    lists:foreach(fun (batch) -> ok;
+    case M of
+        #{publishTime := F2} ->
+            v_msg_timestamp(F2, [publishTime | Path], TrUserData);
+        _ -> ok
+    end,
+    case M of
+        #{batchSize := F3} ->
+            v_type_uint32(F3, [batchSize | Path], TrUserData);
+        _ -> ok
+    end,
+    case M of
+        #{payload := F4} ->
+            v_type_bytes(F4, [payload | Path], TrUserData);
+        _ -> ok
+    end,
+    lists:foreach(fun (compressionType) -> ok;
+                      (publishTime) -> ok;
+                      (batchSize) -> ok;
+                      (payload) -> ok;
                       (OtherKey) ->
                           mk_type_error({extraneous_key, OtherKey}, M, Path)
                   end,
                   maps:keys(M)),
     ok;
-v_msg_h_stream_record_batch(M, Path, _TrUserData)
+v_msg_batched_record(M, Path, _TrUserData)
     when is_map(M) ->
     mk_type_error({missing_fields,
                    [] -- maps:keys(M),
-                   h_stream_record_batch},
+                   batched_record},
                   M,
                   Path);
-v_msg_h_stream_record_batch(X, Path, _TrUserData) ->
-    mk_type_error({expected_msg, h_stream_record_batch},
-                  X,
-                  Path).
+v_msg_batched_record(X, Path, _TrUserData) ->
+    mk_type_error({expected_msg, batched_record}, X, Path).
 
 -compile({nowarn_unused_function,v_msg_h_stream_record/3}).
 -dialyzer({nowarn_function,v_msg_h_stream_record/3}).
@@ -26987,6 +27416,43 @@ v_msg_h_stream_record(M, Path, _TrUserData)
 v_msg_h_stream_record(X, Path, _TrUserData) ->
     mk_type_error({expected_msg, h_stream_record}, X, Path).
 
+-compile({nowarn_unused_function,v_msg_batch_h_stream_records/3}).
+-dialyzer({nowarn_function,v_msg_batch_h_stream_records/3}).
+v_msg_batch_h_stream_records(#{} = M, Path,
+                             TrUserData) ->
+    case M of
+        #{records := F1} ->
+            if is_list(F1) ->
+                   _ = [v_msg_h_stream_record(Elem,
+                                              [records | Path],
+                                              TrUserData)
+                        || Elem <- F1],
+                   ok;
+               true ->
+                   mk_type_error({invalid_list_of, {msg, h_stream_record}},
+                                 F1,
+                                 [records | Path])
+            end;
+        _ -> ok
+    end,
+    lists:foreach(fun (records) -> ok;
+                      (OtherKey) ->
+                          mk_type_error({extraneous_key, OtherKey}, M, Path)
+                  end,
+                  maps:keys(M)),
+    ok;
+v_msg_batch_h_stream_records(M, Path, _TrUserData)
+    when is_map(M) ->
+    mk_type_error({missing_fields,
+                   [] -- maps:keys(M),
+                   batch_h_stream_records},
+                  M,
+                  Path);
+v_msg_batch_h_stream_records(X, Path, _TrUserData) ->
+    mk_type_error({expected_msg, batch_h_stream_records},
+                  X,
+                  Path).
+
 -compile({nowarn_unused_function,v_msg_h_stream_record_header/3}).
 -dialyzer({nowarn_function,v_msg_h_stream_record_header/3}).
 v_msg_h_stream_record_header(#{} = M, Path,
@@ -27006,18 +27472,12 @@ v_msg_h_stream_record_header(#{} = M, Path,
         _ -> ok
     end,
     case M of
-        #{publish_time := F3} ->
-            v_msg_timestamp(F3, [publish_time | Path], TrUserData);
-        _ -> ok
-    end,
-    case M of
-        #{key := F4} ->
-            v_type_string(F4, [key | Path], TrUserData);
+        #{key := F3} ->
+            v_type_string(F3, [key | Path], TrUserData);
         _ -> ok
     end,
     lists:foreach(fun (flag) -> ok;
                       (attributes) -> ok;
-                      (publish_time) -> ok;
                       (key) -> ok;
                       (OtherKey) ->
                           mk_type_error({extraneous_key, OtherKey}, M, Path)
@@ -29028,6 +29488,28 @@ v_msg_empty(X, Path, _TrUserData) ->
                   X,
                   Path).
 
+-compile({nowarn_unused_function,'v_enum_hstream.server.CompressionType'/3}).
+-dialyzer({nowarn_function,'v_enum_hstream.server.CompressionType'/3}).
+'v_enum_hstream.server.CompressionType'('None', _Path,
+                                        _TrUserData) ->
+    ok;
+'v_enum_hstream.server.CompressionType'('Gzip', _Path,
+                                        _TrUserData) ->
+    ok;
+'v_enum_hstream.server.CompressionType'('Zstd', _Path,
+                                        _TrUserData) ->
+    ok;
+'v_enum_hstream.server.CompressionType'(V, Path,
+                                        TrUserData)
+    when is_integer(V) ->
+    v_type_sint32(V, Path, TrUserData);
+'v_enum_hstream.server.CompressionType'(X, Path,
+                                        _TrUserData) ->
+    mk_type_error({invalid_enum,
+                   'hstream.server.CompressionType'},
+                  X,
+                  Path).
+
 -compile({nowarn_unused_function,'v_enum_h_stream_record_header.Flag'/3}).
 -dialyzer({nowarn_function,'v_enum_h_stream_record_header.Flag'/3}).
 'v_enum_h_stream_record_header.Flag'('JSON', _Path,
@@ -29442,6 +29924,8 @@ mt_merge_maps_m(M1, M2) -> maps:merge(M1, M2).
 get_msg_defs() ->
     [{{enum, 'hstream.server.SpecialOffset'},
       [{'EARLIEST', 0}, {'LATEST', 1}]},
+     {{enum, 'hstream.server.CompressionType'},
+      [{'None', 0}, {'Gzip', 1}, {'Zstd', 2}]},
      {{enum, 'h_stream_record_header.Flag'},
       [{'JSON', 0}, {'RAW', 1}]},
      {{enum, 'hstream.server.TaskStatusPB'},
@@ -29505,7 +29989,7 @@ get_msg_defs() ->
        #{name => shardId, fnum => 2, rnum => 3, type => uint64,
          occurrence => optional, opts => []},
        #{name => records, fnum => 3, rnum => 4,
-         type => {msg, h_stream_record}, occurrence => repeated,
+         type => {msg, batched_record}, occurrence => optional,
          opts => []}]},
      {{msg, append_response},
       [#{name => streamName, fnum => 1, rnum => 2,
@@ -29548,14 +30032,15 @@ get_msg_defs() ->
          opts => []}]},
      {{msg, streaming_fetch_response},
       [#{name => receivedRecords, fnum => 1, rnum => 2,
-         type => {msg, received_record}, occurrence => repeated,
+         type => {msg, received_record}, occurrence => optional,
          opts => []}]},
      {{msg, received_record},
-      [#{name => recordId, fnum => 1, rnum => 2,
-         type => {msg, record_id}, occurrence => optional,
+      [#{name => recordIds, fnum => 1, rnum => 2,
+         type => {msg, record_id}, occurrence => repeated,
          opts => []},
-       #{name => record, fnum => 2, rnum => 3, type => bytes,
-         occurrence => optional, opts => []}]},
+       #{name => record, fnum => 2, rnum => 3,
+         type => {msg, batched_record}, occurrence => optional,
+         opts => []}]},
      {{msg, delete_stream_request},
       [#{name => streamName, fnum => 1, rnum => 2,
          type => string, occurrence => optional, opts => []},
@@ -29582,15 +30067,27 @@ get_msg_defs() ->
          type => uint32, occurrence => optional, opts => []},
        #{name => shardCount, fnum => 4, rnum => 5,
          type => uint32, occurrence => optional, opts => []}]},
-     {{msg, h_stream_record_batch},
-      [#{name => batch, fnum => 1, rnum => 2, type => bytes,
-         occurrence => repeated, opts => []}]},
+     {{msg, batched_record},
+      [#{name => compressionType, fnum => 1, rnum => 2,
+         type => {enum, 'hstream.server.CompressionType'},
+         occurrence => optional, opts => []},
+       #{name => publishTime, fnum => 2, rnum => 3,
+         type => {msg, timestamp}, occurrence => optional,
+         opts => []},
+       #{name => batchSize, fnum => 3, rnum => 4,
+         type => uint32, occurrence => optional, opts => []},
+       #{name => payload, fnum => 4, rnum => 5, type => bytes,
+         occurrence => optional, opts => []}]},
      {{msg, h_stream_record},
       [#{name => header, fnum => 1, rnum => 2,
          type => {msg, h_stream_record_header},
          occurrence => optional, opts => []},
        #{name => payload, fnum => 2, rnum => 3, type => bytes,
          occurrence => optional, opts => []}]},
+     {{msg, batch_h_stream_records},
+      [#{name => records, fnum => 1, rnum => 2,
+         type => {msg, h_stream_record}, occurrence => repeated,
+         opts => []}]},
      {{msg, h_stream_record_header},
       [#{name => flag, fnum => 1, rnum => 2,
          type => {enum, 'h_stream_record_header.Flag'},
@@ -29598,10 +30095,7 @@ get_msg_defs() ->
        #{name => attributes, fnum => 2, rnum => 3,
          type => {map, string, string}, occurrence => repeated,
          opts => []},
-       #{name => publish_time, fnum => 3, rnum => 4,
-         type => {msg, timestamp}, occurrence => optional,
-         opts => []},
-       #{name => key, fnum => 4, rnum => 5, type => string,
+       #{name => key, fnum => 3, rnum => 4, type => string,
          occurrence => optional, opts => []}]},
      {{msg, record_id},
       [#{name => shardId, fnum => 1, rnum => 2,
@@ -29926,8 +30420,9 @@ get_msg_names() ->
      list_subscriptions_request,
      list_subscriptions_response,
      stream,
-     h_stream_record_batch,
+     batched_record,
      h_stream_record,
+     batch_h_stream_records,
      h_stream_record_header,
      record_id,
      shard,
@@ -30020,8 +30515,9 @@ get_msg_or_group_names() ->
      list_subscriptions_request,
      list_subscriptions_response,
      stream,
-     h_stream_record_batch,
+     batched_record,
      h_stream_record,
+     batch_h_stream_records,
      h_stream_record_header,
      record_id,
      shard,
@@ -30087,6 +30583,7 @@ get_msg_or_group_names() ->
 
 get_enum_names() ->
     ['hstream.server.SpecialOffset',
+     'hstream.server.CompressionType',
      'h_stream_record_header.Flag',
      'hstream.server.TaskStatusPB',
      'hstream.server.NodeState',
@@ -30154,7 +30651,7 @@ find_msg_def(append_request) ->
      #{name => shardId, fnum => 2, rnum => 3, type => uint64,
        occurrence => optional, opts => []},
      #{name => records, fnum => 3, rnum => 4,
-       type => {msg, h_stream_record}, occurrence => repeated,
+       type => {msg, batched_record}, occurrence => optional,
        opts => []}];
 find_msg_def(append_response) ->
     [#{name => streamName, fnum => 1, rnum => 2,
@@ -30197,14 +30694,15 @@ find_msg_def(streaming_fetch_request) ->
        opts => []}];
 find_msg_def(streaming_fetch_response) ->
     [#{name => receivedRecords, fnum => 1, rnum => 2,
-       type => {msg, received_record}, occurrence => repeated,
+       type => {msg, received_record}, occurrence => optional,
        opts => []}];
 find_msg_def(received_record) ->
-    [#{name => recordId, fnum => 1, rnum => 2,
-       type => {msg, record_id}, occurrence => optional,
+    [#{name => recordIds, fnum => 1, rnum => 2,
+       type => {msg, record_id}, occurrence => repeated,
        opts => []},
-     #{name => record, fnum => 2, rnum => 3, type => bytes,
-       occurrence => optional, opts => []}];
+     #{name => record, fnum => 2, rnum => 3,
+       type => {msg, batched_record}, occurrence => optional,
+       opts => []}];
 find_msg_def(delete_stream_request) ->
     [#{name => streamName, fnum => 1, rnum => 2,
        type => string, occurrence => optional, opts => []},
@@ -30231,15 +30729,27 @@ find_msg_def(stream) ->
        type => uint32, occurrence => optional, opts => []},
      #{name => shardCount, fnum => 4, rnum => 5,
        type => uint32, occurrence => optional, opts => []}];
-find_msg_def(h_stream_record_batch) ->
-    [#{name => batch, fnum => 1, rnum => 2, type => bytes,
-       occurrence => repeated, opts => []}];
+find_msg_def(batched_record) ->
+    [#{name => compressionType, fnum => 1, rnum => 2,
+       type => {enum, 'hstream.server.CompressionType'},
+       occurrence => optional, opts => []},
+     #{name => publishTime, fnum => 2, rnum => 3,
+       type => {msg, timestamp}, occurrence => optional,
+       opts => []},
+     #{name => batchSize, fnum => 3, rnum => 4,
+       type => uint32, occurrence => optional, opts => []},
+     #{name => payload, fnum => 4, rnum => 5, type => bytes,
+       occurrence => optional, opts => []}];
 find_msg_def(h_stream_record) ->
     [#{name => header, fnum => 1, rnum => 2,
        type => {msg, h_stream_record_header},
        occurrence => optional, opts => []},
      #{name => payload, fnum => 2, rnum => 3, type => bytes,
        occurrence => optional, opts => []}];
+find_msg_def(batch_h_stream_records) ->
+    [#{name => records, fnum => 1, rnum => 2,
+       type => {msg, h_stream_record}, occurrence => repeated,
+       opts => []}];
 find_msg_def(h_stream_record_header) ->
     [#{name => flag, fnum => 1, rnum => 2,
        type => {enum, 'h_stream_record_header.Flag'},
@@ -30247,10 +30757,7 @@ find_msg_def(h_stream_record_header) ->
      #{name => attributes, fnum => 2, rnum => 3,
        type => {map, string, string}, occurrence => repeated,
        opts => []},
-     #{name => publish_time, fnum => 3, rnum => 4,
-       type => {msg, timestamp}, occurrence => optional,
-       opts => []},
-     #{name => key, fnum => 4, rnum => 5, type => string,
+     #{name => key, fnum => 3, rnum => 4, type => string,
        occurrence => optional, opts => []}];
 find_msg_def(record_id) ->
     [#{name => shardId, fnum => 1, rnum => 2,
@@ -30552,6 +31059,8 @@ find_msg_def(_) -> error.
 
 find_enum_def('hstream.server.SpecialOffset') ->
     [{'EARLIEST', 0}, {'LATEST', 1}];
+find_enum_def('hstream.server.CompressionType') ->
+    [{'None', 0}, {'Gzip', 1}, {'Zstd', 2}];
 find_enum_def('h_stream_record_header.Flag') ->
     [{'JSON', 0}, {'RAW', 1}];
 find_enum_def('hstream.server.TaskStatusPB') ->
@@ -30574,6 +31083,9 @@ find_enum_def(_) -> error.
 enum_symbol_by_value('hstream.server.SpecialOffset',
                      Value) ->
     'enum_symbol_by_value_hstream.server.SpecialOffset'(Value);
+enum_symbol_by_value('hstream.server.CompressionType',
+                     Value) ->
+    'enum_symbol_by_value_hstream.server.CompressionType'(Value);
 enum_symbol_by_value('h_stream_record_header.Flag',
                      Value) ->
     'enum_symbol_by_value_h_stream_record_header.Flag'(Value);
@@ -30591,6 +31103,9 @@ enum_symbol_by_value('google.protobuf.NullValue',
 enum_value_by_symbol('hstream.server.SpecialOffset',
                      Sym) ->
     'enum_value_by_symbol_hstream.server.SpecialOffset'(Sym);
+enum_value_by_symbol('hstream.server.CompressionType',
+                     Sym) ->
+    'enum_value_by_symbol_hstream.server.CompressionType'(Sym);
 enum_value_by_symbol('h_stream_record_header.Flag',
                      Sym) ->
     'enum_value_by_symbol_h_stream_record_header.Flag'(Sym);
@@ -30614,6 +31129,21 @@ enum_value_by_symbol('google.protobuf.NullValue',
     0;
 'enum_value_by_symbol_hstream.server.SpecialOffset'('LATEST') ->
     1.
+
+'enum_symbol_by_value_hstream.server.CompressionType'(0) ->
+    'None';
+'enum_symbol_by_value_hstream.server.CompressionType'(1) ->
+    'Gzip';
+'enum_symbol_by_value_hstream.server.CompressionType'(2) ->
+    'Zstd'.
+
+
+'enum_value_by_symbol_hstream.server.CompressionType'('None') ->
+    0;
+'enum_value_by_symbol_hstream.server.CompressionType'('Gzip') ->
+    1;
+'enum_value_by_symbol_hstream.server.CompressionType'('Zstd') ->
+    2.
 
 'enum_symbol_by_value_h_stream_record_header.Flag'(0) ->
     'JSON';
@@ -31359,8 +31889,9 @@ fqbin_to_msg_name(<<"hstream.server.ListSubscriptionsRequest">>) ->
 fqbin_to_msg_name(<<"hstream.server.ListSubscriptionsResponse">>) ->
     list_subscriptions_response;
 fqbin_to_msg_name(<<"hstream.server.Stream">>) -> stream;
-fqbin_to_msg_name(<<"hstream.server.HStreamRecordBatch">>) -> h_stream_record_batch;
+fqbin_to_msg_name(<<"hstream.server.BatchedRecord">>) -> batched_record;
 fqbin_to_msg_name(<<"hstream.server.HStreamRecord">>) -> h_stream_record;
+fqbin_to_msg_name(<<"hstream.server.BatchHStreamRecords">>) -> batch_h_stream_records;
 fqbin_to_msg_name(<<"hstream.server.HStreamRecordHeader">>) -> h_stream_record_header;
 fqbin_to_msg_name(<<"hstream.server.RecordId">>) -> record_id;
 fqbin_to_msg_name(<<"hstream.server.Shard">>) -> shard;
@@ -31468,8 +31999,9 @@ msg_name_to_fqbin(list_subscriptions_request) ->
 msg_name_to_fqbin(list_subscriptions_response) ->
     <<"hstream.server.ListSubscriptionsResponse">>;
 msg_name_to_fqbin(stream) -> <<"hstream.server.Stream">>;
-msg_name_to_fqbin(h_stream_record_batch) -> <<"hstream.server.HStreamRecordBatch">>;
+msg_name_to_fqbin(batched_record) -> <<"hstream.server.BatchedRecord">>;
 msg_name_to_fqbin(h_stream_record) -> <<"hstream.server.HStreamRecord">>;
+msg_name_to_fqbin(batch_h_stream_records) -> <<"hstream.server.BatchHStreamRecords">>;
 msg_name_to_fqbin(h_stream_record_header) -> <<"hstream.server.HStreamRecordHeader">>;
 msg_name_to_fqbin(record_id) -> <<"hstream.server.RecordId">>;
 msg_name_to_fqbin(shard) -> <<"hstream.server.Shard">>;
@@ -31548,6 +32080,8 @@ msg_name_to_fqbin(E) -> error({gpb_error, {badmsg, E}}).
 
 fqbin_to_enum_name(<<"hstream.server.SpecialOffset">>) ->
     'hstream.server.SpecialOffset';
+fqbin_to_enum_name(<<"hstream.server.CompressionType">>) ->
+    'hstream.server.CompressionType';
 fqbin_to_enum_name(<<"hstream.server.HStreamRecordHeader.Flag">>) ->
     'h_stream_record_header.Flag';
 fqbin_to_enum_name(<<"hstream.server.TaskStatusPB">>) ->
@@ -31562,6 +32096,8 @@ fqbin_to_enum_name(E) ->
 
 enum_name_to_fqbin('hstream.server.SpecialOffset') ->
     <<"hstream.server.SpecialOffset">>;
+enum_name_to_fqbin('hstream.server.CompressionType') ->
+    <<"hstream.server.CompressionType">>;
 enum_name_to_fqbin('h_stream_record_header.Flag') ->
     <<"hstream.server.HStreamRecordHeader.Flag">>;
 enum_name_to_fqbin('hstream.server.TaskStatusPB') ->
@@ -31611,6 +32147,8 @@ get_msg_containment("hstreamdb_api") ->
      admin_command_response,
      append_request,
      append_response,
+     batch_h_stream_records,
+     batched_record,
      check_subscription_exist_request,
      check_subscription_exist_response,
      command_connect,
@@ -31639,7 +32177,6 @@ get_msg_containment("hstreamdb_api") ->
      get_query_request,
      get_view_request,
      h_stream_record,
-     h_stream_record_batch,
      h_stream_record_header,
      list_connectors_request,
      list_connectors_response,
@@ -31767,7 +32304,8 @@ get_rpc_containment(P) ->
 
 
 get_enum_containment("hstreamdb_api") ->
-    ['h_stream_record_header.Flag',
+    ['hstream.server.CompressionType',
+     'h_stream_record_header.Flag',
      'hstream.server.NodeState',
      'hstream.server.SpecialOffset',
      'hstream.server.TaskStatusPB'];
@@ -31788,6 +32326,8 @@ get_proto_by_msg_name_as_fqbin(<<"hstream.server.StatsIntervalVals">>) ->
 get_proto_by_msg_name_as_fqbin(<<"hstream.server.StatsDoubleVals">>) ->
     "hstreamdb_api";
 get_proto_by_msg_name_as_fqbin(<<"hstream.server.ServerNodeStatus">>) ->
+    "hstreamdb_api";
+get_proto_by_msg_name_as_fqbin(<<"hstream.server.BatchHStreamRecords">>) ->
     "hstreamdb_api";
 get_proto_by_msg_name_as_fqbin(<<"google.protobuf.Struct">>) -> "struct";
 get_proto_by_msg_name_as_fqbin(<<"hstream.server.TerminateQueriesRequest">>) ->
@@ -31870,6 +32410,8 @@ get_proto_by_msg_name_as_fqbin(<<"hstream.server.CommandConnect">>) ->
     "hstreamdb_api";
 get_proto_by_msg_name_as_fqbin(<<"hstream.server.CheckSubscriptionExistRequest">>) ->
     "hstreamdb_api";
+get_proto_by_msg_name_as_fqbin(<<"hstream.server.BatchedRecord">>) ->
+    "hstreamdb_api";
 get_proto_by_msg_name_as_fqbin(<<"hstream.server.AppendRequest">>) ->
     "hstreamdb_api";
 get_proto_by_msg_name_as_fqbin(<<"hstream.server.AdminCommandRequest">>) ->
@@ -31934,8 +32476,6 @@ get_proto_by_msg_name_as_fqbin(<<"hstream.server.AdminCommandResponse">>) ->
     "hstreamdb_api";
 get_proto_by_msg_name_as_fqbin(<<"hstream.server.View">>) ->
     "hstreamdb_api";
-get_proto_by_msg_name_as_fqbin(<<"hstream.server.HStreamRecordBatch">>) ->
-    "hstreamdb_api";
 get_proto_by_msg_name_as_fqbin(<<"google.protobuf.Empty">>) -> "empty";
 get_proto_by_msg_name_as_fqbin(<<"hstream.server.Query">>) ->
     "hstreamdb_api";
@@ -31966,6 +32506,8 @@ get_proto_by_enum_name_as_fqbin(<<"hstream.server.SpecialOffset">>) ->
     "hstreamdb_api";
 get_proto_by_enum_name_as_fqbin(<<"google.protobuf.NullValue">>) -> "struct";
 get_proto_by_enum_name_as_fqbin(<<"hstream.server.NodeState">>) ->
+    "hstreamdb_api";
+get_proto_by_enum_name_as_fqbin(<<"hstream.server.CompressionType">>) ->
     "hstreamdb_api";
 get_proto_by_enum_name_as_fqbin(<<"hstream.server.HStreamRecordHeader.Flag">>) ->
     "hstreamdb_api";
