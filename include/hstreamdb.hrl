@@ -18,11 +18,12 @@
 
 -type append_record() :: map().
 
+-type compression_type() :: none | gzip | zstd.
+
 -record(batch, {
           id :: reference(),
           from :: gen_server:from(),
           records :: list(append_record()),
+          compression_type :: compression_type(),
           deadline :: integer()
          }).
-
-

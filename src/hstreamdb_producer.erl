@@ -47,6 +47,7 @@
     name,
     writer_name,
     stream,
+    compression_type,
     callback,
     max_records,
     max_batches,
@@ -67,7 +68,7 @@ start(Producer, Options) ->
             WriterPoolSise = proplists:get_value(writer_pool_size, Options, ?DEFAULT_WRITER_POOL_SIZE),
             WriterOptions = [{pool_size, WriterPoolSise} | proplists:delete(pool_size, Options)],
             case ecpool:start_sup_pool(writer_name(Producer), hstreamdb_erl_writer, WriterOptions) of
-                {ok, _PidWriters} -> 
+                {ok, _PidWriters} ->
                     {ok, Producer};
                 {error, _} = Error -> Error
             end;
@@ -116,17 +117,19 @@ init(Options) ->
     BatchReapTimeout = proplists:get_value(
                          batch_reap_timeout, Options, ?DEFAULT_BATCH_REAP_TIMEOUT),
     ProducerName = proplists:get_value(producer_name, Options),
+    CompressionType = proplists:get_value(compression_type, Options, none),
     {ok, #state{
         name = ProducerName,
         writer_name = writer_name(ProducerName),
         stream = StreamName,
+        compression_type = CompressionType,
         callback = Callback,
         max_records = MaxRecords,
         max_batches = MaxBatches,
         interval = MaxInterval,
         batch_reap_timeout = BatchReapTimeout,
         record_map = #{},
-        flush_deadline_map = #{}, 
+        flush_deadline_map = #{},
         timer_ref = erlang:send_after(MaxInterval, self(), flush),
         key_manager = hstreamdb_key_mgr:start(Options),
         batches = #{},
@@ -268,7 +271,7 @@ do_flush(State = #state{flush_deadline_map = FlushDeadlineMap,
 reap_batches(#state{batches = Batches} = State) ->
     Result = {error, reaped},
     Now = erlang:monotonic_time(millisecond),
-    BatchIdsToReap = [{ShardId, Batch} 
+    BatchIdsToReap = [{ShardId, Batch}
                       || {ShardId, #batch{deadline = ReapDealine} = Batch} <- maps:to_list(Batches),
                          ReapDealine < Now],
     lists:foldl(
@@ -318,11 +321,12 @@ apply_callback(F, R) ->
 batch(Records, State) ->
     batch(Records, undefined, State).
 
-batch(Records, From, State) ->
+batch(Records, From, #state{compression_type = CompressionType} = State) ->
     #batch{
        id = make_ref(),
        from = From,
        records = Records,
+       compression_type = CompressionType,
        deadline = batch_reap_deadline(State)
       }.
 

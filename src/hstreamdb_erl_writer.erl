@@ -91,13 +91,13 @@ code_change(_OldVsn, State, _Extra) ->
 %% -------------------------------------------------------------------------------------------------
 %% internal functions
 
-do_write(ShardId, #batch{records = Records},
+do_write(ShardId, #batch{records = Records, compression_type = CompressionType},
          State = #state{channel_manager = ChannelM0,
                         stream = Stream,
                         grpc_timeout = GRPCTimeout}) ->
     case hstreamdb_channel_mgr:lookup_channel(ShardId, ChannelM0) of
         {ok, Channel, ChannelM1} ->
-            Req = #{streamName => Stream, records => Records, shardId => ShardId},
+            Req = #{streamName => Stream, records => Records, shardId => ShardId, compressionType => CompressionType},
             Options = #{channel => Channel, timeout => GRPCTimeout},
             case flush(ShardId, Req, Options) of
                 {ok, _} = Res ->
@@ -111,14 +111,40 @@ do_write(ShardId, #batch{records = Records},
     end.
 
 flush(ShardId,
-      #{records := Records} = Req,
+      #{records := Records, compressionType := CompressionType} = Req,
       #{channel := Channel, timeout := Timeout} = Options) ->
-    case timer:tc(fun() -> ?HSTREAMDB_CLIENT:append(Req, Options) end) of
-        {Time, {ok, Resp, _MetaData}} ->
-            logger:info("flush_request[~p, ~p], pid=~p, SUCCESS, ~p records in ~p ms~n", [Channel, ShardId, self(), length(Records), Time div 1000]),
-            {ok, Resp};
-        {Time, {error, R}} ->
-            logger:error("flush_request[~p, ~p], pid=~p, timeout=~p, ERROR: ~p, in ~p ms~n", [Channel, ShardId, self(), Timeout, R, Time div 1000]),
-            {error, R}
+    case encode_records(Records, CompressionType) of
+        {ok, NRecords} ->
+            NReq = Req#{records := NRecords, batchSize => length(Records), compression_type := compression_type_to_enum(CompressionType)},
+            case timer:tc(fun() -> ?HSTREAMDB_CLIENT:append(NReq, Options) end) of
+                {Time, {ok, Resp, _MetaData}} ->
+                    logger:info("flush_request[~p, ~p], pid=~p, SUCCESS, ~p records in ~p ms~n", [Channel, ShardId, self(), length(Records), Time div 1000]),
+                    {ok, Resp};
+                {Time, {error, R}} ->
+                    logger:error("flush_request[~p, ~p], pid=~p, timeout=~p, ERROR: ~p, in ~p ms~n", [Channel, ShardId, self(), Timeout, R, Time div 1000]),
+                    {error, R}
+            end;
+        {error, R} -> {error, R}
     end.
 
+encode_records(Records, CompressionType) ->
+    Payload = hstreamdb_api:encode_msg(
+        Records
+      , batch_h_stream_records
+      , []
+    ),
+    case CompressionType of
+        none -> {ok, Payload};
+        gzip -> {ok, zlib:gzip(Payload)};
+        zstd -> case ezstd:compress(Payload) of
+            {error, R} -> {error, R};
+            R -> {ok, R}
+        end
+    end.
+
+compression_type_to_enum(CompressionType) ->
+    case CompressionType of
+        none -> 0;
+        gzip -> 1;
+        zstd -> 2
+    end.
