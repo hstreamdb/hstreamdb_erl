@@ -111,11 +111,12 @@ do_write(ShardId, #batch{records = Records, compression_type = CompressionType},
     end.
 
 flush(ShardId,
-      #{records := Records, compressionType := CompressionType} = Req,
+      #{records := Records, compressionType := CompressionType, streamName := StreamName},
       #{channel := Channel, timeout := Timeout} = Options) ->
     case encode_records(Records, CompressionType) of
         {ok, NRecords} ->
-            NReq = Req#{records := NRecords, batchSize => length(Records), compression_type := compression_type_to_enum(CompressionType)},
+            BatchedRecord = #{payload => NRecords, batchSize => length(Records), compressionType => compression_type_to_enum(CompressionType)},
+            NReq = #{streamName => StreamName, shardId => ShardId, records => BatchedRecord},
             case timer:tc(fun() -> ?HSTREAMDB_CLIENT:append(NReq, Options) end) of
                 {Time, {ok, Resp, _MetaData}} ->
                     logger:info("flush_request[~p, ~p], pid=~p, SUCCESS, ~p records in ~p ms~n", [Channel, ShardId, self(), length(Records), Time div 1000]),
@@ -129,7 +130,7 @@ flush(ShardId,
 
 encode_records(Records, CompressionType) ->
     Payload = hstreamdb_api:encode_msg(
-        Records
+        #{records => Records}
       , batch_h_stream_records
       , []
     ),
