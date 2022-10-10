@@ -139,11 +139,9 @@ do_create_stream(#{channel := Channel, grpc_timeout := Timeout},
       shardCount => ShardCount
      },
     Options = #{channel => Channel, timeout => Timeout},
-    case ?HSTREAMDB_CLIENT:echo(Req, Options) of
+    case ?HSTREAMDB_CLIENT:create_stream(Req, Options) of
         {ok, _, _} ->
             ok;
         {error, R} ->
             {error, R}
     end.
-
-
