@@ -129,18 +129,14 @@ flush(ShardId,
     end.
 
 encode_records(Records, CompressionType) ->
-    Payload = hstreamdb_api:encode_msg(
-        #{records => Records}
-      , batch_h_stream_records
-      , []
-    ),
-    case CompressionType of
-        none -> {ok, Payload};
-        gzip -> {ok, zlib:gzip(Payload)};
-        zstd -> case ezstd:compress(Payload) of
-            {error, R} -> {error, R};
-            R -> {ok, R}
-        end
+    case safe_encode_msg(Records) of
+        {ok, Payload} ->
+            case CompressionType of
+                none -> {ok, Payload};
+                gzip -> gzip(Payload);
+                zstd -> zstd(Payload)
+            end;
+        {error, _} = Error -> Error
     end.
 
 compression_type_to_enum(CompressionType) ->
@@ -149,3 +145,29 @@ compression_type_to_enum(CompressionType) ->
         gzip -> 1;
         zstd -> 2
     end.
+
+safe_encode_msg(Records) ->
+    try
+        Payload = hstreamdb_api:encode_msg(
+                    #{records => Records}
+                    , batch_h_stream_records
+                    , []
+                   ),
+        {ok, Payload}
+    catch
+        error:Reason -> {error, {encode_msg, Reason}}
+    end.
+
+gzip(Payload) ->
+    try
+        {ok, zlib:gzip(Payload)}
+    catch
+        error:Reason -> {error, {gzip, Reason}}
+    end.
+
+zstd(Payload) ->
+    case ezstd:compress(Payload) of
+        {error, R} -> {error, {zstd, R}};
+        R -> {ok, R}
+    end.
+

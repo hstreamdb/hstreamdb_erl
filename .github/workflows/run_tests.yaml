@@ -1,0 +1,44 @@
+name: Run tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  run_common_test:
+    strategy:
+      matrix:
+        include:
+          - runs_on: ubuntu-20.04
+            otp_release: 23.3.4.9
+          - runs_on: ubuntu-20.04
+            otp_release: 24.1.6
+          - runs_on: ubuntu-20.04
+            otp_release: 25.1.1
+    runs-on: ${{ matrix.runs_on }}
+    steps:
+    - uses: actions/checkout@v2
+    - uses: erlef/setup-beam@v1
+      with:
+        otp-version: ${{ matrix.otp_release }}
+    - name: stop containers
+      run: |
+        docker rm -f $(docker ps -qa) || true
+        docker network rm $(docker network ls -q) || true
+    - name: docker compose up
+      run: |
+        make -C ./.ci up
+    - name: run common test
+      run: |
+        ./rebar3 ct --name 'test@127.0.0.1' -v -c
+    - name: run cover
+      run: |
+        ./rebar3 cover
+    - name: docker compose down
+      run: |
+        make -C ./.ci down
+    - uses: actions/upload-artifact@v1
+      with:
+        name: cover
+        path: _build/test/cover
+
