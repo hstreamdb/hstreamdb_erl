@@ -1,4 +1,4 @@
-[![Run test case](https://github.com/hstreamdb/hstreamdb_erl/actions/workflows/run_tests.yaml/badge.svg)](https://github.com/savonarola/hstreamdb_erl/actions/workflows/run_tests.yaml)
+[![Run test case](https://github.com/hstreamdb/hstreamdb_erl/actions/workflows/run_tests.yaml/badge.svg)](https://github.com/hstreamdb/hstreamdb_erl/actions/workflows/run_tests.yaml)
 
 # `hstreamdb_erl`
 
