@@ -25,7 +25,9 @@
         ]).
 
 -export([ echo/1,
-          create_stream/5
+          create_stream/5,
+          delete_stream/2,
+          delete_stream/4
         ]).
 
 -export([ to_record/3
@@ -47,20 +49,25 @@ start_client(Name, Options) ->
     HostMapping = maps:get(host_mapping, Options, #{}),
     ChannelName = hstreamdb_channel_mgr:channel_name(Name),
     GRPCTimeout = maps:get(grpc_timeout, Options, ?GRPC_TIMEOUT),
-    Client =
-        #{
-            channel => ChannelName,
-            url => ServerURL,
-            rpc_options => RPCOptions,
-            url_prefix => url_prefix(ServerURL),
-            host_mapping => HostMapping,
-            grpc_timeout => GRPCTimeout
-        },
-    case hstreamdb_channel_mgr:start_channel(ChannelName, ServerURL, RPCOptions) of
-        {ok,_} ->
-            {ok, Client};
-        {error, Reason} ->
-            {error, Reason}
+    case url_prefix(ServerURL) of
+        {ok, Prefix} ->
+            Client =
+                #{
+                    channel => ChannelName,
+                    url => ServerURL,
+                    rpc_options => RPCOptions,
+                    url_prefix => Prefix,
+                    host_mapping => HostMapping,
+                    grpc_timeout => GRPCTimeout
+                },
+            case hstreamdb_channel_mgr:start_channel(ChannelName, ServerURL, RPCOptions) of
+                {ok,_} ->
+                    {ok, Client};
+                {error, Reason} ->
+                    {error, Reason}
+            end;
+        error ->
+            {error, invalid_server_url}
     end.
 
 stop_client(#{channel := Channel}) ->
@@ -99,6 +106,12 @@ echo(Client) ->
 create_stream(Client, Name, ReplFactor, BacklogDuration, ShardCount) ->
     do_create_stream(Client, Name, ReplFactor, BacklogDuration, ShardCount).
 
+delete_stream(Client, Name) ->
+    delete_stream(Client, Name, true, true).
+
+delete_stream(Client, Name, IgnoreNonExist, Force) ->
+    do_delete_stream(Client, Name, IgnoreNonExist, Force).
+
 append(Producer, PartitioningKey, PayloadType, Payload) ->
     Record = to_record(PartitioningKey, PayloadType, Payload),
     append(Producer, Record).
@@ -118,9 +131,11 @@ append_flush(Producer, Data) ->
 url_prefix(URL) when is_list(URL) ->
     url_prefix(list_to_binary(URL));
 url_prefix(<<"https://", _/binary>>) ->
-    "https://";
+    {ok, "https://"};
 url_prefix(<<"http://", _/binary>>) ->
-    "http://".
+    {ok, "http://"};
+url_prefix(_) ->
+    error.
 
 do_echo(#{channel := Channel, grpc_timeout := Timeout}) ->
     case ?HSTREAMDB_CLIENT:echo(#{}, #{channel => Channel, timeout => Timeout}) of
@@ -140,6 +155,21 @@ do_create_stream(#{channel := Channel, grpc_timeout := Timeout},
      },
     Options = #{channel => Channel, timeout => Timeout},
     case ?HSTREAMDB_CLIENT:create_stream(Req, Options) of
+        {ok, _, _} ->
+            ok;
+        {error, R} ->
+            {error, R}
+    end.
+
+do_delete_stream(#{channel := Channel, grpc_timeout := Timeout},
+                 Name, IgnoreNonExist, Force) ->
+    Req = #{
+      streamName => Name,
+      ignoreNonExist => IgnoreNonExist,
+      force => Force
+     },
+    Options = #{channel => Channel, timeout => Timeout},
+    case ?HSTREAMDB_CLIENT:delete_stream(Req, Options) of
         {ok, _, _} ->
             ok;
         {error, R} ->

@@ -76,6 +76,7 @@ start(Producer, Options) ->
             Error
     end.
 
+%% TODO: graceful stop
 stop(Producer) ->
     ok = ecpool:stop_sup_pool(Producer),
     ok = ecpool:stop_sup_pool(writer_name(Producer)).
@@ -201,32 +202,37 @@ foreach_worker(Fun, Pool) ->
       ecpool:workers(Pool)).
 
 do_append({PartitioningKey, Record},
-          State = #state{interval = Interval,
+          State0 = #state{interval = Interval,
                          record_map = RecordMap,
                          max_records = MaxRecords,
                          key_manager = KeyManager0,
                          flush_deadline_map = FlushDeadlineMap}) ->
     {ShardId, KeyManager1} = hstreamdb_key_mgr:choose_shard(PartitioningKey, KeyManager0),
-    case maps:get(ShardId, RecordMap, undefined) of
-        undefined ->
-            NRecordMap = RecordMap#{ShardId => [Record]},
-            NFlushDeadlineMap = FlushDeadlineMap#{
-                                  ShardId => Interval + erlang:monotonic_time(millisecond)
-                                 },
+    {BatchSize, State1} = case maps:get(ShardId, RecordMap, undefined) of
+                              undefined ->
+                                  NRecords = [Record],
+                                  NRecordMap = RecordMap#{ShardId => NRecords},
+                                  NFlushDeadlineMap = FlushDeadlineMap#{
+                                                        ShardId => 
+                                                        Interval + erlang:monotonic_time(millisecond)
+                                                       },
 
-            State#state{record_map = NRecordMap,
-                        flush_deadline_map = NFlushDeadlineMap,
-                        key_manager = KeyManager1};
-        Records ->
-            NRecords = [Record | Records],
-            NRecordMap = RecordMap#{ShardId => NRecords},
-            NState = State#state{record_map = NRecordMap, key_manager = KeyManager1},
-            case length(NRecords) >= MaxRecords of
-                true ->
-                    do_flush_key(ShardId, NState);
-                _ ->
-                    NState
-            end
+                                  NState = State0#state{record_map = NRecordMap,
+                                                        flush_deadline_map = NFlushDeadlineMap,
+                                                        key_manager = KeyManager1},
+                                  {length(NRecords), NState};
+                              Records ->
+                                  NRecords = [Record | Records],
+                                  NRecordMap = RecordMap#{ShardId => NRecords},
+                                  NState = State0#state{record_map = NRecordMap,
+                                                        key_manager = KeyManager1},
+                                  {length(NRecords), NState}
+                          end,
+    case BatchSize >= MaxRecords of
+        true ->
+            do_flush_key(ShardId, State1);
+        _ ->
+            State1
     end.
 
 do_append_sync({PartitioningKey, Records},
@@ -268,18 +274,18 @@ do_flush(State = #state{flush_deadline_map = FlushDeadlineMap,
     reap_batches(NState#state{timer_ref = NTimerRef}).
 
 
-reap_batches(#state{batches = Batches} = State) ->
+reap_batches(#state{current_batches = CurrentBatches} = State) ->
     Result = {error, reaped},
     Now = erlang:monotonic_time(millisecond),
-    BatchIdsToReap = [{ShardId, Batch}
-                      || {ShardId, #batch{deadline = ReapDealine} = Batch} <- maps:to_list(Batches),
-                         ReapDealine < Now],
+    BatchesToReap = [{ShardId, Batch}
+                      || {ShardId, #batch{deadline = ReapDealine} = Batch} <- maps:to_list(CurrentBatches),
+                         ReapDealine =< Now],
     lists:foldl(
       fun({ShardId, Batch}, St) ->
               handle_write_result(St, ShardId, Batch, Result)
       end,
       State,
-      BatchIdsToReap).
+      BatchesToReap).
 
 
 cancel_timer(undefined) -> ok;
