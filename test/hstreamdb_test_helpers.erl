@@ -38,8 +38,6 @@ client(Name, N) ->
     catch
         Class:Error ->
             ct:print("Error connecting: ~p", [{Class, Error}]),
-            ct:sleep(timer:seconds(2)),
+            ct:sleep(timer:seconds(1)),
             client(Name, N - 1)
     end.
-
-
