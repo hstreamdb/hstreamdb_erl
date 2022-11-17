@@ -18,7 +18,7 @@
 
 -define(CONN_ATTEMPTS, 60).
 
-test_cases(Mod) -> 
+test_cases(Mod) ->
     [F || {F, _Ar} <- Mod:module_info(exports),
           string:slice(atom_to_list(F), 0, 2) == "t_"].
 
@@ -38,7 +38,7 @@ client(Name, N) ->
     catch
         Class:Error ->
             ct:print("Error connecting: ~p", [{Class, Error}]),
-            ct:sleep(timer:seconds(1)),
+            ct:sleep(timer:seconds(2)),
             client(Name, N - 1)
     end.
 
