@@ -97,7 +97,7 @@ append_flush(Producer, {PartitioningKey, Records}) when is_list(Records) ->
     ecpool:with_client(
       Producer,
       fun(Pid) ->
-              gen_server:call(Pid, {append_flush, {PartitioningKey, Records}})
+              gen_server:call(Pid, {append_flush, {PartitioningKey, Records}}, 60000)
       end);
 
 append_flush(Producer, {PartitioningKey, Record}) ->
@@ -213,7 +213,7 @@ do_append({PartitioningKey, Record},
                                   NRecords = [Record],
                                   NRecordMap = RecordMap#{ShardId => NRecords},
                                   NFlushDeadlineMap = FlushDeadlineMap#{
-                                                        ShardId => 
+                                                        ShardId =>
                                                         Interval + erlang:monotonic_time(millisecond)
                                                        },
 
