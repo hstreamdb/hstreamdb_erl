@@ -100,11 +100,26 @@ t_flush_explicit(Config) ->
 
     ?assertOkFlushResult(1),
 
+    ok = hstreamdb:stop_producer(Producer).
+
+t_append_flush_no_callback(Config) ->
+    Client = ?config(client, Config),
+
+    ProducerOptions = [
+                       {stream, ?STREAM},
+                       {callback, fun(_Result) ->
+                                          ct:fail("callback should not be called for append_flush")
+                                  end},
+                       {max_records, 10000},
+                       {interval, 10000}
+                      ],
+
+    {ok, Producer} = hstreamdb:start_producer(Client, test_producer, ProducerOptions),
+
+
     ?assertMatch(
        {ok, _},
        hstreamdb:append_flush(Producer, sample_record())),
-
-    ?assertOkFlushResult(1),
 
     ok = hstreamdb:stop_producer(Producer).
 
@@ -235,8 +250,6 @@ t_append_flush(Config) ->
         ?assertOkFlushResult(1)
       end,
       lists:seq(1, 5)),
-
-    ?assertOkFlushResult(2),
 
     ok = hstreamdb:stop_producer(Producer).
 

@@ -311,7 +311,7 @@ handle_write_result(#state{current_batches = CurrentBatches,
         undefined ->
             _ = apply_callback(Callback, {{flush, Stream, length(Records)}, Result});
         _From ->
-            _ = apply_callback(Callback, {{flush, Stream, length(Records)}, Result}),
+            %% do not apply callback, the caller will get the result directly
             ok = gen_server:reply(From, Result)
     end,
     NState = State#state{current_batches = maps:remove(ShardId, CurrentBatches)},
