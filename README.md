@@ -18,3 +18,23 @@ make -C ./.ci up
 ./rebar3 cover
 make -C ./.ci down
 ```
+
+## Use TLS
+
+ref: [HStream docs](https://hstream.io/docs/en/latest/operation/security/overview.html)
+
+```erl
+start() ->
+  _ = application:ensure_all_started(hstreamdb_erl),
+  GrpcOpts =
+    #{gun_opts =>
+        #{transport => ssl,
+          transport_opts =>
+            [{verify, verify_peer},
+             {cacertfile, ?WS_PATH ++ "root_ca.crt"},
+             {certfile, ?WS_PATH ++ "client.crt"},
+             {keyfile, ?WS_PATH ++ "client.key"}]}},
+  Opts = [{url, ?SERVER_URL}, {rpc_options, GrpcOpts}],
+  {ok, Client} = hstreamdb:start_client(test_client, Opts),
+  hstreamdb:echo(Client).
+```
