@@ -2,7 +2,7 @@ version: "3.5"
 
 services:
   hserver0:
-    image: hstreamdb/hstream:v0.11.0
+    image: hstreamdb/hstream:v0.12.0
     depends_on:
       - zookeeper
       - hstore
@@ -36,7 +36,7 @@ services:
         --io-tasks-network hstream-network
 
   hserver1:
-    image: hstreamdb/hstream:v0.11.0
+    image: hstreamdb/hstream:v0.12.0
     depends_on:
       - zookeeper
       - hstore
@@ -63,14 +63,14 @@ services:
         --server-id 101 \
         --seed-nodes "hserver0:6571,$$(hostname -I | awk '{print $$1}'):6573" \
         --advertised-address $$(hostname -I | awk '{print $$1}') \
-        --zkuri zookeeper:2181 \
+        --metastore-uri zk://zookeeper:2181 \
         --store-config /data/store/logdevice.conf \
         --store-admin-host hstore --store-admin-port 6440 \
         --io-tasks-path /tmp/io/tasks \
         --io-tasks-network hstream-network
 
   hserver-init:
-    image: hstreamdb/hstream:v0.11.0
+    image: hstreamdb/hstream:v0.12.0
     depends_on:
       - hserver0
       - hserver1
@@ -94,7 +94,7 @@ services:
         /usr/local/bin/hadmin server --host hserver0 init
 
   hstore:
-    image: hstreamdb/hstream:v0.11.0
+    image: hstreamdb/hstream:v0.12.0
     networks:
       hstream-network:
         ipv4_address: 10.5.0.6
