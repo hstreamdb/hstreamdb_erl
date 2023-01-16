@@ -30,7 +30,7 @@ jobs:
         make -C ./.ci up
     - name: run common test
       run: |
-        ./rebar3 ct --name 'test@127.0.0.1' -v -c
+        ./rebar3 ct --name 'test@127.0.0.1' --readable true -v -c
     - name: run cover
       run: |
         ./rebar3 cover
