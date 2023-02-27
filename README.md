@@ -14,7 +14,7 @@ rebar3 compile
 
 ```
 make -C ./.ci up
-./rebar3 ct --name 'test@127.0.0.1' -v
+./rebar3 ct --name 'test@127.0.0.1' -v -c
 ./rebar3 cover
 make -C ./.ci down
 ```
