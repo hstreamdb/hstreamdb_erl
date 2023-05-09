@@ -26,7 +26,10 @@ service HStreamApi {
   // Stream APIs
   rpc CreateStream(Stream) returns (Stream) {}
   rpc DeleteStream(DeleteStreamRequest) returns (google.protobuf.Empty) {}
+  rpc GetStream(GetStreamRequest) returns (GetStreamResponse) {}
   rpc ListStreams(ListStreamsRequest) returns (ListStreamsResponse) {}
+  rpc ListStreamsWithPrefix(ListStreamsWithPrefixRequest)
+      returns (ListStreamsResponse) {}
   rpc LookupShard(LookupShardRequest) returns (LookupShardResponse) {}
   rpc Append(AppendRequest) returns (AppendResponse) {}
 
@@ -38,13 +41,22 @@ service HStreamApi {
   rpc LookupShardReader(LookupShardReaderRequest)
       returns (LookupShardReaderResponse) {}
   rpc ReadShard(ReadShardRequest) returns (ReadShardResponse) {}
+  rpc ReadShardStream(ReadShardStreamRequest)
+      returns (stream ReadShardStreamResponse) {}
+  rpc ListShardReaders(ListShardReadersRequest)
+      returns (ListShardReadersResponse) {}
   rpc DeleteShardReader(DeleteShardReaderRequest)
       returns (google.protobuf.Empty) {}
 
   // Subscribe APIs
   rpc CreateSubscription(Subscription) returns (Subscription) {}
+  rpc GetSubscription(GetSubscriptionRequest)
+      returns (GetSubscriptionResponse) {}
   rpc ListSubscriptions(ListSubscriptionsRequest)
       returns (ListSubscriptionsResponse) {}
+  rpc ListSubscriptionsWithPrefix(ListSubscriptionsWithPrefixRequest)
+      returns (ListSubscriptionsResponse) {}
+  rpc ListConsumers(ListConsumersRequest) returns (ListConsumersResponse) {}
   rpc CheckSubscriptionExist(CheckSubscriptionExistRequest)
       returns (CheckSubscriptionExistResponse) {}
   rpc DeleteSubscription(DeleteSubscriptionRequest)
@@ -57,6 +69,7 @@ service HStreamApi {
   // Cluster APIs
   rpc DescribeCluster(google.protobuf.Empty) returns (DescribeClusterResponse) {
   }
+  rpc LookupResource(LookupResourceRequest) returns (ServerNode) {}
 
   // Admin Command
   rpc SendAdminCommand(AdminCommandRequest) returns (AdminCommandResponse);
@@ -70,45 +83,48 @@ service HStreamApi {
       returns (PerStreamTimeSeriesStatsResponse);
   rpc PerStreamTimeSeriesStatsAll(PerStreamTimeSeriesStatsAllRequest)
       returns (PerStreamTimeSeriesStatsAllResponse);
-
-  // only for push query
-  // e.g., select (with emit changes)
-  rpc ExecutePushQuery(CommandPushQuery)
-      returns (stream google.protobuf.Struct);
+  rpc GetStats(GetStatsRequest) returns (GetStatsResponse);
 
   // for execute any sql stmt except push query,
   // e.g., insert, create, show/list, select(without emit changes) ...
   rpc ExecuteQuery(CommandQuery) returns (CommandQueryResponse);
 
   // query related apis
+  rpc CreateQuery(CreateQueryRequest) returns (Query) {}
+  rpc CreateQueryWithNamespace(CreateQueryWithNamespaceRequest)
+      returns (Query) {}
   rpc ListQueries(ListQueriesRequest) returns (ListQueriesResponse) {}
   rpc GetQuery(GetQueryRequest) returns (Query) {}
-  rpc TerminateQueries(TerminateQueriesRequest)
-      returns (TerminateQueriesResponse) {}
+  rpc TerminateQuery(TerminateQueryRequest) returns (google.protobuf.Empty) {}
   rpc DeleteQuery(DeleteQueryRequest) returns (google.protobuf.Empty) {}
-  rpc RestartQuery(RestartQueryRequest) returns (google.protobuf.Empty) {}
+  rpc ResumeQuery(ResumeQueryRequest) returns (google.protobuf.Empty) {}
+  rpc PauseQuery(PauseQueryRequest) returns (google.protobuf.Empty) {}
+  // parse query sql, return structuralized information
+  rpc ParseSql(ParseSqlRequest) returns (ParseSqlResponse) {}
 
   // connector related apis
   rpc CreateConnector(CreateConnectorRequest) returns (Connector) {}
   rpc ListConnectors(ListConnectorsRequest) returns (ListConnectorsResponse) {}
   rpc GetConnector(GetConnectorRequest) returns (Connector) {}
+  rpc GetConnectorSpec(GetConnectorSpecRequest)
+      returns (GetConnectorSpecResponse) {}
+  rpc GetConnectorLogs(GetConnectorLogsRequest)
+      returns (GetConnectorLogsResponse) {}
   rpc DeleteConnector(DeleteConnectorRequest) returns (google.protobuf.Empty) {}
   rpc PauseConnector(PauseConnectorRequest) returns (google.protobuf.Empty) {}
   rpc ResumeConnector(ResumeConnectorRequest) returns (google.protobuf.Empty) {}
-  rpc LookupConnector(LookupConnectorRequest)
-      returns (LookupConnectorResponse) {}
 
   // view related apis
   rpc ListViews(ListViewsRequest) returns (ListViewsResponse) {}
   rpc GetView(GetViewRequest) returns (View) {}
   rpc DeleteView(DeleteViewRequest) returns (google.protobuf.Empty) {}
+  rpc ExecuteViewQuery(ExecuteViewQueryRequest)
+      returns (ExecuteViewQueryResponse) {}
+  rpc ExecuteViewQueryWithNamespace(ExecuteViewQueryWithNamespaceRequest)
+      returns (ExecuteViewQueryResponse) {}
 
-  // overvew related apis
+  // overview related apis
   // rpc GetOverview(GetOverviewRequest) returns (GetOverviewResponse) {}
-
-  // FIXME: (store)node related apis
-  rpc ListNodes(ListNodesRequest) returns (ListNodesResponse) {}
-  rpc GetNode(GetNodeRequest) returns (Node) {}
 }
 
 enum SpecialOffset {
@@ -116,10 +132,16 @@ enum SpecialOffset {
   LATEST = 1;
 }
 
+message TimestampOffset {
+  int64 timestampInMs = 1;
+  bool strictAccuracy = 2;
+}
+
 message ShardOffset {
   oneof offset {
     SpecialOffset specialOffset = 1;
     RecordId recordOffset = 2;
+    TimestampOffset timestampOffset = 3;
   }
 }
 
@@ -141,11 +163,13 @@ message CommandConnected {
   int32 protocol_version = 2;
 }
 
-message CommandPushQuery { string query_text = 1; }
-
 message CommandQuery { string stmt_text = 1; }
 
 message CommandQueryResponse { repeated google.protobuf.Struct result_set = 1; }
+
+message GetStreamRequest { string name = 1; }
+
+message GetStreamResponse { Stream stream = 1; }
 
 message AppendRequest {
   string streamName = 1;
@@ -165,6 +189,19 @@ message Subscription {
   int32 ackTimeoutSeconds = 3;
   int32 maxUnackedRecords = 4;
   SpecialOffset offset = 5;
+  google.protobuf.Timestamp creationTime = 6;
+}
+
+message SubscriptionOffset {
+  uint64 shardId = 1;
+  uint64 batchId = 2;
+}
+
+message GetSubscriptionRequest { string id = 1; }
+
+message GetSubscriptionResponse {
+  Subscription subscription = 1;
+  repeated SubscriptionOffset offsets = 2;
 }
 
 message DeleteSubscriptionRequest {
@@ -197,18 +234,24 @@ message DeleteStreamRequest {
 
 message ListStreamsResponse { repeated Stream streams = 1; }
 
-// TODO：Add options for filtering or max_size
+// TODO: Add options for filtering or max_size
 message ListStreamsRequest {}
+message ListStreamsWithPrefixRequest { string prefix = 1; }
 
 message ListSubscriptionsRequest {}
+message ListSubscriptionsWithPrefixRequest { string prefix = 1; }
 
 message ListSubscriptionsResponse { repeated Subscription subscription = 1; }
+
+message ListConsumersRequest { string subscriptionId = 1; }
+message ListConsumersResponse { repeated Consumer consumers = 1; }
 
 message Stream {
   string streamName = 1;
   uint32 replicationFactor = 2;
   uint32 backlogDuration = 3;
   uint32 shardCount = 4;
+  google.protobuf.Timestamp creationTime = 5;
 }
 
 enum CompressionType {
@@ -308,14 +351,31 @@ message DeleteShardReaderRequest { string readerId = 1; }
 
 message ReadShardResponse { repeated ReceivedRecord receivedRecords = 1; }
 
-message TerminateQueriesRequest {
-  repeated string queryId = 1;
-  bool all = 2;
+message ListShardReadersRequest {}
+message ListShardReadersResponse { repeated string readerId = 1; }
+
+message ReadShardStreamRequest {
+  string readerId = 1;
+  uint64 shardId = 2;
+  ShardOffset shardOffset = 3;
 }
 
-message TerminateQueriesResponse { repeated string queryId = 1; }
+message ReadShardStreamResponse { repeated ReceivedRecord receivedRecords = 1; }
+
+message TerminateQueryRequest { string queryId = 1; }
 
 // Query realated Request and Response
+message CreateQueryRequest {
+  string sql = 1;
+  string queryName = 2;
+}
+
+message CreateQueryWithNamespaceRequest {
+  string sql = 1;
+  string queryName = 2;
+  string namespace = 3;
+}
+
 message ListQueriesRequest {}
 
 message ListQueriesResponse { repeated Query queries = 1; }
@@ -324,11 +384,23 @@ message GetQueryRequest { string id = 1; }
 
 enum TaskStatusPB {
   TASK_CREATING = 0;
-  TASK_CREATED = 1;
-  TASK_RUNNING = 2;
-  TASK_CREATION_ABORT = 3;
-  TASK_CONNECTION_ABORT = 4;
+  TASK_RUNNING = 1;
+  TASK_ABORTED = 2;
+  TASK_PAUSED = 3;
+  TASK_RESUMING = 4;
   TASK_TERMINATED = 5;
+  TASK_UNKNOWN = 6;
+}
+
+message Consumer {
+  string name = 1;
+  string uri = 2;
+  string userAgent = 3;
+}
+
+enum QueryType {
+  CreateStreamAs = 0;
+  CreateViewAs = 1;
 }
 
 message Query {
@@ -336,18 +408,32 @@ message Query {
   TaskStatusPB status = 2;
   int64 createdTime = 3;
   string queryText = 4;
+  repeated string sources = 5;
+  // type:
+  //    CreateStreamAs: resultName is result stream name
+  //    CreateViewAs: resultName is result view name
+  string resultName = 6;
+  QueryType type = 7;
 }
 
 message DeleteQueryRequest { string id = 1; }
+message ResumeQueryRequest { string id = 1; }
+message PauseQueryRequest { string id = 1; }
 
-message DeleteQueryResponse { bool success = 1; }
+message ParseSqlRequest { string sql = 1; }
+message ParseSqlResponse {
+  oneof sql { ExecuteViewQuerySql evqSql = 1; }
+}
 
-message RestartQueryRequest { string id = 1; }
-
-message RestartQueryResponse { bool success = 1; }
+message ExecuteViewQuerySql { string view = 1; }
 
 // Connector Related Request and Response
-message CreateConnectorRequest { string sql = 1; }
+message CreateConnectorRequest {
+  string name = 1;
+  string type = 2;
+  string target = 3;
+  string config = 4;
+}
 
 message ListConnectorsRequest {}
 
@@ -355,7 +441,32 @@ message ListConnectorsResponse { repeated Connector connectors = 1; }
 
 message GetConnectorRequest { string name = 1; }
 
-message Connector { google.protobuf.Struct info = 1; }
+message GetConnectorSpecRequest {
+  // SOURCE or SINK
+  string type = 1;
+  // e.g. mysql, postgresql, etc.
+  string target = 2;
+}
+
+message GetConnectorSpecResponse { string spec = 1; }
+
+message GetConnectorLogsRequest {
+  string name = 1;
+  int32 begin = 2;
+  int32 count = 3;
+}
+
+message GetConnectorLogsResponse { string logs = 1; }
+
+message Connector {
+  string name = 1;
+  string type = 2;
+  string target = 3;
+  google.protobuf.Timestamp creationTime = 4;
+  string status = 5;
+  string config = 6;
+  repeated google.protobuf.Struct offsets = 7;
+}
 
 message DeleteConnectorRequest { string name = 1; }
 
@@ -381,20 +492,16 @@ message View {
   int64 createdTime = 3;
   string sql = 4;
   repeated string schema = 5;
+  string queryName = 6;
 }
 
-// Nodes related Request and Response
-message GetNodeRequest { int32 id = 1; }
-
-message ListNodesRequest {}
-
-message ListNodesResponse { repeated Node nodes = 1; }
-
-message Node {
-  int32 id = 1;
-  repeated int32 roles = 2;
-  string address = 3;
-  string status = 4;
+message ExecuteViewQueryResponse {
+  repeated google.protobuf.Struct results = 1;
+}
+message ExecuteViewQueryRequest { string sql = 1; }
+message ExecuteViewQueryWithNamespaceRequest {
+  string sql = 1;
+  string namespace = 2;
 }
 
 message StatsIntervalVals { repeated int32 intervals = 1; }
@@ -431,6 +538,7 @@ message DescribeClusterResponse {
   string serverVersion = 2;
   repeated ServerNode serverNodes = 3;
   repeated ServerNodeStatus serverNodesStatus = 4;
+  uint64 clusterUpTime = 5;
 }
 
 message ServerNode {
@@ -465,16 +573,142 @@ message LookupSubscriptionResponse {
   ServerNode serverNode = 2;
 }
 
-message LookupConnectorRequest { string name = 1; }
-
-message LookupConnectorResponse {
-  string name = 1;
-  ServerNode serverNode = 2;
-}
-
 message LookupShardReaderRequest { string readerId = 1; }
 
 message LookupShardReaderResponse {
   string readerId = 1;
   ServerNode serverNode = 2;
+}
+
+enum ResourceType {
+  ResStream = 0;
+  ResSubscription = 1;
+  ResShard = 2;
+  ResShardReader = 3;
+  ResConnector = 4;
+  ResQuery = 5;
+  ResView = 6;
+}
+
+message LookupResourceRequest {
+  ResourceType resType = 1;
+  string resId = 2;
+}
+
+enum StreamStats {
+  AppendInBytes = 0;
+  AppendInRecords = 1;
+  AppendTotal = 2;
+  AppendFailed = 3;
+}
+
+enum SubscriptionStats {
+  SendOutBytes = 0;
+  SendOutRecords = 1;
+  SendOutRecordsFailed = 2;
+  ResendRecords = 3;
+  ResendRecordsFailed = 4;
+  ReceivedAcks = 5;
+  RequestMessages = 6;
+  ResponseMessages = 7;
+}
+
+enum ConnectorStats {
+  DeliveredInRecords = 0;
+  DeliveredInBytes = 1;
+}
+
+enum QueryStats {
+  TotalInputRecords = 0;
+  TotalOutputRecords = 1;
+  TotalExecuteErrors = 2;
+}
+
+enum ViewStats { TotalExecuteQueries = 0; }
+
+message StatType {
+  oneof stat {
+    StreamStats streamStat = 1;
+    SubscriptionStats subStat = 2;
+    ConnectorStats connStat = 3;
+    QueryStats queryStat = 4;
+    ViewStats viewStat = 5;
+  }
+}
+
+message StatValue {
+  StatType statType = 1;
+  map<string, int64> statValues = 2;
+}
+
+message StatError {
+  StatType statType = 1;
+  string message = 2;
+}
+
+message GetStatsRequest { repeated StatType stats = 1; }
+
+message GetStatsResponse {
+  repeated StatValue statsValues = 1;
+  repeated StatError errors = 2;
+}
+
+// ErrorCodes
+enum ErrorCode {
+  // 0xx -> internal error
+  InternalError = 0;
+
+  // 1xx -> Proxy Errors
+
+  // 2xx -> Stream Errors
+  StreamNotFound = 200;
+  StreamExists = 201;
+  StreamFoundSubscription = 202;
+  StreamInvalidReplicaFactor = 203;
+  StreamInvalidObjectIdentifier = 204;
+  StreamInvalidShardCount = 205;
+  StreamEmptyBatchedRecord = 206;
+  StreamInvalidRecordSize = 207;
+
+  // 3xx -> Subscription Errors
+  SubscriptionNotFound = 300;
+  SubscriptionExists = 301;
+  SubscriptionCreationOnNonExistentStream = 302;
+  SubscriptionInvalidOffset = 303;
+  SubscriptionInvalidObjectIdentifier = 304;
+  SubscriptionFoundActiveConsumers = 305;
+
+  // 4xx -> Query Errors
+  QueryNotFound = 400;
+  QueryExists = 401;
+  QueryInvalidSQL = 402;
+  QueryFoundAssociatedView = 403;
+  QueryInvalidObjectIdentifier = 404;
+  QueryStillRunning = 405;
+  QueryNotRunning = 406;
+  QueryNotTerminated = 407;
+  QueryAlreadyTerminated = 408;
+
+  // 5xx -> View Errors
+  ViewNotFound = 500;
+  ViewExists = 501;
+  ViewInvalidSQL = 502;
+  ViewInvalidObjectIdentifier = 503;
+
+  // 6xx -> IO
+  ConnectorNotFound = 600;
+  ConnectorExists = 601;
+  ConnectorInvalidType = 602;
+  ConnectorInvalidObjectIdentifier = 603;
+  ConnectorCheckFailed = 604;
+  ConnectorUnimplemented = 605;
+  ConnectorInvalidStatus = 606;
+
+  // 7xx -> Stats
+
+  // 8xx -> Cluster
+  WrongServer = 800;
+
+  // 9xx -> ShardReader
+  ShardReaderInvalidObjectIdentifier = 900;
 }

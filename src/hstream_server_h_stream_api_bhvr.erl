@@ -19,7 +19,15 @@
     -> {ok, hstreamdb_api:empty(), grpc:metadata()}
      | {error, grpc_stream:error_response()}.
 
+-callback get_stream(hstreamdb_api:get_stream_request(), grpc:metadata())
+    -> {ok, hstreamdb_api:get_stream_response(), grpc:metadata()}
+     | {error, grpc_stream:error_response()}.
+
 -callback list_streams(hstreamdb_api:list_streams_request(), grpc:metadata())
+    -> {ok, hstreamdb_api:list_streams_response(), grpc:metadata()}
+     | {error, grpc_stream:error_response()}.
+
+-callback list_streams_with_prefix(hstreamdb_api:list_streams_with_prefix_request(), grpc:metadata())
     -> {ok, hstreamdb_api:list_streams_response(), grpc:metadata()}
      | {error, grpc_stream:error_response()}.
 
@@ -47,6 +55,13 @@
     -> {ok, hstreamdb_api:read_shard_response(), grpc:metadata()}
      | {error, grpc_stream:error_response()}.
 
+-callback read_shard_stream(grpc_stream:stream(), grpc:metadata())
+    -> {ok, grpc_stream:stream()}.
+
+-callback list_shard_readers(hstreamdb_api:list_shard_readers_request(), grpc:metadata())
+    -> {ok, hstreamdb_api:list_shard_readers_response(), grpc:metadata()}
+     | {error, grpc_stream:error_response()}.
+
 -callback delete_shard_reader(hstreamdb_api:delete_shard_reader_request(), grpc:metadata())
     -> {ok, hstreamdb_api:empty(), grpc:metadata()}
      | {error, grpc_stream:error_response()}.
@@ -55,8 +70,20 @@
     -> {ok, hstreamdb_api:subscription(), grpc:metadata()}
      | {error, grpc_stream:error_response()}.
 
+-callback get_subscription(hstreamdb_api:get_subscription_request(), grpc:metadata())
+    -> {ok, hstreamdb_api:get_subscription_response(), grpc:metadata()}
+     | {error, grpc_stream:error_response()}.
+
 -callback list_subscriptions(hstreamdb_api:list_subscriptions_request(), grpc:metadata())
     -> {ok, hstreamdb_api:list_subscriptions_response(), grpc:metadata()}
+     | {error, grpc_stream:error_response()}.
+
+-callback list_subscriptions_with_prefix(hstreamdb_api:list_subscriptions_with_prefix_request(), grpc:metadata())
+    -> {ok, hstreamdb_api:list_subscriptions_response(), grpc:metadata()}
+     | {error, grpc_stream:error_response()}.
+
+-callback list_consumers(hstreamdb_api:list_consumers_request(), grpc:metadata())
+    -> {ok, hstreamdb_api:list_consumers_response(), grpc:metadata()}
      | {error, grpc_stream:error_response()}.
 
 -callback check_subscription_exist(hstreamdb_api:check_subscription_exist_request(), grpc:metadata())
@@ -78,6 +105,10 @@
     -> {ok, hstreamdb_api:describe_cluster_response(), grpc:metadata()}
      | {error, grpc_stream:error_response()}.
 
+-callback lookup_resource(hstreamdb_api:lookup_resource_request(), grpc:metadata())
+    -> {ok, hstreamdb_api:server_node(), grpc:metadata()}
+     | {error, grpc_stream:error_response()}.
+
 -callback send_admin_command(hstreamdb_api:admin_command_request(), grpc:metadata())
     -> {ok, hstreamdb_api:admin_command_response(), grpc:metadata()}
      | {error, grpc_stream:error_response()}.
@@ -90,11 +121,20 @@
     -> {ok, hstreamdb_api:per_stream_time_series_stats_all_response(), grpc:metadata()}
      | {error, grpc_stream:error_response()}.
 
--callback execute_push_query(grpc_stream:stream(), grpc:metadata())
-    -> {ok, grpc_stream:stream()}.
+-callback get_stats(hstreamdb_api:get_stats_request(), grpc:metadata())
+    -> {ok, hstreamdb_api:get_stats_response(), grpc:metadata()}
+     | {error, grpc_stream:error_response()}.
 
 -callback execute_query(hstreamdb_api:command_query(), grpc:metadata())
     -> {ok, hstreamdb_api:command_query_response(), grpc:metadata()}
+     | {error, grpc_stream:error_response()}.
+
+-callback create_query(hstreamdb_api:create_query_request(), grpc:metadata())
+    -> {ok, hstreamdb_api:query(), grpc:metadata()}
+     | {error, grpc_stream:error_response()}.
+
+-callback create_query_with_namespace(hstreamdb_api:create_query_with_namespace_request(), grpc:metadata())
+    -> {ok, hstreamdb_api:query(), grpc:metadata()}
      | {error, grpc_stream:error_response()}.
 
 -callback list_queries(hstreamdb_api:list_queries_request(), grpc:metadata())
@@ -105,16 +145,24 @@
     -> {ok, hstreamdb_api:query(), grpc:metadata()}
      | {error, grpc_stream:error_response()}.
 
--callback terminate_queries(hstreamdb_api:terminate_queries_request(), grpc:metadata())
-    -> {ok, hstreamdb_api:terminate_queries_response(), grpc:metadata()}
+-callback terminate_query(hstreamdb_api:terminate_query_request(), grpc:metadata())
+    -> {ok, hstreamdb_api:empty(), grpc:metadata()}
      | {error, grpc_stream:error_response()}.
 
 -callback delete_query(hstreamdb_api:delete_query_request(), grpc:metadata())
     -> {ok, hstreamdb_api:empty(), grpc:metadata()}
      | {error, grpc_stream:error_response()}.
 
--callback restart_query(hstreamdb_api:restart_query_request(), grpc:metadata())
+-callback resume_query(hstreamdb_api:resume_query_request(), grpc:metadata())
     -> {ok, hstreamdb_api:empty(), grpc:metadata()}
+     | {error, grpc_stream:error_response()}.
+
+-callback pause_query(hstreamdb_api:pause_query_request(), grpc:metadata())
+    -> {ok, hstreamdb_api:empty(), grpc:metadata()}
+     | {error, grpc_stream:error_response()}.
+
+-callback parse_sql(hstreamdb_api:parse_sql_request(), grpc:metadata())
+    -> {ok, hstreamdb_api:parse_sql_response(), grpc:metadata()}
      | {error, grpc_stream:error_response()}.
 
 -callback create_connector(hstreamdb_api:create_connector_request(), grpc:metadata())
@@ -129,6 +177,14 @@
     -> {ok, hstreamdb_api:connector(), grpc:metadata()}
      | {error, grpc_stream:error_response()}.
 
+-callback get_connector_spec(hstreamdb_api:get_connector_spec_request(), grpc:metadata())
+    -> {ok, hstreamdb_api:get_connector_spec_response(), grpc:metadata()}
+     | {error, grpc_stream:error_response()}.
+
+-callback get_connector_logs(hstreamdb_api:get_connector_logs_request(), grpc:metadata())
+    -> {ok, hstreamdb_api:get_connector_logs_response(), grpc:metadata()}
+     | {error, grpc_stream:error_response()}.
+
 -callback delete_connector(hstreamdb_api:delete_connector_request(), grpc:metadata())
     -> {ok, hstreamdb_api:empty(), grpc:metadata()}
      | {error, grpc_stream:error_response()}.
@@ -139,10 +195,6 @@
 
 -callback resume_connector(hstreamdb_api:resume_connector_request(), grpc:metadata())
     -> {ok, hstreamdb_api:empty(), grpc:metadata()}
-     | {error, grpc_stream:error_response()}.
-
--callback lookup_connector(hstreamdb_api:lookup_connector_request(), grpc:metadata())
-    -> {ok, hstreamdb_api:lookup_connector_response(), grpc:metadata()}
      | {error, grpc_stream:error_response()}.
 
 -callback list_views(hstreamdb_api:list_views_request(), grpc:metadata())
@@ -157,11 +209,11 @@
     -> {ok, hstreamdb_api:empty(), grpc:metadata()}
      | {error, grpc_stream:error_response()}.
 
--callback list_nodes(hstreamdb_api:list_nodes_request(), grpc:metadata())
-    -> {ok, hstreamdb_api:list_nodes_response(), grpc:metadata()}
+-callback execute_view_query(hstreamdb_api:execute_view_query_request(), grpc:metadata())
+    -> {ok, hstreamdb_api:execute_view_query_response(), grpc:metadata()}
      | {error, grpc_stream:error_response()}.
 
--callback get_node(hstreamdb_api:get_node_request(), grpc:metadata())
-    -> {ok, hstreamdb_api:node(), grpc:metadata()}
+-callback execute_view_query_with_namespace(hstreamdb_api:execute_view_query_with_namespace_request(), grpc:metadata())
+    -> {ok, hstreamdb_api:execute_view_query_response(), grpc:metadata()}
      | {error, grpc_stream:error_response()}.
 
