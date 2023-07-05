@@ -32,6 +32,8 @@ service HStreamApi {
       returns (ListStreamsResponse) {}
   rpc LookupShard(LookupShardRequest) returns (LookupShardResponse) {}
   rpc Append(AppendRequest) returns (AppendResponse) {}
+  rpc GetTailRecordId(GetTailRecordIdRequest)
+      returns (GetTailRecordIdResponse) {}
 
   // Shard APIs
   rpc ListShards(ListShardsRequest) returns (ListShardsResponse) {}
@@ -357,7 +359,10 @@ message ListShardReadersResponse { repeated string readerId = 1; }
 message ReadShardStreamRequest {
   string readerId = 1;
   uint64 shardId = 2;
-  ShardOffset shardOffset = 3;
+  ShardOffset from = 3;
+  // Total number of batches reader read at most
+  uint64 maxReadBatches = 4;
+  ShardOffset until = 5;
 }
 
 message ReadShardStreamResponse { repeated ReceivedRecord receivedRecords = 1; }
@@ -409,11 +414,13 @@ message Query {
   int64 createdTime = 3;
   string queryText = 4;
   repeated string sources = 5;
+  string resultName = 6;
   // type:
   //    CreateStreamAs: resultName is result stream name
   //    CreateViewAs: resultName is result view name
-  string resultName = 6;
   QueryType type = 7;
+  // Id of the node to execute the query
+  uint32 nodeId = 8;
 }
 
 message DeleteQueryRequest { string id = 1; }
@@ -466,6 +473,10 @@ message Connector {
   string status = 5;
   string config = 6;
   repeated google.protobuf.Struct offsets = 7;
+  string taskId = 8;
+  string node = 9;
+  string dockerStatus = 10;
+  string image = 11;
 }
 
 message DeleteConnectorRequest { string name = 1; }
@@ -535,16 +546,16 @@ message PerStreamTimeSeriesStatsAllRequest {
 
 message DescribeClusterResponse {
   string protocolVersion = 1;
-  string serverVersion = 2;
-  repeated ServerNode serverNodes = 3;
-  repeated ServerNodeStatus serverNodesStatus = 4;
-  uint64 clusterUpTime = 5;
+  repeated ServerNode serverNodes = 2;
+  repeated ServerNodeStatus serverNodesStatus = 3;
+  uint64 clusterUpTime = 4;
 }
 
 message ServerNode {
   uint32 id = 1;
   string host = 2;
   uint32 port = 3;
+  HStreamVersion version = 4;
 }
 
 enum NodeState {
@@ -557,6 +568,11 @@ enum NodeState {
 message ServerNodeStatus {
   ServerNode node = 1;
   NodeState state = 2;
+}
+
+message HStreamVersion {
+  string version = 1;
+  string commit = 2;
 }
 
 message LookupShardRequest { uint64 shardId = 1; }
@@ -595,6 +611,13 @@ message LookupResourceRequest {
   string resId = 2;
 }
 
+message GetTailRecordIdRequest {
+  string streamName = 1;
+  uint64 shardId = 2;
+}
+
+message GetTailRecordIdResponse { RecordId tailRecordId = 1; }
+
 enum StreamStats {
   AppendInBytes = 0;
   AppendInRecords = 1;
@@ -611,6 +634,7 @@ enum SubscriptionStats {
   ReceivedAcks = 5;
   RequestMessages = 6;
   ResponseMessages = 7;
+  ChecklistSize = 8;
 }
 
 enum ConnectorStats {
@@ -711,4 +735,5 @@ enum ErrorCode {
 
   // 9xx -> ShardReader
   ShardReaderInvalidObjectIdentifier = 900;
+  ShardReaderConflictOffset = 901;
 }

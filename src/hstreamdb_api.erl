@@ -381,6 +381,9 @@ encode_msg(Msg, MsgName, Opts) ->
         server_node_status ->
             encode_msg_server_node_status(id(Msg, TrUserData),
                                           TrUserData);
+        h_stream_version ->
+            encode_msg_h_stream_version(id(Msg, TrUserData),
+                                        TrUserData);
         lookup_shard_request ->
             encode_msg_lookup_shard_request(id(Msg, TrUserData),
                                             TrUserData);
@@ -406,6 +409,14 @@ encode_msg(Msg, MsgName, Opts) ->
         lookup_resource_request ->
             encode_msg_lookup_resource_request(id(Msg, TrUserData),
                                                TrUserData);
+        get_tail_record_id_request ->
+            encode_msg_get_tail_record_id_request(id(Msg,
+                                                     TrUserData),
+                                                  TrUserData);
+        get_tail_record_id_response ->
+            encode_msg_get_tail_record_id_response(id(Msg,
+                                                      TrUserData),
+                                                   TrUserData);
         stat_type ->
             encode_msg_stat_type(id(Msg, TrUserData), TrUserData);
         stat_value ->
@@ -1902,19 +1913,43 @@ encode_msg_read_shard_stream_request(#{} = M, Bin,
                  end;
              _ -> B1
          end,
+    B3 = case M of
+             #{from := F3} ->
+                 begin
+                     TrF3 = id(F3, TrUserData),
+                     if TrF3 =:= undefined -> B2;
+                        true ->
+                            e_mfield_read_shard_stream_request_from(TrF3,
+                                                                    <<B2/binary,
+                                                                      26>>,
+                                                                    TrUserData)
+                     end
+                 end;
+             _ -> B2
+         end,
+    B4 = case M of
+             #{maxReadBatches := F4} ->
+                 begin
+                     TrF4 = id(F4, TrUserData),
+                     if TrF4 =:= 0 -> B3;
+                        true -> e_varint(TrF4, <<B3/binary, 32>>, TrUserData)
+                     end
+                 end;
+             _ -> B3
+         end,
     case M of
-        #{shardOffset := F3} ->
+        #{until := F5} ->
             begin
-                TrF3 = id(F3, TrUserData),
-                if TrF3 =:= undefined -> B2;
+                TrF5 = id(F5, TrUserData),
+                if TrF5 =:= undefined -> B4;
                    true ->
-                       e_mfield_read_shard_stream_request_shardOffset(TrF3,
-                                                                      <<B2/binary,
-                                                                        26>>,
-                                                                      TrUserData)
+                       e_mfield_read_shard_stream_request_until(TrF5,
+                                                                <<B4/binary,
+                                                                  42>>,
+                                                                TrUserData)
                 end
             end;
-        _ -> B2
+        _ -> B4
     end.
 
 encode_msg_read_shard_stream_response(Msg,
@@ -2192,18 +2227,28 @@ encode_msg_query(#{} = M, Bin, TrUserData) ->
                  end;
              _ -> B5
          end,
+    B7 = case M of
+             #{type := F7} ->
+                 begin
+                     TrF7 = id(F7, TrUserData),
+                     if TrF7 =:= 'CreateStreamAs'; TrF7 =:= 0 -> B6;
+                        true ->
+                            'e_enum_hstream.server.QueryType'(TrF7,
+                                                              <<B6/binary, 56>>,
+                                                              TrUserData)
+                     end
+                 end;
+             _ -> B6
+         end,
     case M of
-        #{type := F7} ->
+        #{nodeId := F8} ->
             begin
-                TrF7 = id(F7, TrUserData),
-                if TrF7 =:= 'CreateStreamAs'; TrF7 =:= 0 -> B6;
-                   true ->
-                       'e_enum_hstream.server.QueryType'(TrF7,
-                                                         <<B6/binary, 56>>,
-                                                         TrUserData)
+                TrF8 = id(F8, TrUserData),
+                if TrF8 =:= 0 -> B7;
+                   true -> e_varint(TrF8, <<B7/binary, 64>>, TrUserData)
                 end
             end;
-        _ -> B6
+        _ -> B7
     end.
 
 encode_msg_delete_query_request(Msg, TrUserData) ->
@@ -2622,13 +2667,63 @@ encode_msg_connector(#{} = M, Bin, TrUserData) ->
                  end;
              _ -> B5
          end,
+    B7 = case M of
+             #{offsets := F7} ->
+                 TrF7 = id(F7, TrUserData),
+                 if TrF7 == [] -> B6;
+                    true -> e_field_connector_offsets(TrF7, B6, TrUserData)
+                 end;
+             _ -> B6
+         end,
+    B8 = case M of
+             #{taskId := F8} ->
+                 begin
+                     TrF8 = id(F8, TrUserData),
+                     case is_empty_string(TrF8) of
+                         true -> B7;
+                         false ->
+                             e_type_string(TrF8, <<B7/binary, 66>>, TrUserData)
+                     end
+                 end;
+             _ -> B7
+         end,
+    B9 = case M of
+             #{node := F9} ->
+                 begin
+                     TrF9 = id(F9, TrUserData),
+                     case is_empty_string(TrF9) of
+                         true -> B8;
+                         false ->
+                             e_type_string(TrF9, <<B8/binary, 74>>, TrUserData)
+                     end
+                 end;
+             _ -> B8
+         end,
+    B10 = case M of
+              #{dockerStatus := F10} ->
+                  begin
+                      TrF10 = id(F10, TrUserData),
+                      case is_empty_string(TrF10) of
+                          true -> B9;
+                          false ->
+                              e_type_string(TrF10,
+                                            <<B9/binary, 82>>,
+                                            TrUserData)
+                      end
+                  end;
+              _ -> B9
+          end,
     case M of
-        #{offsets := F7} ->
-            TrF7 = id(F7, TrUserData),
-            if TrF7 == [] -> B6;
-               true -> e_field_connector_offsets(TrF7, B6, TrUserData)
+        #{image := F11} ->
+            begin
+                TrF11 = id(F11, TrUserData),
+                case is_empty_string(TrF11) of
+                    true -> B10;
+                    false ->
+                        e_type_string(TrF11, <<B10/binary, 90>>, TrUserData)
+                end
             end;
-        _ -> B6
+        _ -> B10
     end.
 
 encode_msg_delete_connector_request(Msg, TrUserData) ->
@@ -3142,48 +3237,36 @@ encode_msg_describe_cluster_response(#{} = M, Bin,
              _ -> Bin
          end,
     B2 = case M of
-             #{serverVersion := F2} ->
-                 begin
-                     TrF2 = id(F2, TrUserData),
-                     case is_empty_string(TrF2) of
-                         true -> B1;
-                         false ->
-                             e_type_string(TrF2, <<B1/binary, 18>>, TrUserData)
-                     end
+             #{serverNodes := F2} ->
+                 TrF2 = id(F2, TrUserData),
+                 if TrF2 == [] -> B1;
+                    true ->
+                        e_field_describe_cluster_response_serverNodes(TrF2,
+                                                                      B1,
+                                                                      TrUserData)
                  end;
              _ -> B1
          end,
     B3 = case M of
-             #{serverNodes := F3} ->
+             #{serverNodesStatus := F3} ->
                  TrF3 = id(F3, TrUserData),
                  if TrF3 == [] -> B2;
                     true ->
-                        e_field_describe_cluster_response_serverNodes(TrF3,
-                                                                      B2,
-                                                                      TrUserData)
+                        e_field_describe_cluster_response_serverNodesStatus(TrF3,
+                                                                            B2,
+                                                                            TrUserData)
                  end;
              _ -> B2
          end,
-    B4 = case M of
-             #{serverNodesStatus := F4} ->
-                 TrF4 = id(F4, TrUserData),
-                 if TrF4 == [] -> B3;
-                    true ->
-                        e_field_describe_cluster_response_serverNodesStatus(TrF4,
-                                                                            B3,
-                                                                            TrUserData)
-                 end;
-             _ -> B3
-         end,
     case M of
-        #{clusterUpTime := F5} ->
+        #{clusterUpTime := F4} ->
             begin
-                TrF5 = id(F5, TrUserData),
-                if TrF5 =:= 0 -> B4;
-                   true -> e_varint(TrF5, <<B4/binary, 40>>, TrUserData)
+                TrF4 = id(F4, TrUserData),
+                if TrF4 =:= 0 -> B3;
+                   true -> e_varint(TrF4, <<B3/binary, 32>>, TrUserData)
                 end
             end;
-        _ -> B4
+        _ -> B3
     end.
 
 encode_msg_server_node(Msg, TrUserData) ->
@@ -3213,15 +3296,28 @@ encode_msg_server_node(#{} = M, Bin, TrUserData) ->
                  end;
              _ -> B1
          end,
+    B3 = case M of
+             #{port := F3} ->
+                 begin
+                     TrF3 = id(F3, TrUserData),
+                     if TrF3 =:= 0 -> B2;
+                        true -> e_varint(TrF3, <<B2/binary, 24>>, TrUserData)
+                     end
+                 end;
+             _ -> B2
+         end,
     case M of
-        #{port := F3} ->
+        #{version := F4} ->
             begin
-                TrF3 = id(F3, TrUserData),
-                if TrF3 =:= 0 -> B2;
-                   true -> e_varint(TrF3, <<B2/binary, 24>>, TrUserData)
+                TrF4 = id(F4, TrUserData),
+                if TrF4 =:= undefined -> B3;
+                   true ->
+                       e_mfield_server_node_version(TrF4,
+                                                    <<B3/binary, 34>>,
+                                                    TrUserData)
                 end
             end;
-        _ -> B2
+        _ -> B3
     end.
 
 encode_msg_server_node_status(Msg, TrUserData) ->
@@ -3252,6 +3348,36 @@ encode_msg_server_node_status(#{} = M, Bin,
                        'e_enum_hstream.server.NodeState'(TrF2,
                                                          <<B1/binary, 16>>,
                                                          TrUserData)
+                end
+            end;
+        _ -> B1
+    end.
+
+encode_msg_h_stream_version(Msg, TrUserData) ->
+    encode_msg_h_stream_version(Msg, <<>>, TrUserData).
+
+
+encode_msg_h_stream_version(#{} = M, Bin, TrUserData) ->
+    B1 = case M of
+             #{version := F1} ->
+                 begin
+                     TrF1 = id(F1, TrUserData),
+                     case is_empty_string(TrF1) of
+                         true -> Bin;
+                         false ->
+                             e_type_string(TrF1, <<Bin/binary, 10>>, TrUserData)
+                     end
+                 end;
+             _ -> Bin
+         end,
+    case M of
+        #{commit := F2} ->
+            begin
+                TrF2 = id(F2, TrUserData),
+                case is_empty_string(TrF2) of
+                    true -> B1;
+                    false ->
+                        e_type_string(TrF2, <<B1/binary, 18>>, TrUserData)
                 end
             end;
         _ -> B1
@@ -3454,6 +3580,62 @@ encode_msg_lookup_resource_request(#{} = M, Bin,
                 end
             end;
         _ -> B1
+    end.
+
+encode_msg_get_tail_record_id_request(Msg,
+                                      TrUserData) ->
+    encode_msg_get_tail_record_id_request(Msg,
+                                          <<>>,
+                                          TrUserData).
+
+
+encode_msg_get_tail_record_id_request(#{} = M, Bin,
+                                      TrUserData) ->
+    B1 = case M of
+             #{streamName := F1} ->
+                 begin
+                     TrF1 = id(F1, TrUserData),
+                     case is_empty_string(TrF1) of
+                         true -> Bin;
+                         false ->
+                             e_type_string(TrF1, <<Bin/binary, 10>>, TrUserData)
+                     end
+                 end;
+             _ -> Bin
+         end,
+    case M of
+        #{shardId := F2} ->
+            begin
+                TrF2 = id(F2, TrUserData),
+                if TrF2 =:= 0 -> B1;
+                   true -> e_varint(TrF2, <<B1/binary, 16>>, TrUserData)
+                end
+            end;
+        _ -> B1
+    end.
+
+encode_msg_get_tail_record_id_response(Msg,
+                                       TrUserData) ->
+    encode_msg_get_tail_record_id_response(Msg,
+                                           <<>>,
+                                           TrUserData).
+
+
+encode_msg_get_tail_record_id_response(#{} = M, Bin,
+                                       TrUserData) ->
+    case M of
+        #{tailRecordId := F1} ->
+            begin
+                TrF1 = id(F1, TrUserData),
+                if TrF1 =:= undefined -> Bin;
+                   true ->
+                       e_mfield_get_tail_record_id_response_tailRecordId(TrF1,
+                                                                         <<Bin/binary,
+                                                                           10>>,
+                                                                         TrUserData)
+                end
+            end;
+        _ -> Bin
     end.
 
 encode_msg_stat_type(Msg, TrUserData) ->
@@ -4068,8 +4250,14 @@ e_field_list_shard_readers_response_readerId([], Bin,
                                              _TrUserData) ->
     Bin.
 
-e_mfield_read_shard_stream_request_shardOffset(Msg, Bin,
-                                               TrUserData) ->
+e_mfield_read_shard_stream_request_from(Msg, Bin,
+                                        TrUserData) ->
+    SubBin = encode_msg_shard_offset(Msg, <<>>, TrUserData),
+    Bin2 = e_varint(byte_size(SubBin), Bin),
+    <<Bin2/binary, SubBin/binary>>.
+
+e_mfield_read_shard_stream_request_until(Msg, Bin,
+                                         TrUserData) ->
     SubBin = encode_msg_shard_offset(Msg, <<>>, TrUserData),
     Bin2 = e_varint(byte_size(SubBin), Bin),
     <<Bin2/binary, SubBin/binary>>.
@@ -4330,7 +4518,7 @@ e_mfield_describe_cluster_response_serverNodes(Msg, Bin,
 e_field_describe_cluster_response_serverNodes([Elem
                                                | Rest],
                                               Bin, TrUserData) ->
-    Bin2 = <<Bin/binary, 26>>,
+    Bin2 = <<Bin/binary, 18>>,
     Bin3 =
         e_mfield_describe_cluster_response_serverNodes(id(Elem,
                                                           TrUserData),
@@ -4354,7 +4542,7 @@ e_mfield_describe_cluster_response_serverNodesStatus(Msg,
 e_field_describe_cluster_response_serverNodesStatus([Elem
                                                      | Rest],
                                                     Bin, TrUserData) ->
-    Bin2 = <<Bin/binary, 34>>,
+    Bin2 = <<Bin/binary, 26>>,
     Bin3 =
         e_mfield_describe_cluster_response_serverNodesStatus(id(Elem,
                                                                 TrUserData),
@@ -4366,6 +4554,13 @@ e_field_describe_cluster_response_serverNodesStatus([Elem
 e_field_describe_cluster_response_serverNodesStatus([],
                                                     Bin, _TrUserData) ->
     Bin.
+
+e_mfield_server_node_version(Msg, Bin, TrUserData) ->
+    SubBin = encode_msg_h_stream_version(Msg,
+                                         <<>>,
+                                         TrUserData),
+    Bin2 = e_varint(byte_size(SubBin), Bin),
+    <<Bin2/binary, SubBin/binary>>.
 
 e_mfield_server_node_status_node(Msg, Bin,
                                  TrUserData) ->
@@ -4388,6 +4583,12 @@ e_mfield_lookup_subscription_response_serverNode(Msg,
 e_mfield_lookup_shard_reader_response_serverNode(Msg,
                                                  Bin, TrUserData) ->
     SubBin = encode_msg_server_node(Msg, <<>>, TrUserData),
+    Bin2 = e_varint(byte_size(SubBin), Bin),
+    <<Bin2/binary, SubBin/binary>>.
+
+e_mfield_get_tail_record_id_response_tailRecordId(Msg,
+                                                  Bin, TrUserData) ->
+    SubBin = encode_msg_record_id(Msg, <<>>, TrUserData),
     Bin2 = e_varint(byte_size(SubBin), Bin),
     <<Bin2/binary, SubBin/binary>>.
 
@@ -4733,6 +4934,9 @@ e_field_list_value_values([], Bin, _TrUserData) -> Bin.
 'e_enum_hstream.server.SubscriptionStats'('ResponseMessages',
                                           Bin, _TrUserData) ->
     <<Bin/binary, 7>>;
+'e_enum_hstream.server.SubscriptionStats'('ChecklistSize',
+                                          Bin, _TrUserData) ->
+    <<Bin/binary, 8>>;
 'e_enum_hstream.server.SubscriptionStats'(V, Bin,
                                           _TrUserData) ->
     e_varint(V, Bin).
@@ -5287,6 +5491,9 @@ decode_msg_2_doit(server_node_status, Bin,
                   TrUserData) ->
     id(decode_msg_server_node_status(Bin, TrUserData),
        TrUserData);
+decode_msg_2_doit(h_stream_version, Bin, TrUserData) ->
+    id(decode_msg_h_stream_version(Bin, TrUserData),
+       TrUserData);
 decode_msg_2_doit(lookup_shard_request, Bin,
                   TrUserData) ->
     id(decode_msg_lookup_shard_request(Bin, TrUserData),
@@ -5318,6 +5525,16 @@ decode_msg_2_doit(lookup_shard_reader_response, Bin,
 decode_msg_2_doit(lookup_resource_request, Bin,
                   TrUserData) ->
     id(decode_msg_lookup_resource_request(Bin, TrUserData),
+       TrUserData);
+decode_msg_2_doit(get_tail_record_id_request, Bin,
+                  TrUserData) ->
+    id(decode_msg_get_tail_record_id_request(Bin,
+                                             TrUserData),
+       TrUserData);
+decode_msg_2_doit(get_tail_record_id_response, Bin,
+                  TrUserData) ->
+    id(decode_msg_get_tail_record_id_response(Bin,
+                                              TrUserData),
        TrUserData);
 decode_msg_2_doit(stat_type, Bin, TrUserData) ->
     id(decode_msg_stat_type(Bin, TrUserData), TrUserData);
@@ -16930,49 +17147,87 @@ decode_msg_read_shard_stream_request(Bin, TrUserData) ->
                                                  id(<<>>, TrUserData),
                                                  id(0, TrUserData),
                                                  id('$undef', TrUserData),
+                                                 id(0, TrUserData),
+                                                 id('$undef', TrUserData),
                                                  TrUserData).
 
 dfp_read_field_def_read_shard_stream_request(<<10,
                                                Rest/binary>>,
-                                             Z1, Z2, F@_1, F@_2, F@_3,
-                                             TrUserData) ->
+                                             Z1, Z2, F@_1, F@_2, F@_3, F@_4,
+                                             F@_5, TrUserData) ->
     d_field_read_shard_stream_request_readerId(Rest,
                                                Z1,
                                                Z2,
                                                F@_1,
                                                F@_2,
                                                F@_3,
+                                               F@_4,
+                                               F@_5,
                                                TrUserData);
 dfp_read_field_def_read_shard_stream_request(<<16,
                                                Rest/binary>>,
-                                             Z1, Z2, F@_1, F@_2, F@_3,
-                                             TrUserData) ->
+                                             Z1, Z2, F@_1, F@_2, F@_3, F@_4,
+                                             F@_5, TrUserData) ->
     d_field_read_shard_stream_request_shardId(Rest,
                                               Z1,
                                               Z2,
                                               F@_1,
                                               F@_2,
                                               F@_3,
+                                              F@_4,
+                                              F@_5,
                                               TrUserData);
 dfp_read_field_def_read_shard_stream_request(<<26,
                                                Rest/binary>>,
-                                             Z1, Z2, F@_1, F@_2, F@_3,
-                                             TrUserData) ->
-    d_field_read_shard_stream_request_shardOffset(Rest,
-                                                  Z1,
-                                                  Z2,
-                                                  F@_1,
-                                                  F@_2,
-                                                  F@_3,
-                                                  TrUserData);
+                                             Z1, Z2, F@_1, F@_2, F@_3, F@_4,
+                                             F@_5, TrUserData) ->
+    d_field_read_shard_stream_request_from(Rest,
+                                           Z1,
+                                           Z2,
+                                           F@_1,
+                                           F@_2,
+                                           F@_3,
+                                           F@_4,
+                                           F@_5,
+                                           TrUserData);
+dfp_read_field_def_read_shard_stream_request(<<32,
+                                               Rest/binary>>,
+                                             Z1, Z2, F@_1, F@_2, F@_3, F@_4,
+                                             F@_5, TrUserData) ->
+    d_field_read_shard_stream_request_maxReadBatches(Rest,
+                                                     Z1,
+                                                     Z2,
+                                                     F@_1,
+                                                     F@_2,
+                                                     F@_3,
+                                                     F@_4,
+                                                     F@_5,
+                                                     TrUserData);
+dfp_read_field_def_read_shard_stream_request(<<42,
+                                               Rest/binary>>,
+                                             Z1, Z2, F@_1, F@_2, F@_3, F@_4,
+                                             F@_5, TrUserData) ->
+    d_field_read_shard_stream_request_until(Rest,
+                                            Z1,
+                                            Z2,
+                                            F@_1,
+                                            F@_2,
+                                            F@_3,
+                                            F@_4,
+                                            F@_5,
+                                            TrUserData);
 dfp_read_field_def_read_shard_stream_request(<<>>, 0, 0,
-                                             F@_1, F@_2, F@_3, _) ->
-    S1 = #{readerId => F@_1, shardId => F@_2},
-    if F@_3 == '$undef' -> S1;
-       true -> S1#{shardOffset => F@_3}
+                                             F@_1, F@_2, F@_3, F@_4, F@_5, _) ->
+    S1 = #{readerId => F@_1, shardId => F@_2,
+           maxReadBatches => F@_4},
+    S2 = if F@_3 == '$undef' -> S1;
+            true -> S1#{from => F@_3}
+         end,
+    if F@_5 == '$undef' -> S2;
+       true -> S2#{until => F@_5}
     end;
 dfp_read_field_def_read_shard_stream_request(Other, Z1,
-                                             Z2, F@_1, F@_2, F@_3,
+                                             Z2, F@_1, F@_2, F@_3, F@_4, F@_5,
                                              TrUserData) ->
     dg_read_field_def_read_shard_stream_request(Other,
                                                 Z1,
@@ -16980,12 +17235,14 @@ dfp_read_field_def_read_shard_stream_request(Other, Z1,
                                                 F@_1,
                                                 F@_2,
                                                 F@_3,
+                                                F@_4,
+                                                F@_5,
                                                 TrUserData).
 
 dg_read_field_def_read_shard_stream_request(<<1:1, X:7,
                                               Rest/binary>>,
-                                            N, Acc, F@_1, F@_2, F@_3,
-                                            TrUserData)
+                                            N, Acc, F@_1, F@_2, F@_3, F@_4,
+                                            F@_5, TrUserData)
     when N < 32 - 7 ->
     dg_read_field_def_read_shard_stream_request(Rest,
                                                 N + 7,
@@ -16993,11 +17250,13 @@ dg_read_field_def_read_shard_stream_request(<<1:1, X:7,
                                                 F@_1,
                                                 F@_2,
                                                 F@_3,
+                                                F@_4,
+                                                F@_5,
                                                 TrUserData);
 dg_read_field_def_read_shard_stream_request(<<0:1, X:7,
                                               Rest/binary>>,
-                                            N, Acc, F@_1, F@_2, F@_3,
-                                            TrUserData) ->
+                                            N, Acc, F@_1, F@_2, F@_3, F@_4,
+                                            F@_5, TrUserData) ->
     Key = X bsl N + Acc,
     case Key of
         10 ->
@@ -17007,6 +17266,8 @@ dg_read_field_def_read_shard_stream_request(<<0:1, X:7,
                                                        F@_1,
                                                        F@_2,
                                                        F@_3,
+                                                       F@_4,
+                                                       F@_5,
                                                        TrUserData);
         16 ->
             d_field_read_shard_stream_request_shardId(Rest,
@@ -17015,15 +17276,39 @@ dg_read_field_def_read_shard_stream_request(<<0:1, X:7,
                                                       F@_1,
                                                       F@_2,
                                                       F@_3,
+                                                      F@_4,
+                                                      F@_5,
                                                       TrUserData);
         26 ->
-            d_field_read_shard_stream_request_shardOffset(Rest,
-                                                          0,
-                                                          0,
-                                                          F@_1,
-                                                          F@_2,
-                                                          F@_3,
-                                                          TrUserData);
+            d_field_read_shard_stream_request_from(Rest,
+                                                   0,
+                                                   0,
+                                                   F@_1,
+                                                   F@_2,
+                                                   F@_3,
+                                                   F@_4,
+                                                   F@_5,
+                                                   TrUserData);
+        32 ->
+            d_field_read_shard_stream_request_maxReadBatches(Rest,
+                                                             0,
+                                                             0,
+                                                             F@_1,
+                                                             F@_2,
+                                                             F@_3,
+                                                             F@_4,
+                                                             F@_5,
+                                                             TrUserData);
+        42 ->
+            d_field_read_shard_stream_request_until(Rest,
+                                                    0,
+                                                    0,
+                                                    F@_1,
+                                                    F@_2,
+                                                    F@_3,
+                                                    F@_4,
+                                                    F@_5,
+                                                    TrUserData);
         _ ->
             case Key band 7 of
                 0 ->
@@ -17033,6 +17318,8 @@ dg_read_field_def_read_shard_stream_request(<<0:1, X:7,
                                                           F@_1,
                                                           F@_2,
                                                           F@_3,
+                                                          F@_4,
+                                                          F@_5,
                                                           TrUserData);
                 1 ->
                     skip_64_read_shard_stream_request(Rest,
@@ -17041,6 +17328,8 @@ dg_read_field_def_read_shard_stream_request(<<0:1, X:7,
                                                       F@_1,
                                                       F@_2,
                                                       F@_3,
+                                                      F@_4,
+                                                      F@_5,
                                                       TrUserData);
                 2 ->
                     skip_length_delimited_read_shard_stream_request(Rest,
@@ -17049,6 +17338,8 @@ dg_read_field_def_read_shard_stream_request(<<0:1, X:7,
                                                                     F@_1,
                                                                     F@_2,
                                                                     F@_3,
+                                                                    F@_4,
+                                                                    F@_5,
                                                                     TrUserData);
                 3 ->
                     skip_group_read_shard_stream_request(Rest,
@@ -17057,6 +17348,8 @@ dg_read_field_def_read_shard_stream_request(<<0:1, X:7,
                                                          F@_1,
                                                          F@_2,
                                                          F@_3,
+                                                         F@_4,
+                                                         F@_5,
                                                          TrUserData);
                 5 ->
                     skip_32_read_shard_stream_request(Rest,
@@ -17065,19 +17358,26 @@ dg_read_field_def_read_shard_stream_request(<<0:1, X:7,
                                                       F@_1,
                                                       F@_2,
                                                       F@_3,
+                                                      F@_4,
+                                                      F@_5,
                                                       TrUserData)
             end
     end;
 dg_read_field_def_read_shard_stream_request(<<>>, 0, 0,
-                                            F@_1, F@_2, F@_3, _) ->
-    S1 = #{readerId => F@_1, shardId => F@_2},
-    if F@_3 == '$undef' -> S1;
-       true -> S1#{shardOffset => F@_3}
+                                            F@_1, F@_2, F@_3, F@_4, F@_5, _) ->
+    S1 = #{readerId => F@_1, shardId => F@_2,
+           maxReadBatches => F@_4},
+    S2 = if F@_3 == '$undef' -> S1;
+            true -> S1#{from => F@_3}
+         end,
+    if F@_5 == '$undef' -> S2;
+       true -> S2#{until => F@_5}
     end.
 
 d_field_read_shard_stream_request_readerId(<<1:1, X:7,
                                              Rest/binary>>,
-                                           N, Acc, F@_1, F@_2, F@_3, TrUserData)
+                                           N, Acc, F@_1, F@_2, F@_3, F@_4, F@_5,
+                                           TrUserData)
     when N < 57 ->
     d_field_read_shard_stream_request_readerId(Rest,
                                                N + 7,
@@ -17085,10 +17385,13 @@ d_field_read_shard_stream_request_readerId(<<1:1, X:7,
                                                F@_1,
                                                F@_2,
                                                F@_3,
+                                               F@_4,
+                                               F@_5,
                                                TrUserData);
 d_field_read_shard_stream_request_readerId(<<0:1, X:7,
                                              Rest/binary>>,
-                                           N, Acc, _, F@_2, F@_3, TrUserData) ->
+                                           N, Acc, _, F@_2, F@_3, F@_4, F@_5,
+                                           TrUserData) ->
     {NewFValue, RestF} = begin
                              Len = X bsl N + Acc,
                              <<Bytes:Len/binary, Rest2/binary>> = Rest,
@@ -17100,11 +17403,14 @@ d_field_read_shard_stream_request_readerId(<<0:1, X:7,
                                                  NewFValue,
                                                  F@_2,
                                                  F@_3,
+                                                 F@_4,
+                                                 F@_5,
                                                  TrUserData).
 
 d_field_read_shard_stream_request_shardId(<<1:1, X:7,
                                             Rest/binary>>,
-                                          N, Acc, F@_1, F@_2, F@_3, TrUserData)
+                                          N, Acc, F@_1, F@_2, F@_3, F@_4, F@_5,
+                                          TrUserData)
     when N < 57 ->
     d_field_read_shard_stream_request_shardId(Rest,
                                               N + 7,
@@ -17112,10 +17418,13 @@ d_field_read_shard_stream_request_shardId(<<1:1, X:7,
                                               F@_1,
                                               F@_2,
                                               F@_3,
+                                              F@_4,
+                                              F@_5,
                                               TrUserData);
 d_field_read_shard_stream_request_shardId(<<0:1, X:7,
                                             Rest/binary>>,
-                                          N, Acc, F@_1, _, F@_3, TrUserData) ->
+                                          N, Acc, F@_1, _, F@_3, F@_4, F@_5,
+                                          TrUserData) ->
     {NewFValue, RestF} = {id(X bsl N + Acc, TrUserData),
                           Rest},
     dfp_read_field_def_read_shard_stream_request(RestF,
@@ -17124,24 +17433,28 @@ d_field_read_shard_stream_request_shardId(<<0:1, X:7,
                                                  F@_1,
                                                  NewFValue,
                                                  F@_3,
+                                                 F@_4,
+                                                 F@_5,
                                                  TrUserData).
 
-d_field_read_shard_stream_request_shardOffset(<<1:1,
-                                                X:7, Rest/binary>>,
-                                              N, Acc, F@_1, F@_2, F@_3,
-                                              TrUserData)
+d_field_read_shard_stream_request_from(<<1:1, X:7,
+                                         Rest/binary>>,
+                                       N, Acc, F@_1, F@_2, F@_3, F@_4, F@_5,
+                                       TrUserData)
     when N < 57 ->
-    d_field_read_shard_stream_request_shardOffset(Rest,
-                                                  N + 7,
-                                                  X bsl N + Acc,
-                                                  F@_1,
-                                                  F@_2,
-                                                  F@_3,
-                                                  TrUserData);
-d_field_read_shard_stream_request_shardOffset(<<0:1,
-                                                X:7, Rest/binary>>,
-                                              N, Acc, F@_1, F@_2, Prev,
-                                              TrUserData) ->
+    d_field_read_shard_stream_request_from(Rest,
+                                           N + 7,
+                                           X bsl N + Acc,
+                                           F@_1,
+                                           F@_2,
+                                           F@_3,
+                                           F@_4,
+                                           F@_5,
+                                           TrUserData);
+d_field_read_shard_stream_request_from(<<0:1, X:7,
+                                         Rest/binary>>,
+                                       N, Acc, F@_1, F@_2, Prev, F@_4, F@_5,
+                                       TrUserData) ->
     {NewFValue, RestF} = begin
                              Len = X bsl N + Acc,
                              <<Bs:Len/binary, Rest2/binary>> = Rest,
@@ -17161,33 +17474,112 @@ d_field_read_shard_stream_request_shardOffset(<<0:1,
                                                                                NewFValue,
                                                                                TrUserData)
                                                  end,
+                                                 F@_4,
+                                                 F@_5,
+                                                 TrUserData).
+
+d_field_read_shard_stream_request_maxReadBatches(<<1:1,
+                                                   X:7, Rest/binary>>,
+                                                 N, Acc, F@_1, F@_2, F@_3, F@_4,
+                                                 F@_5, TrUserData)
+    when N < 57 ->
+    d_field_read_shard_stream_request_maxReadBatches(Rest,
+                                                     N + 7,
+                                                     X bsl N + Acc,
+                                                     F@_1,
+                                                     F@_2,
+                                                     F@_3,
+                                                     F@_4,
+                                                     F@_5,
+                                                     TrUserData);
+d_field_read_shard_stream_request_maxReadBatches(<<0:1,
+                                                   X:7, Rest/binary>>,
+                                                 N, Acc, F@_1, F@_2, F@_3, _,
+                                                 F@_5, TrUserData) ->
+    {NewFValue, RestF} = {id(X bsl N + Acc, TrUserData),
+                          Rest},
+    dfp_read_field_def_read_shard_stream_request(RestF,
+                                                 0,
+                                                 0,
+                                                 F@_1,
+                                                 F@_2,
+                                                 F@_3,
+                                                 NewFValue,
+                                                 F@_5,
+                                                 TrUserData).
+
+d_field_read_shard_stream_request_until(<<1:1, X:7,
+                                          Rest/binary>>,
+                                        N, Acc, F@_1, F@_2, F@_3, F@_4, F@_5,
+                                        TrUserData)
+    when N < 57 ->
+    d_field_read_shard_stream_request_until(Rest,
+                                            N + 7,
+                                            X bsl N + Acc,
+                                            F@_1,
+                                            F@_2,
+                                            F@_3,
+                                            F@_4,
+                                            F@_5,
+                                            TrUserData);
+d_field_read_shard_stream_request_until(<<0:1, X:7,
+                                          Rest/binary>>,
+                                        N, Acc, F@_1, F@_2, F@_3, F@_4, Prev,
+                                        TrUserData) ->
+    {NewFValue, RestF} = begin
+                             Len = X bsl N + Acc,
+                             <<Bs:Len/binary, Rest2/binary>> = Rest,
+                             {id(decode_msg_shard_offset(Bs, TrUserData),
+                                 TrUserData),
+                              Rest2}
+                         end,
+    dfp_read_field_def_read_shard_stream_request(RestF,
+                                                 0,
+                                                 0,
+                                                 F@_1,
+                                                 F@_2,
+                                                 F@_3,
+                                                 F@_4,
+                                                 if Prev == '$undef' ->
+                                                        NewFValue;
+                                                    true ->
+                                                        merge_msg_shard_offset(Prev,
+                                                                               NewFValue,
+                                                                               TrUserData)
+                                                 end,
                                                  TrUserData).
 
 skip_varint_read_shard_stream_request(<<1:1, _:7,
                                         Rest/binary>>,
-                                      Z1, Z2, F@_1, F@_2, F@_3, TrUserData) ->
+                                      Z1, Z2, F@_1, F@_2, F@_3, F@_4, F@_5,
+                                      TrUserData) ->
     skip_varint_read_shard_stream_request(Rest,
                                           Z1,
                                           Z2,
                                           F@_1,
                                           F@_2,
                                           F@_3,
+                                          F@_4,
+                                          F@_5,
                                           TrUserData);
 skip_varint_read_shard_stream_request(<<0:1, _:7,
                                         Rest/binary>>,
-                                      Z1, Z2, F@_1, F@_2, F@_3, TrUserData) ->
+                                      Z1, Z2, F@_1, F@_2, F@_3, F@_4, F@_5,
+                                      TrUserData) ->
     dfp_read_field_def_read_shard_stream_request(Rest,
                                                  Z1,
                                                  Z2,
                                                  F@_1,
                                                  F@_2,
                                                  F@_3,
+                                                 F@_4,
+                                                 F@_5,
                                                  TrUserData).
 
 skip_length_delimited_read_shard_stream_request(<<1:1,
                                                   X:7, Rest/binary>>,
-                                                N, Acc, F@_1, F@_2, F@_3,
-                                                TrUserData)
+                                                N, Acc, F@_1, F@_2, F@_3, F@_4,
+                                                F@_5, TrUserData)
     when N < 57 ->
     skip_length_delimited_read_shard_stream_request(Rest,
                                                     N + 7,
@@ -17195,11 +17587,13 @@ skip_length_delimited_read_shard_stream_request(<<1:1,
                                                     F@_1,
                                                     F@_2,
                                                     F@_3,
+                                                    F@_4,
+                                                    F@_5,
                                                     TrUserData);
 skip_length_delimited_read_shard_stream_request(<<0:1,
                                                   X:7, Rest/binary>>,
-                                                N, Acc, F@_1, F@_2, F@_3,
-                                                TrUserData) ->
+                                                N, Acc, F@_1, F@_2, F@_3, F@_4,
+                                                F@_5, TrUserData) ->
     Length = X bsl N + Acc,
     <<_:Length/binary, Rest2/binary>> = Rest,
     dfp_read_field_def_read_shard_stream_request(Rest2,
@@ -17208,10 +17602,13 @@ skip_length_delimited_read_shard_stream_request(<<0:1,
                                                  F@_1,
                                                  F@_2,
                                                  F@_3,
+                                                 F@_4,
+                                                 F@_5,
                                                  TrUserData).
 
 skip_group_read_shard_stream_request(Bin, FNum, Z2,
-                                     F@_1, F@_2, F@_3, TrUserData) ->
+                                     F@_1, F@_2, F@_3, F@_4, F@_5,
+                                     TrUserData) ->
     {_, Rest} = read_group(Bin, FNum),
     dfp_read_field_def_read_shard_stream_request(Rest,
                                                  0,
@@ -17219,26 +17616,34 @@ skip_group_read_shard_stream_request(Bin, FNum, Z2,
                                                  F@_1,
                                                  F@_2,
                                                  F@_3,
+                                                 F@_4,
+                                                 F@_5,
                                                  TrUserData).
 
 skip_32_read_shard_stream_request(<<_:32, Rest/binary>>,
-                                  Z1, Z2, F@_1, F@_2, F@_3, TrUserData) ->
+                                  Z1, Z2, F@_1, F@_2, F@_3, F@_4, F@_5,
+                                  TrUserData) ->
     dfp_read_field_def_read_shard_stream_request(Rest,
                                                  Z1,
                                                  Z2,
                                                  F@_1,
                                                  F@_2,
                                                  F@_3,
+                                                 F@_4,
+                                                 F@_5,
                                                  TrUserData).
 
 skip_64_read_shard_stream_request(<<_:64, Rest/binary>>,
-                                  Z1, Z2, F@_1, F@_2, F@_3, TrUserData) ->
+                                  Z1, Z2, F@_1, F@_2, F@_3, F@_4, F@_5,
+                                  TrUserData) ->
     dfp_read_field_def_read_shard_stream_request(Rest,
                                                  Z1,
                                                  Z2,
                                                  F@_1,
                                                  F@_2,
                                                  F@_3,
+                                                 F@_4,
+                                                 F@_5,
                                                  TrUserData).
 
 decode_msg_read_shard_stream_response(Bin,
@@ -18879,10 +19284,11 @@ decode_msg_query(Bin, TrUserData) ->
                              id([], TrUserData),
                              id(<<>>, TrUserData),
                              id('CreateStreamAs', TrUserData),
+                             id(0, TrUserData),
                              TrUserData).
 
 dfp_read_field_def_query(<<10, Rest/binary>>, Z1, Z2,
-                         F@_1, F@_2, F@_3, F@_4, F@_5, F@_6, F@_7,
+                         F@_1, F@_2, F@_3, F@_4, F@_5, F@_6, F@_7, F@_8,
                          TrUserData) ->
     d_field_query_id(Rest,
                      Z1,
@@ -18894,9 +19300,10 @@ dfp_read_field_def_query(<<10, Rest/binary>>, Z1, Z2,
                      F@_5,
                      F@_6,
                      F@_7,
+                     F@_8,
                      TrUserData);
 dfp_read_field_def_query(<<16, Rest/binary>>, Z1, Z2,
-                         F@_1, F@_2, F@_3, F@_4, F@_5, F@_6, F@_7,
+                         F@_1, F@_2, F@_3, F@_4, F@_5, F@_6, F@_7, F@_8,
                          TrUserData) ->
     d_field_query_status(Rest,
                          Z1,
@@ -18908,9 +19315,10 @@ dfp_read_field_def_query(<<16, Rest/binary>>, Z1, Z2,
                          F@_5,
                          F@_6,
                          F@_7,
+                         F@_8,
                          TrUserData);
 dfp_read_field_def_query(<<24, Rest/binary>>, Z1, Z2,
-                         F@_1, F@_2, F@_3, F@_4, F@_5, F@_6, F@_7,
+                         F@_1, F@_2, F@_3, F@_4, F@_5, F@_6, F@_7, F@_8,
                          TrUserData) ->
     d_field_query_createdTime(Rest,
                               Z1,
@@ -18922,9 +19330,10 @@ dfp_read_field_def_query(<<24, Rest/binary>>, Z1, Z2,
                               F@_5,
                               F@_6,
                               F@_7,
+                              F@_8,
                               TrUserData);
 dfp_read_field_def_query(<<34, Rest/binary>>, Z1, Z2,
-                         F@_1, F@_2, F@_3, F@_4, F@_5, F@_6, F@_7,
+                         F@_1, F@_2, F@_3, F@_4, F@_5, F@_6, F@_7, F@_8,
                          TrUserData) ->
     d_field_query_queryText(Rest,
                             Z1,
@@ -18936,9 +19345,10 @@ dfp_read_field_def_query(<<34, Rest/binary>>, Z1, Z2,
                             F@_5,
                             F@_6,
                             F@_7,
+                            F@_8,
                             TrUserData);
 dfp_read_field_def_query(<<42, Rest/binary>>, Z1, Z2,
-                         F@_1, F@_2, F@_3, F@_4, F@_5, F@_6, F@_7,
+                         F@_1, F@_2, F@_3, F@_4, F@_5, F@_6, F@_7, F@_8,
                          TrUserData) ->
     d_field_query_sources(Rest,
                           Z1,
@@ -18950,9 +19360,10 @@ dfp_read_field_def_query(<<42, Rest/binary>>, Z1, Z2,
                           F@_5,
                           F@_6,
                           F@_7,
+                          F@_8,
                           TrUserData);
 dfp_read_field_def_query(<<50, Rest/binary>>, Z1, Z2,
-                         F@_1, F@_2, F@_3, F@_4, F@_5, F@_6, F@_7,
+                         F@_1, F@_2, F@_3, F@_4, F@_5, F@_6, F@_7, F@_8,
                          TrUserData) ->
     d_field_query_resultName(Rest,
                              Z1,
@@ -18964,9 +19375,10 @@ dfp_read_field_def_query(<<50, Rest/binary>>, Z1, Z2,
                              F@_5,
                              F@_6,
                              F@_7,
+                             F@_8,
                              TrUserData);
 dfp_read_field_def_query(<<56, Rest/binary>>, Z1, Z2,
-                         F@_1, F@_2, F@_3, F@_4, F@_5, F@_6, F@_7,
+                         F@_1, F@_2, F@_3, F@_4, F@_5, F@_6, F@_7, F@_8,
                          TrUserData) ->
     d_field_query_type(Rest,
                        Z1,
@@ -18978,15 +19390,31 @@ dfp_read_field_def_query(<<56, Rest/binary>>, Z1, Z2,
                        F@_5,
                        F@_6,
                        F@_7,
+                       F@_8,
                        TrUserData);
+dfp_read_field_def_query(<<64, Rest/binary>>, Z1, Z2,
+                         F@_1, F@_2, F@_3, F@_4, F@_5, F@_6, F@_7, F@_8,
+                         TrUserData) ->
+    d_field_query_nodeId(Rest,
+                         Z1,
+                         Z2,
+                         F@_1,
+                         F@_2,
+                         F@_3,
+                         F@_4,
+                         F@_5,
+                         F@_6,
+                         F@_7,
+                         F@_8,
+                         TrUserData);
 dfp_read_field_def_query(<<>>, 0, 0, F@_1, F@_2, F@_3,
-                         F@_4, R1, F@_6, F@_7, TrUserData) ->
+                         F@_4, R1, F@_6, F@_7, F@_8, TrUserData) ->
     #{id => F@_1, status => F@_2, createdTime => F@_3,
       queryText => F@_4,
       sources => lists_reverse(R1, TrUserData),
-      resultName => F@_6, type => F@_7};
+      resultName => F@_6, type => F@_7, nodeId => F@_8};
 dfp_read_field_def_query(Other, Z1, Z2, F@_1, F@_2,
-                         F@_3, F@_4, F@_5, F@_6, F@_7, TrUserData) ->
+                         F@_3, F@_4, F@_5, F@_6, F@_7, F@_8, TrUserData) ->
     dg_read_field_def_query(Other,
                             Z1,
                             Z2,
@@ -18997,10 +19425,11 @@ dfp_read_field_def_query(Other, Z1, Z2, F@_1, F@_2,
                             F@_5,
                             F@_6,
                             F@_7,
+                            F@_8,
                             TrUserData).
 
 dg_read_field_def_query(<<1:1, X:7, Rest/binary>>, N,
-                        Acc, F@_1, F@_2, F@_3, F@_4, F@_5, F@_6, F@_7,
+                        Acc, F@_1, F@_2, F@_3, F@_4, F@_5, F@_6, F@_7, F@_8,
                         TrUserData)
     when N < 32 - 7 ->
     dg_read_field_def_query(Rest,
@@ -19013,9 +19442,10 @@ dg_read_field_def_query(<<1:1, X:7, Rest/binary>>, N,
                             F@_5,
                             F@_6,
                             F@_7,
+                            F@_8,
                             TrUserData);
 dg_read_field_def_query(<<0:1, X:7, Rest/binary>>, N,
-                        Acc, F@_1, F@_2, F@_3, F@_4, F@_5, F@_6, F@_7,
+                        Acc, F@_1, F@_2, F@_3, F@_4, F@_5, F@_6, F@_7, F@_8,
                         TrUserData) ->
     Key = X bsl N + Acc,
     case Key of
@@ -19030,6 +19460,7 @@ dg_read_field_def_query(<<0:1, X:7, Rest/binary>>, N,
                              F@_5,
                              F@_6,
                              F@_7,
+                             F@_8,
                              TrUserData);
         16 ->
             d_field_query_status(Rest,
@@ -19042,6 +19473,7 @@ dg_read_field_def_query(<<0:1, X:7, Rest/binary>>, N,
                                  F@_5,
                                  F@_6,
                                  F@_7,
+                                 F@_8,
                                  TrUserData);
         24 ->
             d_field_query_createdTime(Rest,
@@ -19054,6 +19486,7 @@ dg_read_field_def_query(<<0:1, X:7, Rest/binary>>, N,
                                       F@_5,
                                       F@_6,
                                       F@_7,
+                                      F@_8,
                                       TrUserData);
         34 ->
             d_field_query_queryText(Rest,
@@ -19066,6 +19499,7 @@ dg_read_field_def_query(<<0:1, X:7, Rest/binary>>, N,
                                     F@_5,
                                     F@_6,
                                     F@_7,
+                                    F@_8,
                                     TrUserData);
         42 ->
             d_field_query_sources(Rest,
@@ -19078,6 +19512,7 @@ dg_read_field_def_query(<<0:1, X:7, Rest/binary>>, N,
                                   F@_5,
                                   F@_6,
                                   F@_7,
+                                  F@_8,
                                   TrUserData);
         50 ->
             d_field_query_resultName(Rest,
@@ -19090,6 +19525,7 @@ dg_read_field_def_query(<<0:1, X:7, Rest/binary>>, N,
                                      F@_5,
                                      F@_6,
                                      F@_7,
+                                     F@_8,
                                      TrUserData);
         56 ->
             d_field_query_type(Rest,
@@ -19102,7 +19538,21 @@ dg_read_field_def_query(<<0:1, X:7, Rest/binary>>, N,
                                F@_5,
                                F@_6,
                                F@_7,
+                               F@_8,
                                TrUserData);
+        64 ->
+            d_field_query_nodeId(Rest,
+                                 0,
+                                 0,
+                                 F@_1,
+                                 F@_2,
+                                 F@_3,
+                                 F@_4,
+                                 F@_5,
+                                 F@_6,
+                                 F@_7,
+                                 F@_8,
+                                 TrUserData);
         _ ->
             case Key band 7 of
                 0 ->
@@ -19116,6 +19566,7 @@ dg_read_field_def_query(<<0:1, X:7, Rest/binary>>, N,
                                       F@_5,
                                       F@_6,
                                       F@_7,
+                                      F@_8,
                                       TrUserData);
                 1 ->
                     skip_64_query(Rest,
@@ -19128,6 +19579,7 @@ dg_read_field_def_query(<<0:1, X:7, Rest/binary>>, N,
                                   F@_5,
                                   F@_6,
                                   F@_7,
+                                  F@_8,
                                   TrUserData);
                 2 ->
                     skip_length_delimited_query(Rest,
@@ -19140,6 +19592,7 @@ dg_read_field_def_query(<<0:1, X:7, Rest/binary>>, N,
                                                 F@_5,
                                                 F@_6,
                                                 F@_7,
+                                                F@_8,
                                                 TrUserData);
                 3 ->
                     skip_group_query(Rest,
@@ -19152,6 +19605,7 @@ dg_read_field_def_query(<<0:1, X:7, Rest/binary>>, N,
                                      F@_5,
                                      F@_6,
                                      F@_7,
+                                     F@_8,
                                      TrUserData);
                 5 ->
                     skip_32_query(Rest,
@@ -19164,18 +19618,20 @@ dg_read_field_def_query(<<0:1, X:7, Rest/binary>>, N,
                                   F@_5,
                                   F@_6,
                                   F@_7,
+                                  F@_8,
                                   TrUserData)
             end
     end;
 dg_read_field_def_query(<<>>, 0, 0, F@_1, F@_2, F@_3,
-                        F@_4, R1, F@_6, F@_7, TrUserData) ->
+                        F@_4, R1, F@_6, F@_7, F@_8, TrUserData) ->
     #{id => F@_1, status => F@_2, createdTime => F@_3,
       queryText => F@_4,
       sources => lists_reverse(R1, TrUserData),
-      resultName => F@_6, type => F@_7}.
+      resultName => F@_6, type => F@_7, nodeId => F@_8}.
 
 d_field_query_id(<<1:1, X:7, Rest/binary>>, N, Acc,
-                 F@_1, F@_2, F@_3, F@_4, F@_5, F@_6, F@_7, TrUserData)
+                 F@_1, F@_2, F@_3, F@_4, F@_5, F@_6, F@_7, F@_8,
+                 TrUserData)
     when N < 57 ->
     d_field_query_id(Rest,
                      N + 7,
@@ -19187,9 +19643,10 @@ d_field_query_id(<<1:1, X:7, Rest/binary>>, N, Acc,
                      F@_5,
                      F@_6,
                      F@_7,
+                     F@_8,
                      TrUserData);
 d_field_query_id(<<0:1, X:7, Rest/binary>>, N, Acc, _,
-                 F@_2, F@_3, F@_4, F@_5, F@_6, F@_7, TrUserData) ->
+                 F@_2, F@_3, F@_4, F@_5, F@_6, F@_7, F@_8, TrUserData) ->
     {NewFValue, RestF} = begin
                              Len = X bsl N + Acc,
                              <<Bytes:Len/binary, Rest2/binary>> = Rest,
@@ -19205,10 +19662,12 @@ d_field_query_id(<<0:1, X:7, Rest/binary>>, N, Acc, _,
                              F@_5,
                              F@_6,
                              F@_7,
+                             F@_8,
                              TrUserData).
 
 d_field_query_status(<<1:1, X:7, Rest/binary>>, N, Acc,
-                     F@_1, F@_2, F@_3, F@_4, F@_5, F@_6, F@_7, TrUserData)
+                     F@_1, F@_2, F@_3, F@_4, F@_5, F@_6, F@_7, F@_8,
+                     TrUserData)
     when N < 57 ->
     d_field_query_status(Rest,
                          N + 7,
@@ -19220,9 +19679,11 @@ d_field_query_status(<<1:1, X:7, Rest/binary>>, N, Acc,
                          F@_5,
                          F@_6,
                          F@_7,
+                         F@_8,
                          TrUserData);
 d_field_query_status(<<0:1, X:7, Rest/binary>>, N, Acc,
-                     F@_1, _, F@_3, F@_4, F@_5, F@_6, F@_7, TrUserData) ->
+                     F@_1, _, F@_3, F@_4, F@_5, F@_6, F@_7, F@_8,
+                     TrUserData) ->
     {NewFValue, RestF} =
         {id('d_enum_hstream.server.TaskStatusPB'(begin
                                                      <<Res:32/signed-native>> =
@@ -19242,10 +19703,11 @@ d_field_query_status(<<0:1, X:7, Rest/binary>>, N, Acc,
                              F@_5,
                              F@_6,
                              F@_7,
+                             F@_8,
                              TrUserData).
 
 d_field_query_createdTime(<<1:1, X:7, Rest/binary>>, N,
-                          Acc, F@_1, F@_2, F@_3, F@_4, F@_5, F@_6, F@_7,
+                          Acc, F@_1, F@_2, F@_3, F@_4, F@_5, F@_6, F@_7, F@_8,
                           TrUserData)
     when N < 57 ->
     d_field_query_createdTime(Rest,
@@ -19258,9 +19720,10 @@ d_field_query_createdTime(<<1:1, X:7, Rest/binary>>, N,
                               F@_5,
                               F@_6,
                               F@_7,
+                              F@_8,
                               TrUserData);
 d_field_query_createdTime(<<0:1, X:7, Rest/binary>>, N,
-                          Acc, F@_1, F@_2, _, F@_4, F@_5, F@_6, F@_7,
+                          Acc, F@_1, F@_2, _, F@_4, F@_5, F@_6, F@_7, F@_8,
                           TrUserData) ->
     {NewFValue, RestF} = {begin
                               <<Res:64/signed-native>> = <<(X bsl N +
@@ -19278,10 +19741,11 @@ d_field_query_createdTime(<<0:1, X:7, Rest/binary>>, N,
                              F@_5,
                              F@_6,
                              F@_7,
+                             F@_8,
                              TrUserData).
 
 d_field_query_queryText(<<1:1, X:7, Rest/binary>>, N,
-                        Acc, F@_1, F@_2, F@_3, F@_4, F@_5, F@_6, F@_7,
+                        Acc, F@_1, F@_2, F@_3, F@_4, F@_5, F@_6, F@_7, F@_8,
                         TrUserData)
     when N < 57 ->
     d_field_query_queryText(Rest,
@@ -19294,9 +19758,10 @@ d_field_query_queryText(<<1:1, X:7, Rest/binary>>, N,
                             F@_5,
                             F@_6,
                             F@_7,
+                            F@_8,
                             TrUserData);
 d_field_query_queryText(<<0:1, X:7, Rest/binary>>, N,
-                        Acc, F@_1, F@_2, F@_3, _, F@_5, F@_6, F@_7,
+                        Acc, F@_1, F@_2, F@_3, _, F@_5, F@_6, F@_7, F@_8,
                         TrUserData) ->
     {NewFValue, RestF} = begin
                              Len = X bsl N + Acc,
@@ -19313,10 +19778,12 @@ d_field_query_queryText(<<0:1, X:7, Rest/binary>>, N,
                              F@_5,
                              F@_6,
                              F@_7,
+                             F@_8,
                              TrUserData).
 
 d_field_query_sources(<<1:1, X:7, Rest/binary>>, N, Acc,
-                      F@_1, F@_2, F@_3, F@_4, F@_5, F@_6, F@_7, TrUserData)
+                      F@_1, F@_2, F@_3, F@_4, F@_5, F@_6, F@_7, F@_8,
+                      TrUserData)
     when N < 57 ->
     d_field_query_sources(Rest,
                           N + 7,
@@ -19328,9 +19795,11 @@ d_field_query_sources(<<1:1, X:7, Rest/binary>>, N, Acc,
                           F@_5,
                           F@_6,
                           F@_7,
+                          F@_8,
                           TrUserData);
 d_field_query_sources(<<0:1, X:7, Rest/binary>>, N, Acc,
-                      F@_1, F@_2, F@_3, F@_4, Prev, F@_6, F@_7, TrUserData) ->
+                      F@_1, F@_2, F@_3, F@_4, Prev, F@_6, F@_7, F@_8,
+                      TrUserData) ->
     {NewFValue, RestF} = begin
                              Len = X bsl N + Acc,
                              <<Bytes:Len/binary, Rest2/binary>> = Rest,
@@ -19346,10 +19815,11 @@ d_field_query_sources(<<0:1, X:7, Rest/binary>>, N, Acc,
                              cons(NewFValue, Prev, TrUserData),
                              F@_6,
                              F@_7,
+                             F@_8,
                              TrUserData).
 
 d_field_query_resultName(<<1:1, X:7, Rest/binary>>, N,
-                         Acc, F@_1, F@_2, F@_3, F@_4, F@_5, F@_6, F@_7,
+                         Acc, F@_1, F@_2, F@_3, F@_4, F@_5, F@_6, F@_7, F@_8,
                          TrUserData)
     when N < 57 ->
     d_field_query_resultName(Rest,
@@ -19362,9 +19832,10 @@ d_field_query_resultName(<<1:1, X:7, Rest/binary>>, N,
                              F@_5,
                              F@_6,
                              F@_7,
+                             F@_8,
                              TrUserData);
 d_field_query_resultName(<<0:1, X:7, Rest/binary>>, N,
-                         Acc, F@_1, F@_2, F@_3, F@_4, F@_5, _, F@_7,
+                         Acc, F@_1, F@_2, F@_3, F@_4, F@_5, _, F@_7, F@_8,
                          TrUserData) ->
     {NewFValue, RestF} = begin
                              Len = X bsl N + Acc,
@@ -19381,10 +19852,12 @@ d_field_query_resultName(<<0:1, X:7, Rest/binary>>, N,
                              F@_5,
                              NewFValue,
                              F@_7,
+                             F@_8,
                              TrUserData).
 
 d_field_query_type(<<1:1, X:7, Rest/binary>>, N, Acc,
-                   F@_1, F@_2, F@_3, F@_4, F@_5, F@_6, F@_7, TrUserData)
+                   F@_1, F@_2, F@_3, F@_4, F@_5, F@_6, F@_7, F@_8,
+                   TrUserData)
     when N < 57 ->
     d_field_query_type(Rest,
                        N + 7,
@@ -19396,9 +19869,11 @@ d_field_query_type(<<1:1, X:7, Rest/binary>>, N, Acc,
                        F@_5,
                        F@_6,
                        F@_7,
+                       F@_8,
                        TrUserData);
 d_field_query_type(<<0:1, X:7, Rest/binary>>, N, Acc,
-                   F@_1, F@_2, F@_3, F@_4, F@_5, F@_6, _, TrUserData) ->
+                   F@_1, F@_2, F@_3, F@_4, F@_5, F@_6, _, F@_8,
+                   TrUserData) ->
     {NewFValue, RestF} =
         {id('d_enum_hstream.server.QueryType'(begin
                                                   <<Res:32/signed-native>> =
@@ -19418,10 +19893,46 @@ d_field_query_type(<<0:1, X:7, Rest/binary>>, N, Acc,
                              F@_5,
                              F@_6,
                              NewFValue,
+                             F@_8,
+                             TrUserData).
+
+d_field_query_nodeId(<<1:1, X:7, Rest/binary>>, N, Acc,
+                     F@_1, F@_2, F@_3, F@_4, F@_5, F@_6, F@_7, F@_8,
+                     TrUserData)
+    when N < 57 ->
+    d_field_query_nodeId(Rest,
+                         N + 7,
+                         X bsl N + Acc,
+                         F@_1,
+                         F@_2,
+                         F@_3,
+                         F@_4,
+                         F@_5,
+                         F@_6,
+                         F@_7,
+                         F@_8,
+                         TrUserData);
+d_field_query_nodeId(<<0:1, X:7, Rest/binary>>, N, Acc,
+                     F@_1, F@_2, F@_3, F@_4, F@_5, F@_6, F@_7, _,
+                     TrUserData) ->
+    {NewFValue, RestF} = {id(X bsl N + Acc, TrUserData),
+                          Rest},
+    dfp_read_field_def_query(RestF,
+                             0,
+                             0,
+                             F@_1,
+                             F@_2,
+                             F@_3,
+                             F@_4,
+                             F@_5,
+                             F@_6,
+                             F@_7,
+                             NewFValue,
                              TrUserData).
 
 skip_varint_query(<<1:1, _:7, Rest/binary>>, Z1, Z2,
-                  F@_1, F@_2, F@_3, F@_4, F@_5, F@_6, F@_7, TrUserData) ->
+                  F@_1, F@_2, F@_3, F@_4, F@_5, F@_6, F@_7, F@_8,
+                  TrUserData) ->
     skip_varint_query(Rest,
                       Z1,
                       Z2,
@@ -19432,9 +19943,11 @@ skip_varint_query(<<1:1, _:7, Rest/binary>>, Z1, Z2,
                       F@_5,
                       F@_6,
                       F@_7,
+                      F@_8,
                       TrUserData);
 skip_varint_query(<<0:1, _:7, Rest/binary>>, Z1, Z2,
-                  F@_1, F@_2, F@_3, F@_4, F@_5, F@_6, F@_7, TrUserData) ->
+                  F@_1, F@_2, F@_3, F@_4, F@_5, F@_6, F@_7, F@_8,
+                  TrUserData) ->
     dfp_read_field_def_query(Rest,
                              Z1,
                              Z2,
@@ -19445,11 +19958,12 @@ skip_varint_query(<<0:1, _:7, Rest/binary>>, Z1, Z2,
                              F@_5,
                              F@_6,
                              F@_7,
+                             F@_8,
                              TrUserData).
 
 skip_length_delimited_query(<<1:1, X:7, Rest/binary>>,
                             N, Acc, F@_1, F@_2, F@_3, F@_4, F@_5, F@_6, F@_7,
-                            TrUserData)
+                            F@_8, TrUserData)
     when N < 57 ->
     skip_length_delimited_query(Rest,
                                 N + 7,
@@ -19461,10 +19975,11 @@ skip_length_delimited_query(<<1:1, X:7, Rest/binary>>,
                                 F@_5,
                                 F@_6,
                                 F@_7,
+                                F@_8,
                                 TrUserData);
 skip_length_delimited_query(<<0:1, X:7, Rest/binary>>,
                             N, Acc, F@_1, F@_2, F@_3, F@_4, F@_5, F@_6, F@_7,
-                            TrUserData) ->
+                            F@_8, TrUserData) ->
     Length = X bsl N + Acc,
     <<_:Length/binary, Rest2/binary>> = Rest,
     dfp_read_field_def_query(Rest2,
@@ -19477,10 +19992,11 @@ skip_length_delimited_query(<<0:1, X:7, Rest/binary>>,
                              F@_5,
                              F@_6,
                              F@_7,
+                             F@_8,
                              TrUserData).
 
 skip_group_query(Bin, FNum, Z2, F@_1, F@_2, F@_3, F@_4,
-                 F@_5, F@_6, F@_7, TrUserData) ->
+                 F@_5, F@_6, F@_7, F@_8, TrUserData) ->
     {_, Rest} = read_group(Bin, FNum),
     dfp_read_field_def_query(Rest,
                              0,
@@ -19492,10 +20008,11 @@ skip_group_query(Bin, FNum, Z2, F@_1, F@_2, F@_3, F@_4,
                              F@_5,
                              F@_6,
                              F@_7,
+                             F@_8,
                              TrUserData).
 
 skip_32_query(<<_:32, Rest/binary>>, Z1, Z2, F@_1, F@_2,
-              F@_3, F@_4, F@_5, F@_6, F@_7, TrUserData) ->
+              F@_3, F@_4, F@_5, F@_6, F@_7, F@_8, TrUserData) ->
     dfp_read_field_def_query(Rest,
                              Z1,
                              Z2,
@@ -19506,10 +20023,11 @@ skip_32_query(<<_:32, Rest/binary>>, Z1, Z2, F@_1, F@_2,
                              F@_5,
                              F@_6,
                              F@_7,
+                             F@_8,
                              TrUserData).
 
 skip_64_query(<<_:64, Rest/binary>>, Z1, Z2, F@_1, F@_2,
-              F@_3, F@_4, F@_5, F@_6, F@_7, TrUserData) ->
+              F@_3, F@_4, F@_5, F@_6, F@_7, F@_8, TrUserData) ->
     dfp_read_field_def_query(Rest,
                              Z1,
                              Z2,
@@ -19520,6 +20038,7 @@ skip_64_query(<<_:64, Rest/binary>>, Z1, Z2, F@_1, F@_2,
                              F@_5,
                              F@_6,
                              F@_7,
+                             F@_8,
                              TrUserData).
 
 decode_msg_delete_query_request(Bin, TrUserData) ->
@@ -22290,11 +22809,15 @@ decode_msg_connector(Bin, TrUserData) ->
                                  id(<<>>, TrUserData),
                                  id(<<>>, TrUserData),
                                  id([], TrUserData),
+                                 id(<<>>, TrUserData),
+                                 id(<<>>, TrUserData),
+                                 id(<<>>, TrUserData),
+                                 id(<<>>, TrUserData),
                                  TrUserData).
 
 dfp_read_field_def_connector(<<10, Rest/binary>>, Z1,
-                             Z2, F@_1, F@_2, F@_3, F@_4, F@_5, F@_6, F@_7,
-                             TrUserData) ->
+                             Z2, F@_1, F@_2, F@_3, F@_4, F@_5, F@_6, F@_7, F@_8,
+                             F@_9, F@_10, F@_11, TrUserData) ->
     d_field_connector_name(Rest,
                            Z1,
                            Z2,
@@ -22305,10 +22828,14 @@ dfp_read_field_def_connector(<<10, Rest/binary>>, Z1,
                            F@_5,
                            F@_6,
                            F@_7,
+                           F@_8,
+                           F@_9,
+                           F@_10,
+                           F@_11,
                            TrUserData);
 dfp_read_field_def_connector(<<18, Rest/binary>>, Z1,
-                             Z2, F@_1, F@_2, F@_3, F@_4, F@_5, F@_6, F@_7,
-                             TrUserData) ->
+                             Z2, F@_1, F@_2, F@_3, F@_4, F@_5, F@_6, F@_7, F@_8,
+                             F@_9, F@_10, F@_11, TrUserData) ->
     d_field_connector_type(Rest,
                            Z1,
                            Z2,
@@ -22319,10 +22846,14 @@ dfp_read_field_def_connector(<<18, Rest/binary>>, Z1,
                            F@_5,
                            F@_6,
                            F@_7,
+                           F@_8,
+                           F@_9,
+                           F@_10,
+                           F@_11,
                            TrUserData);
 dfp_read_field_def_connector(<<26, Rest/binary>>, Z1,
-                             Z2, F@_1, F@_2, F@_3, F@_4, F@_5, F@_6, F@_7,
-                             TrUserData) ->
+                             Z2, F@_1, F@_2, F@_3, F@_4, F@_5, F@_6, F@_7, F@_8,
+                             F@_9, F@_10, F@_11, TrUserData) ->
     d_field_connector_target(Rest,
                              Z1,
                              Z2,
@@ -22333,10 +22864,14 @@ dfp_read_field_def_connector(<<26, Rest/binary>>, Z1,
                              F@_5,
                              F@_6,
                              F@_7,
+                             F@_8,
+                             F@_9,
+                             F@_10,
+                             F@_11,
                              TrUserData);
 dfp_read_field_def_connector(<<34, Rest/binary>>, Z1,
-                             Z2, F@_1, F@_2, F@_3, F@_4, F@_5, F@_6, F@_7,
-                             TrUserData) ->
+                             Z2, F@_1, F@_2, F@_3, F@_4, F@_5, F@_6, F@_7, F@_8,
+                             F@_9, F@_10, F@_11, TrUserData) ->
     d_field_connector_creationTime(Rest,
                                    Z1,
                                    Z2,
@@ -22347,10 +22882,14 @@ dfp_read_field_def_connector(<<34, Rest/binary>>, Z1,
                                    F@_5,
                                    F@_6,
                                    F@_7,
+                                   F@_8,
+                                   F@_9,
+                                   F@_10,
+                                   F@_11,
                                    TrUserData);
 dfp_read_field_def_connector(<<42, Rest/binary>>, Z1,
-                             Z2, F@_1, F@_2, F@_3, F@_4, F@_5, F@_6, F@_7,
-                             TrUserData) ->
+                             Z2, F@_1, F@_2, F@_3, F@_4, F@_5, F@_6, F@_7, F@_8,
+                             F@_9, F@_10, F@_11, TrUserData) ->
     d_field_connector_status(Rest,
                              Z1,
                              Z2,
@@ -22361,10 +22900,14 @@ dfp_read_field_def_connector(<<42, Rest/binary>>, Z1,
                              F@_5,
                              F@_6,
                              F@_7,
+                             F@_8,
+                             F@_9,
+                             F@_10,
+                             F@_11,
                              TrUserData);
 dfp_read_field_def_connector(<<50, Rest/binary>>, Z1,
-                             Z2, F@_1, F@_2, F@_3, F@_4, F@_5, F@_6, F@_7,
-                             TrUserData) ->
+                             Z2, F@_1, F@_2, F@_3, F@_4, F@_5, F@_6, F@_7, F@_8,
+                             F@_9, F@_10, F@_11, TrUserData) ->
     d_field_connector_config(Rest,
                              Z1,
                              Z2,
@@ -22375,10 +22918,14 @@ dfp_read_field_def_connector(<<50, Rest/binary>>, Z1,
                              F@_5,
                              F@_6,
                              F@_7,
+                             F@_8,
+                             F@_9,
+                             F@_10,
+                             F@_11,
                              TrUserData);
 dfp_read_field_def_connector(<<58, Rest/binary>>, Z1,
-                             Z2, F@_1, F@_2, F@_3, F@_4, F@_5, F@_6, F@_7,
-                             TrUserData) ->
+                             Z2, F@_1, F@_2, F@_3, F@_4, F@_5, F@_6, F@_7, F@_8,
+                             F@_9, F@_10, F@_11, TrUserData) ->
     d_field_connector_offsets(Rest,
                               Z1,
                               Z2,
@@ -22389,11 +22936,89 @@ dfp_read_field_def_connector(<<58, Rest/binary>>, Z1,
                               F@_5,
                               F@_6,
                               F@_7,
+                              F@_8,
+                              F@_9,
+                              F@_10,
+                              F@_11,
                               TrUserData);
+dfp_read_field_def_connector(<<66, Rest/binary>>, Z1,
+                             Z2, F@_1, F@_2, F@_3, F@_4, F@_5, F@_6, F@_7, F@_8,
+                             F@_9, F@_10, F@_11, TrUserData) ->
+    d_field_connector_taskId(Rest,
+                             Z1,
+                             Z2,
+                             F@_1,
+                             F@_2,
+                             F@_3,
+                             F@_4,
+                             F@_5,
+                             F@_6,
+                             F@_7,
+                             F@_8,
+                             F@_9,
+                             F@_10,
+                             F@_11,
+                             TrUserData);
+dfp_read_field_def_connector(<<74, Rest/binary>>, Z1,
+                             Z2, F@_1, F@_2, F@_3, F@_4, F@_5, F@_6, F@_7, F@_8,
+                             F@_9, F@_10, F@_11, TrUserData) ->
+    d_field_connector_node(Rest,
+                           Z1,
+                           Z2,
+                           F@_1,
+                           F@_2,
+                           F@_3,
+                           F@_4,
+                           F@_5,
+                           F@_6,
+                           F@_7,
+                           F@_8,
+                           F@_9,
+                           F@_10,
+                           F@_11,
+                           TrUserData);
+dfp_read_field_def_connector(<<82, Rest/binary>>, Z1,
+                             Z2, F@_1, F@_2, F@_3, F@_4, F@_5, F@_6, F@_7, F@_8,
+                             F@_9, F@_10, F@_11, TrUserData) ->
+    d_field_connector_dockerStatus(Rest,
+                                   Z1,
+                                   Z2,
+                                   F@_1,
+                                   F@_2,
+                                   F@_3,
+                                   F@_4,
+                                   F@_5,
+                                   F@_6,
+                                   F@_7,
+                                   F@_8,
+                                   F@_9,
+                                   F@_10,
+                                   F@_11,
+                                   TrUserData);
+dfp_read_field_def_connector(<<90, Rest/binary>>, Z1,
+                             Z2, F@_1, F@_2, F@_3, F@_4, F@_5, F@_6, F@_7, F@_8,
+                             F@_9, F@_10, F@_11, TrUserData) ->
+    d_field_connector_image(Rest,
+                            Z1,
+                            Z2,
+                            F@_1,
+                            F@_2,
+                            F@_3,
+                            F@_4,
+                            F@_5,
+                            F@_6,
+                            F@_7,
+                            F@_8,
+                            F@_9,
+                            F@_10,
+                            F@_11,
+                            TrUserData);
 dfp_read_field_def_connector(<<>>, 0, 0, F@_1, F@_2,
-                             F@_3, F@_4, F@_5, F@_6, R1, TrUserData) ->
+                             F@_3, F@_4, F@_5, F@_6, R1, F@_8, F@_9, F@_10,
+                             F@_11, TrUserData) ->
     S1 = #{name => F@_1, type => F@_2, target => F@_3,
-           status => F@_5, config => F@_6},
+           status => F@_5, config => F@_6, taskId => F@_8,
+           node => F@_9, dockerStatus => F@_10, image => F@_11},
     S2 = if F@_4 == '$undef' -> S1;
             true -> S1#{creationTime => F@_4}
          end,
@@ -22401,7 +23026,8 @@ dfp_read_field_def_connector(<<>>, 0, 0, F@_1, F@_2,
        true -> S2#{offsets => lists_reverse(R1, TrUserData)}
     end;
 dfp_read_field_def_connector(Other, Z1, Z2, F@_1, F@_2,
-                             F@_3, F@_4, F@_5, F@_6, F@_7, TrUserData) ->
+                             F@_3, F@_4, F@_5, F@_6, F@_7, F@_8, F@_9, F@_10,
+                             F@_11, TrUserData) ->
     dg_read_field_def_connector(Other,
                                 Z1,
                                 Z2,
@@ -22412,11 +23038,15 @@ dfp_read_field_def_connector(Other, Z1, Z2, F@_1, F@_2,
                                 F@_5,
                                 F@_6,
                                 F@_7,
+                                F@_8,
+                                F@_9,
+                                F@_10,
+                                F@_11,
                                 TrUserData).
 
 dg_read_field_def_connector(<<1:1, X:7, Rest/binary>>,
                             N, Acc, F@_1, F@_2, F@_3, F@_4, F@_5, F@_6, F@_7,
-                            TrUserData)
+                            F@_8, F@_9, F@_10, F@_11, TrUserData)
     when N < 32 - 7 ->
     dg_read_field_def_connector(Rest,
                                 N + 7,
@@ -22428,10 +23058,14 @@ dg_read_field_def_connector(<<1:1, X:7, Rest/binary>>,
                                 F@_5,
                                 F@_6,
                                 F@_7,
+                                F@_8,
+                                F@_9,
+                                F@_10,
+                                F@_11,
                                 TrUserData);
 dg_read_field_def_connector(<<0:1, X:7, Rest/binary>>,
                             N, Acc, F@_1, F@_2, F@_3, F@_4, F@_5, F@_6, F@_7,
-                            TrUserData) ->
+                            F@_8, F@_9, F@_10, F@_11, TrUserData) ->
     Key = X bsl N + Acc,
     case Key of
         10 ->
@@ -22445,6 +23079,10 @@ dg_read_field_def_connector(<<0:1, X:7, Rest/binary>>,
                                    F@_5,
                                    F@_6,
                                    F@_7,
+                                   F@_8,
+                                   F@_9,
+                                   F@_10,
+                                   F@_11,
                                    TrUserData);
         18 ->
             d_field_connector_type(Rest,
@@ -22457,6 +23095,10 @@ dg_read_field_def_connector(<<0:1, X:7, Rest/binary>>,
                                    F@_5,
                                    F@_6,
                                    F@_7,
+                                   F@_8,
+                                   F@_9,
+                                   F@_10,
+                                   F@_11,
                                    TrUserData);
         26 ->
             d_field_connector_target(Rest,
@@ -22469,6 +23111,10 @@ dg_read_field_def_connector(<<0:1, X:7, Rest/binary>>,
                                      F@_5,
                                      F@_6,
                                      F@_7,
+                                     F@_8,
+                                     F@_9,
+                                     F@_10,
+                                     F@_11,
                                      TrUserData);
         34 ->
             d_field_connector_creationTime(Rest,
@@ -22481,6 +23127,10 @@ dg_read_field_def_connector(<<0:1, X:7, Rest/binary>>,
                                            F@_5,
                                            F@_6,
                                            F@_7,
+                                           F@_8,
+                                           F@_9,
+                                           F@_10,
+                                           F@_11,
                                            TrUserData);
         42 ->
             d_field_connector_status(Rest,
@@ -22493,6 +23143,10 @@ dg_read_field_def_connector(<<0:1, X:7, Rest/binary>>,
                                      F@_5,
                                      F@_6,
                                      F@_7,
+                                     F@_8,
+                                     F@_9,
+                                     F@_10,
+                                     F@_11,
                                      TrUserData);
         50 ->
             d_field_connector_config(Rest,
@@ -22505,6 +23159,10 @@ dg_read_field_def_connector(<<0:1, X:7, Rest/binary>>,
                                      F@_5,
                                      F@_6,
                                      F@_7,
+                                     F@_8,
+                                     F@_9,
+                                     F@_10,
+                                     F@_11,
                                      TrUserData);
         58 ->
             d_field_connector_offsets(Rest,
@@ -22517,7 +23175,75 @@ dg_read_field_def_connector(<<0:1, X:7, Rest/binary>>,
                                       F@_5,
                                       F@_6,
                                       F@_7,
+                                      F@_8,
+                                      F@_9,
+                                      F@_10,
+                                      F@_11,
                                       TrUserData);
+        66 ->
+            d_field_connector_taskId(Rest,
+                                     0,
+                                     0,
+                                     F@_1,
+                                     F@_2,
+                                     F@_3,
+                                     F@_4,
+                                     F@_5,
+                                     F@_6,
+                                     F@_7,
+                                     F@_8,
+                                     F@_9,
+                                     F@_10,
+                                     F@_11,
+                                     TrUserData);
+        74 ->
+            d_field_connector_node(Rest,
+                                   0,
+                                   0,
+                                   F@_1,
+                                   F@_2,
+                                   F@_3,
+                                   F@_4,
+                                   F@_5,
+                                   F@_6,
+                                   F@_7,
+                                   F@_8,
+                                   F@_9,
+                                   F@_10,
+                                   F@_11,
+                                   TrUserData);
+        82 ->
+            d_field_connector_dockerStatus(Rest,
+                                           0,
+                                           0,
+                                           F@_1,
+                                           F@_2,
+                                           F@_3,
+                                           F@_4,
+                                           F@_5,
+                                           F@_6,
+                                           F@_7,
+                                           F@_8,
+                                           F@_9,
+                                           F@_10,
+                                           F@_11,
+                                           TrUserData);
+        90 ->
+            d_field_connector_image(Rest,
+                                    0,
+                                    0,
+                                    F@_1,
+                                    F@_2,
+                                    F@_3,
+                                    F@_4,
+                                    F@_5,
+                                    F@_6,
+                                    F@_7,
+                                    F@_8,
+                                    F@_9,
+                                    F@_10,
+                                    F@_11,
+                                    TrUserData);
         _ ->
             case Key band 7 of
                 0 ->
@@ -22531,6 +23257,10 @@ dg_read_field_def_connector(<<0:1, X:7, Rest/binary>>,
                                           F@_5,
                                           F@_6,
                                           F@_7,
+                                          F@_8,
+                                          F@_9,
+                                          F@_10,
+                                          F@_11,
                                           TrUserData);
                 1 ->
                     skip_64_connector(Rest,
@@ -22543,6 +23273,10 @@ dg_read_field_def_connector(<<0:1, X:7, Rest/binary>>,
                                       F@_5,
                                       F@_6,
                                       F@_7,
+                                      F@_8,
+                                      F@_9,
+                                      F@_10,
+                                      F@_11,
                                       TrUserData);
                 2 ->
                     skip_length_delimited_connector(Rest,
@@ -22555,6 +23289,10 @@ dg_read_field_def_connector(<<0:1, X:7, Rest/binary>>,
                                                     F@_5,
                                                     F@_6,
                                                     F@_7,
+                                                    F@_8,
+                                                    F@_9,
+                                                    F@_10,
+                                                    F@_11,
                                                     TrUserData);
                 3 ->
                     skip_group_connector(Rest,
@@ -22567,6 +23305,10 @@ dg_read_field_def_connector(<<0:1, X:7, Rest/binary>>,
                                          F@_5,
                                          F@_6,
                                          F@_7,
+                                         F@_8,
+                                         F@_9,
+                                         F@_10,
+                                         F@_11,
                                          TrUserData);
                 5 ->
                     skip_32_connector(Rest,
@@ -22579,13 +23321,19 @@ dg_read_field_def_connector(<<0:1, X:7, Rest/binary>>,
                                       F@_5,
                                       F@_6,
                                       F@_7,
+                                      F@_8,
+                                      F@_9,
+                                      F@_10,
+                                      F@_11,
                                       TrUserData)
             end
     end;
 dg_read_field_def_connector(<<>>, 0, 0, F@_1, F@_2,
-                            F@_3, F@_4, F@_5, F@_6, R1, TrUserData) ->
+                            F@_3, F@_4, F@_5, F@_6, R1, F@_8, F@_9, F@_10,
+                            F@_11, TrUserData) ->
     S1 = #{name => F@_1, type => F@_2, target => F@_3,
-           status => F@_5, config => F@_6},
+           status => F@_5, config => F@_6, taskId => F@_8,
+           node => F@_9, dockerStatus => F@_10, image => F@_11},
     S2 = if F@_4 == '$undef' -> S1;
             true -> S1#{creationTime => F@_4}
          end,
@@ -22594,8 +23342,8 @@ dg_read_field_def_connector(<<>>, 0, 0, F@_1, F@_2,
     end.
 
 d_field_connector_name(<<1:1, X:7, Rest/binary>>, N,
-                       Acc, F@_1, F@_2, F@_3, F@_4, F@_5, F@_6, F@_7,
-                       TrUserData)
+                       Acc, F@_1, F@_2, F@_3, F@_4, F@_5, F@_6, F@_7, F@_8,
+                       F@_9, F@_10, F@_11, TrUserData)
     when N < 57 ->
     d_field_connector_name(Rest,
                            N + 7,
@@ -22607,10 +23355,14 @@ d_field_connector_name(<<1:1, X:7, Rest/binary>>, N,
                            F@_5,
                            F@_6,
                            F@_7,
+                           F@_8,
+                           F@_9,
+                           F@_10,
+                           F@_11,
                            TrUserData);
 d_field_connector_name(<<0:1, X:7, Rest/binary>>, N,
-                       Acc, _, F@_2, F@_3, F@_4, F@_5, F@_6, F@_7,
-                       TrUserData) ->
+                       Acc, _, F@_2, F@_3, F@_4, F@_5, F@_6, F@_7, F@_8, F@_9,
+                       F@_10, F@_11, TrUserData) ->
     {NewFValue, RestF} = begin
                              Len = X bsl N + Acc,
                              <<Bytes:Len/binary, Rest2/binary>> = Rest,
@@ -22626,11 +23378,15 @@ d_field_connector_name(<<0:1, X:7, Rest/binary>>, N,
                                  F@_5,
                                  F@_6,
                                  F@_7,
+                                 F@_8,
+                                 F@_9,
+                                 F@_10,
+                                 F@_11,
                                  TrUserData).
 
 d_field_connector_type(<<1:1, X:7, Rest/binary>>, N,
-                       Acc, F@_1, F@_2, F@_3, F@_4, F@_5, F@_6, F@_7,
-                       TrUserData)
+                       Acc, F@_1, F@_2, F@_3, F@_4, F@_5, F@_6, F@_7, F@_8,
+                       F@_9, F@_10, F@_11, TrUserData)
     when N < 57 ->
     d_field_connector_type(Rest,
                            N + 7,
@@ -22642,10 +23398,14 @@ d_field_connector_type(<<1:1, X:7, Rest/binary>>, N,
                            F@_5,
                            F@_6,
                            F@_7,
+                           F@_8,
+                           F@_9,
+                           F@_10,
+                           F@_11,
                            TrUserData);
 d_field_connector_type(<<0:1, X:7, Rest/binary>>, N,
-                       Acc, F@_1, _, F@_3, F@_4, F@_5, F@_6, F@_7,
-                       TrUserData) ->
+                       Acc, F@_1, _, F@_3, F@_4, F@_5, F@_6, F@_7, F@_8, F@_9,
+                       F@_10, F@_11, TrUserData) ->
     {NewFValue, RestF} = begin
                              Len = X bsl N + Acc,
                              <<Bytes:Len/binary, Rest2/binary>> = Rest,
@@ -22661,11 +23421,15 @@ d_field_connector_type(<<0:1, X:7, Rest/binary>>, N,
                                  F@_5,
                                  F@_6,
                                  F@_7,
+                                 F@_8,
+                                 F@_9,
+                                 F@_10,
+                                 F@_11,
                                  TrUserData).
 
 d_field_connector_target(<<1:1, X:7, Rest/binary>>, N,
-                         Acc, F@_1, F@_2, F@_3, F@_4, F@_5, F@_6, F@_7,
-                         TrUserData)
+                         Acc, F@_1, F@_2, F@_3, F@_4, F@_5, F@_6, F@_7, F@_8,
+                         F@_9, F@_10, F@_11, TrUserData)
     when N < 57 ->
     d_field_connector_target(Rest,
                              N + 7,
@@ -22677,10 +23441,14 @@ d_field_connector_target(<<1:1, X:7, Rest/binary>>, N,
                              F@_5,
                              F@_6,
                              F@_7,
+                             F@_8,
+                             F@_9,
+                             F@_10,
+                             F@_11,
                              TrUserData);
 d_field_connector_target(<<0:1, X:7, Rest/binary>>, N,
-                         Acc, F@_1, F@_2, _, F@_4, F@_5, F@_6, F@_7,
-                         TrUserData) ->
+                         Acc, F@_1, F@_2, _, F@_4, F@_5, F@_6, F@_7, F@_8, F@_9,
+                         F@_10, F@_11, TrUserData) ->
     {NewFValue, RestF} = begin
                              Len = X bsl N + Acc,
                              <<Bytes:Len/binary, Rest2/binary>> = Rest,
@@ -22696,12 +23464,16 @@ d_field_connector_target(<<0:1, X:7, Rest/binary>>, N,
                                  F@_5,
                                  F@_6,
                                  F@_7,
+                                 F@_8,
+                                 F@_9,
+                                 F@_10,
+                                 F@_11,
                                  TrUserData).
 
 d_field_connector_creationTime(<<1:1, X:7,
                                  Rest/binary>>,
                                N, Acc, F@_1, F@_2, F@_3, F@_4, F@_5, F@_6, F@_7,
-                               TrUserData)
+                               F@_8, F@_9, F@_10, F@_11, TrUserData)
     when N < 57 ->
     d_field_connector_creationTime(Rest,
                                    N + 7,
@@ -22713,11 +23485,15 @@ d_field_connector_creationTime(<<1:1, X:7,
                                    F@_5,
                                    F@_6,
                                    F@_7,
+                                   F@_8,
+                                   F@_9,
+                                   F@_10,
+                                   F@_11,
                                    TrUserData);
 d_field_connector_creationTime(<<0:1, X:7,
                                  Rest/binary>>,
                                N, Acc, F@_1, F@_2, F@_3, Prev, F@_5, F@_6, F@_7,
-                               TrUserData) ->
+                               F@_8, F@_9, F@_10, F@_11, TrUserData) ->
     {NewFValue, RestF} = begin
                              Len = X bsl N + Acc,
                              <<Bs:Len/binary, Rest2/binary>> = Rest,
@@ -22740,11 +23516,15 @@ d_field_connector_creationTime(<<0:1, X:7,
                                  F@_5,
                                  F@_6,
                                  F@_7,
+                                 F@_8,
+                                 F@_9,
+                                 F@_10,
+                                 F@_11,
                                  TrUserData).
 
 d_field_connector_status(<<1:1, X:7, Rest/binary>>, N,
-                         Acc, F@_1, F@_2, F@_3, F@_4, F@_5, F@_6, F@_7,
-                         TrUserData)
+                         Acc, F@_1, F@_2, F@_3, F@_4, F@_5, F@_6, F@_7, F@_8,
+                         F@_9, F@_10, F@_11, TrUserData)
     when N < 57 ->
     d_field_connector_status(Rest,
                              N + 7,
@@ -22756,10 +23536,14 @@ d_field_connector_status(<<1:1, X:7, Rest/binary>>, N,
                              F@_5,
                              F@_6,
                              F@_7,
+                             F@_8,
+                             F@_9,
+                             F@_10,
+                             F@_11,
                              TrUserData);
 d_field_connector_status(<<0:1, X:7, Rest/binary>>, N,
-                         Acc, F@_1, F@_2, F@_3, F@_4, _, F@_6, F@_7,
-                         TrUserData) ->
+                         Acc, F@_1, F@_2, F@_3, F@_4, _, F@_6, F@_7, F@_8, F@_9,
+                         F@_10, F@_11, TrUserData) ->
     {NewFValue, RestF} = begin
                              Len = X bsl N + Acc,
                              <<Bytes:Len/binary, Rest2/binary>> = Rest,
@@ -22775,11 +23559,15 @@ d_field_connector_status(<<0:1, X:7, Rest/binary>>, N,
                                  NewFValue,
                                  F@_6,
                                  F@_7,
+                                 F@_8,
+                                 F@_9,
+                                 F@_10,
+                                 F@_11,
                                  TrUserData).
 
 d_field_connector_config(<<1:1, X:7, Rest/binary>>, N,
-                         Acc, F@_1, F@_2, F@_3, F@_4, F@_5, F@_6, F@_7,
-                         TrUserData)
+                         Acc, F@_1, F@_2, F@_3, F@_4, F@_5, F@_6, F@_7, F@_8,
+                         F@_9, F@_10, F@_11, TrUserData)
     when N < 57 ->
     d_field_connector_config(Rest,
                              N + 7,
@@ -22791,10 +23579,14 @@ d_field_connector_config(<<1:1, X:7, Rest/binary>>, N,
                              F@_5,
                              F@_6,
                              F@_7,
+                             F@_8,
+                             F@_9,
+                             F@_10,
+                             F@_11,
                              TrUserData);
 d_field_connector_config(<<0:1, X:7, Rest/binary>>, N,
-                         Acc, F@_1, F@_2, F@_3, F@_4, F@_5, _, F@_7,
-                         TrUserData) ->
+                         Acc, F@_1, F@_2, F@_3, F@_4, F@_5, _, F@_7, F@_8, F@_9,
+                         F@_10, F@_11, TrUserData) ->
     {NewFValue, RestF} = begin
                              Len = X bsl N + Acc,
                              <<Bytes:Len/binary, Rest2/binary>> = Rest,
@@ -22810,11 +23602,15 @@ d_field_connector_config(<<0:1, X:7, Rest/binary>>, N,
                                  F@_5,
                                  NewFValue,
                                  F@_7,
+                                 F@_8,
+                                 F@_9,
+                                 F@_10,
+                                 F@_11,
                                  TrUserData).
 
 d_field_connector_offsets(<<1:1, X:7, Rest/binary>>, N,
-                          Acc, F@_1, F@_2, F@_3, F@_4, F@_5, F@_6, F@_7,
-                          TrUserData)
+                          Acc, F@_1, F@_2, F@_3, F@_4, F@_5, F@_6, F@_7, F@_8,
+                          F@_9, F@_10, F@_11, TrUserData)
     when N < 57 ->
     d_field_connector_offsets(Rest,
                               N + 7,
@@ -22826,10 +23622,14 @@ d_field_connector_offsets(<<1:1, X:7, Rest/binary>>, N,
                               F@_5,
                               F@_6,
                               F@_7,
+                              F@_8,
+                              F@_9,
+                              F@_10,
+                              F@_11,
                               TrUserData);
 d_field_connector_offsets(<<0:1, X:7, Rest/binary>>, N,
-                          Acc, F@_1, F@_2, F@_3, F@_4, F@_5, F@_6, Prev,
-                          TrUserData) ->
+                          Acc, F@_1, F@_2, F@_3, F@_4, F@_5, F@_6, Prev, F@_8,
+                          F@_9, F@_10, F@_11, TrUserData) ->
     {NewFValue, RestF} = begin
                              Len = X bsl N + Acc,
                              <<Bs:Len/binary, Rest2/binary>> = Rest,
@@ -22846,10 +23646,189 @@ d_field_connector_offsets(<<0:1, X:7, Rest/binary>>, N,
                                  F@_5,
                                  F@_6,
                                  cons(NewFValue, Prev, TrUserData),
+                                 F@_8,
+                                 F@_9,
+                                 F@_10,
+                                 F@_11,
+                                 TrUserData).
+
+d_field_connector_taskId(<<1:1, X:7, Rest/binary>>, N,
+                         Acc, F@_1, F@_2, F@_3, F@_4, F@_5, F@_6, F@_7, F@_8,
+                         F@_9, F@_10, F@_11, TrUserData)
+    when N < 57 ->
+    d_field_connector_taskId(Rest,
+                             N + 7,
+                             X bsl N + Acc,
+                             F@_1,
+                             F@_2,
+                             F@_3,
+                             F@_4,
+                             F@_5,
+                             F@_6,
+                             F@_7,
+                             F@_8,
+                             F@_9,
+                             F@_10,
+                             F@_11,
+                             TrUserData);
+d_field_connector_taskId(<<0:1, X:7, Rest/binary>>, N,
+                         Acc, F@_1, F@_2, F@_3, F@_4, F@_5, F@_6, F@_7, _, F@_9,
+                         F@_10, F@_11, TrUserData) ->
+    {NewFValue, RestF} = begin
+                             Len = X bsl N + Acc,
+                             <<Bytes:Len/binary, Rest2/binary>> = Rest,
+                             {id(binary:copy(Bytes), TrUserData), Rest2}
+                         end,
+    dfp_read_field_def_connector(RestF,
+                                 0,
+                                 0,
+                                 F@_1,
+                                 F@_2,
+                                 F@_3,
+                                 F@_4,
+                                 F@_5,
+                                 F@_6,
+                                 F@_7,
+                                 NewFValue,
+                                 F@_9,
+                                 F@_10,
+                                 F@_11,
+                                 TrUserData).
+
+d_field_connector_node(<<1:1, X:7, Rest/binary>>, N,
+                       Acc, F@_1, F@_2, F@_3, F@_4, F@_5, F@_6, F@_7, F@_8,
+                       F@_9, F@_10, F@_11, TrUserData)
+    when N < 57 ->
+    d_field_connector_node(Rest,
+                           N + 7,
+                           X bsl N + Acc,
+                           F@_1,
+                           F@_2,
+                           F@_3,
+                           F@_4,
+                           F@_5,
+                           F@_6,
+                           F@_7,
+                           F@_8,
+                           F@_9,
+                           F@_10,
+                           F@_11,
+                           TrUserData);
+d_field_connector_node(<<0:1, X:7, Rest/binary>>, N,
+                       Acc, F@_1, F@_2, F@_3, F@_4, F@_5, F@_6, F@_7, F@_8, _,
+                       F@_10, F@_11, TrUserData) ->
+    {NewFValue, RestF} = begin
+                             Len = X bsl N + Acc,
+                             <<Bytes:Len/binary, Rest2/binary>> = Rest,
+                             {id(binary:copy(Bytes), TrUserData), Rest2}
+                         end,
+    dfp_read_field_def_connector(RestF,
+                                 0,
+                                 0,
+                                 F@_1,
+                                 F@_2,
+                                 F@_3,
+                                 F@_4,
+                                 F@_5,
+                                 F@_6,
+                                 F@_7,
+                                 F@_8,
+                                 NewFValue,
+                                 F@_10,
+                                 F@_11,
+                                 TrUserData).
+
+d_field_connector_dockerStatus(<<1:1, X:7,
+                                 Rest/binary>>,
+                               N, Acc, F@_1, F@_2, F@_3, F@_4, F@_5, F@_6, F@_7,
+                               F@_8, F@_9, F@_10, F@_11, TrUserData)
+    when N < 57 ->
+    d_field_connector_dockerStatus(Rest,
+                                   N + 7,
+                                   X bsl N + Acc,
+                                   F@_1,
+                                   F@_2,
+                                   F@_3,
+                                   F@_4,
+                                   F@_5,
+                                   F@_6,
+                                   F@_7,
+                                   F@_8,
+                                   F@_9,
+                                   F@_10,
+                                   F@_11,
+                                   TrUserData);
+d_field_connector_dockerStatus(<<0:1, X:7,
+                                 Rest/binary>>,
+                               N, Acc, F@_1, F@_2, F@_3, F@_4, F@_5, F@_6, F@_7,
+                               F@_8, F@_9, _, F@_11, TrUserData) ->
+    {NewFValue, RestF} = begin
+                             Len = X bsl N + Acc,
+                             <<Bytes:Len/binary, Rest2/binary>> = Rest,
+                             {id(binary:copy(Bytes), TrUserData), Rest2}
+                         end,
+    dfp_read_field_def_connector(RestF,
+                                 0,
+                                 0,
+                                 F@_1,
+                                 F@_2,
+                                 F@_3,
+                                 F@_4,
+                                 F@_5,
+                                 F@_6,
+                                 F@_7,
+                                 F@_8,
+                                 F@_9,
+                                 NewFValue,
+                                 F@_11,
+                                 TrUserData).
+
+d_field_connector_image(<<1:1, X:7, Rest/binary>>, N,
+                        Acc, F@_1, F@_2, F@_3, F@_4, F@_5, F@_6, F@_7, F@_8,
+                        F@_9, F@_10, F@_11, TrUserData)
+    when N < 57 ->
+    d_field_connector_image(Rest,
+                            N + 7,
+                            X bsl N + Acc,
+                            F@_1,
+                            F@_2,
+                            F@_3,
+                            F@_4,
+                            F@_5,
+                            F@_6,
+                            F@_7,
+                            F@_8,
+                            F@_9,
+                            F@_10,
+                            F@_11,
+                            TrUserData);
+d_field_connector_image(<<0:1, X:7, Rest/binary>>, N,
+                        Acc, F@_1, F@_2, F@_3, F@_4, F@_5, F@_6, F@_7, F@_8,
+                        F@_9, F@_10, _, TrUserData) ->
+    {NewFValue, RestF} = begin
+                             Len = X bsl N + Acc,
+                             <<Bytes:Len/binary, Rest2/binary>> = Rest,
+                             {id(binary:copy(Bytes), TrUserData), Rest2}
+                         end,
+    dfp_read_field_def_connector(RestF,
+                                 0,
+                                 0,
+                                 F@_1,
+                                 F@_2,
+                                 F@_3,
+                                 F@_4,
+                                 F@_5,
+                                 F@_6,
+                                 F@_7,
+                                 F@_8,
+                                 F@_9,
+                                 F@_10,
+                                 NewFValue,
                                  TrUserData).
 
 skip_varint_connector(<<1:1, _:7, Rest/binary>>, Z1, Z2,
-                      F@_1, F@_2, F@_3, F@_4, F@_5, F@_6, F@_7, TrUserData) ->
+                      F@_1, F@_2, F@_3, F@_4, F@_5, F@_6, F@_7, F@_8, F@_9,
+                      F@_10, F@_11, TrUserData) ->
     skip_varint_connector(Rest,
                           Z1,
                           Z2,
@@ -22860,9 +23839,14 @@ skip_varint_connector(<<1:1, _:7, Rest/binary>>, Z1, Z2,
                           F@_5,
                           F@_6,
                           F@_7,
+                          F@_8,
+                          F@_9,
+                          F@_10,
+                          F@_11,
                           TrUserData);
 skip_varint_connector(<<0:1, _:7, Rest/binary>>, Z1, Z2,
-                      F@_1, F@_2, F@_3, F@_4, F@_5, F@_6, F@_7, TrUserData) ->
+                      F@_1, F@_2, F@_3, F@_4, F@_5, F@_6, F@_7, F@_8, F@_9,
+                      F@_10, F@_11, TrUserData) ->
     dfp_read_field_def_connector(Rest,
                                  Z1,
                                  Z2,
@@ -22873,12 +23857,16 @@ skip_varint_connector(<<0:1, _:7, Rest/binary>>, Z1, Z2,
                                  F@_5,
                                  F@_6,
                                  F@_7,
+                                 F@_8,
+                                 F@_9,
+                                 F@_10,
+                                 F@_11,
                                  TrUserData).
 
 skip_length_delimited_connector(<<1:1, X:7,
                                   Rest/binary>>,
                                 N, Acc, F@_1, F@_2, F@_3, F@_4, F@_5, F@_6,
-                                F@_7, TrUserData)
+                                F@_7, F@_8, F@_9, F@_10, F@_11, TrUserData)
     when N < 57 ->
     skip_length_delimited_connector(Rest,
                                     N + 7,
@@ -22890,11 +23878,15 @@ skip_length_delimited_connector(<<1:1, X:7,
                                     F@_5,
                                     F@_6,
                                     F@_7,
+                                    F@_8,
+                                    F@_9,
+                                    F@_10,
+                                    F@_11,
                                     TrUserData);
 skip_length_delimited_connector(<<0:1, X:7,
                                   Rest/binary>>,
                                 N, Acc, F@_1, F@_2, F@_3, F@_4, F@_5, F@_6,
-                                F@_7, TrUserData) ->
+                                F@_7, F@_8, F@_9, F@_10, F@_11, TrUserData) ->
     Length = X bsl N + Acc,
     <<_:Length/binary, Rest2/binary>> = Rest,
     dfp_read_field_def_connector(Rest2,
@@ -22907,10 +23899,15 @@ skip_length_delimited_connector(<<0:1, X:7,
                                  F@_5,
                                  F@_6,
                                  F@_7,
+                                 F@_8,
+                                 F@_9,
+                                 F@_10,
+                                 F@_11,
                                  TrUserData).
 
 skip_group_connector(Bin, FNum, Z2, F@_1, F@_2, F@_3,
-                     F@_4, F@_5, F@_6, F@_7, TrUserData) ->
+                     F@_4, F@_5, F@_6, F@_7, F@_8, F@_9, F@_10, F@_11,
+                     TrUserData) ->
     {_, Rest} = read_group(Bin, FNum),
     dfp_read_field_def_connector(Rest,
                                  0,
@@ -22922,10 +23919,15 @@ skip_group_connector(Bin, FNum, Z2, F@_1, F@_2, F@_3,
                                  F@_5,
                                  F@_6,
                                  F@_7,
+                                 F@_8,
+                                 F@_9,
+                                 F@_10,
+                                 F@_11,
                                  TrUserData).
 
 skip_32_connector(<<_:32, Rest/binary>>, Z1, Z2, F@_1,
-                  F@_2, F@_3, F@_4, F@_5, F@_6, F@_7, TrUserData) ->
+                  F@_2, F@_3, F@_4, F@_5, F@_6, F@_7, F@_8, F@_9, F@_10,
+                  F@_11, TrUserData) ->
     dfp_read_field_def_connector(Rest,
                                  Z1,
                                  Z2,
@@ -22936,10 +23938,15 @@ skip_32_connector(<<_:32, Rest/binary>>, Z1, Z2, F@_1,
                                  F@_5,
                                  F@_6,
                                  F@_7,
+                                 F@_8,
+                                 F@_9,
+                                 F@_10,
+                                 F@_11,
                                  TrUserData).
 
 skip_64_connector(<<_:64, Rest/binary>>, Z1, Z2, F@_1,
-                  F@_2, F@_3, F@_4, F@_5, F@_6, F@_7, TrUserData) ->
+                  F@_2, F@_3, F@_4, F@_5, F@_6, F@_7, F@_8, F@_9, F@_10,
+                  F@_11, TrUserData) ->
     dfp_read_field_def_connector(Rest,
                                  Z1,
                                  Z2,
@@ -22950,6 +23957,10 @@ skip_64_connector(<<_:64, Rest/binary>>, Z1, Z2, F@_1,
                                  F@_5,
                                  F@_6,
                                  F@_7,
+                                 F@_8,
+                                 F@_9,
+                                 F@_10,
+                                 F@_11,
                                  TrUserData).
 
 decode_msg_delete_connector_request(Bin, TrUserData) ->
@@ -27119,7 +28130,6 @@ decode_msg_describe_cluster_response(Bin, TrUserData) ->
                                                  0,
                                                  0,
                                                  id(<<>>, TrUserData),
-                                                 id(<<>>, TrUserData),
                                                  id([], TrUserData),
                                                  id([], TrUserData),
                                                  id(0, TrUserData),
@@ -27128,7 +28138,7 @@ decode_msg_describe_cluster_response(Bin, TrUserData) ->
 dfp_read_field_def_describe_cluster_response(<<10,
                                                Rest/binary>>,
                                              Z1, Z2, F@_1, F@_2, F@_3, F@_4,
-                                             F@_5, TrUserData) ->
+                                             TrUserData) ->
     d_field_describe_cluster_response_protocolVersion(Rest,
                                                       Z1,
                                                       Z2,
@@ -27136,25 +28146,11 @@ dfp_read_field_def_describe_cluster_response(<<10,
                                                       F@_2,
                                                       F@_3,
                                                       F@_4,
-                                                      F@_5,
                                                       TrUserData);
 dfp_read_field_def_describe_cluster_response(<<18,
                                                Rest/binary>>,
                                              Z1, Z2, F@_1, F@_2, F@_3, F@_4,
-                                             F@_5, TrUserData) ->
-    d_field_describe_cluster_response_serverVersion(Rest,
-                                                    Z1,
-                                                    Z2,
-                                                    F@_1,
-                                                    F@_2,
-                                                    F@_3,
-                                                    F@_4,
-                                                    F@_5,
-                                                    TrUserData);
-dfp_read_field_def_describe_cluster_response(<<26,
-                                               Rest/binary>>,
-                                             Z1, Z2, F@_1, F@_2, F@_3, F@_4,
-                                             F@_5, TrUserData) ->
+                                             TrUserData) ->
     d_field_describe_cluster_response_serverNodes(Rest,
                                                   Z1,
                                                   Z2,
@@ -27162,12 +28158,11 @@ dfp_read_field_def_describe_cluster_response(<<26,
                                                   F@_2,
                                                   F@_3,
                                                   F@_4,
-                                                  F@_5,
                                                   TrUserData);
-dfp_read_field_def_describe_cluster_response(<<34,
+dfp_read_field_def_describe_cluster_response(<<26,
                                                Rest/binary>>,
                                              Z1, Z2, F@_1, F@_2, F@_3, F@_4,
-                                             F@_5, TrUserData) ->
+                                             TrUserData) ->
     d_field_describe_cluster_response_serverNodesStatus(Rest,
                                                         Z1,
                                                         Z2,
@@ -27175,12 +28170,11 @@ dfp_read_field_def_describe_cluster_response(<<34,
                                                         F@_2,
                                                         F@_3,
                                                         F@_4,
-                                                        F@_5,
                                                         TrUserData);
-dfp_read_field_def_describe_cluster_response(<<40,
+dfp_read_field_def_describe_cluster_response(<<32,
                                                Rest/binary>>,
                                              Z1, Z2, F@_1, F@_2, F@_3, F@_4,
-                                             F@_5, TrUserData) ->
+                                             TrUserData) ->
     d_field_describe_cluster_response_clusterUpTime(Rest,
                                                     Z1,
                                                     Z2,
@@ -27188,13 +28182,10 @@ dfp_read_field_def_describe_cluster_response(<<40,
                                                     F@_2,
                                                     F@_3,
                                                     F@_4,
-                                                    F@_5,
                                                     TrUserData);
 dfp_read_field_def_describe_cluster_response(<<>>, 0, 0,
-                                             F@_1, F@_2, R1, R2, F@_5,
-                                             TrUserData) ->
-    S1 = #{protocolVersion => F@_1, serverVersion => F@_2,
-           clusterUpTime => F@_5},
+                                             F@_1, R1, R2, F@_4, TrUserData) ->
+    S1 = #{protocolVersion => F@_1, clusterUpTime => F@_4},
     S2 = if R1 == '$undef' -> S1;
             true ->
                 S1#{serverNodes => lists_reverse(R1, TrUserData)}
@@ -27204,7 +28195,7 @@ dfp_read_field_def_describe_cluster_response(<<>>, 0, 0,
            S2#{serverNodesStatus => lists_reverse(R2, TrUserData)}
     end;
 dfp_read_field_def_describe_cluster_response(Other, Z1,
-                                             Z2, F@_1, F@_2, F@_3, F@_4, F@_5,
+                                             Z2, F@_1, F@_2, F@_3, F@_4,
                                              TrUserData) ->
     dg_read_field_def_describe_cluster_response(Other,
                                                 Z1,
@@ -27213,13 +28204,12 @@ dfp_read_field_def_describe_cluster_response(Other, Z1,
                                                 F@_2,
                                                 F@_3,
                                                 F@_4,
-                                                F@_5,
                                                 TrUserData).
 
 dg_read_field_def_describe_cluster_response(<<1:1, X:7,
                                               Rest/binary>>,
                                             N, Acc, F@_1, F@_2, F@_3, F@_4,
-                                            F@_5, TrUserData)
+                                            TrUserData)
     when N < 32 - 7 ->
     dg_read_field_def_describe_cluster_response(Rest,
                                                 N + 7,
@@ -27228,12 +28218,11 @@ dg_read_field_def_describe_cluster_response(<<1:1, X:7,
                                                 F@_2,
                                                 F@_3,
                                                 F@_4,
-                                                F@_5,
                                                 TrUserData);
 dg_read_field_def_describe_cluster_response(<<0:1, X:7,
                                               Rest/binary>>,
                                             N, Acc, F@_1, F@_2, F@_3, F@_4,
-                                            F@_5, TrUserData) ->
+                                            TrUserData) ->
     Key = X bsl N + Acc,
     case Key of
         10 ->
@@ -27244,19 +28233,8 @@ dg_read_field_def_describe_cluster_response(<<0:1, X:7,
                                                               F@_2,
                                                               F@_3,
                                                               F@_4,
-                                                              F@_5,
                                                               TrUserData);
         18 ->
-            d_field_describe_cluster_response_serverVersion(Rest,
-                                                            0,
-                                                            0,
-                                                            F@_1,
-                                                            F@_2,
-                                                            F@_3,
-                                                            F@_4,
-                                                            F@_5,
-                                                            TrUserData);
-        26 ->
             d_field_describe_cluster_response_serverNodes(Rest,
                                                           0,
                                                           0,
@@ -27264,9 +28242,8 @@ dg_read_field_def_describe_cluster_response(<<0:1, X:7,
                                                           F@_2,
                                                           F@_3,
                                                           F@_4,
-                                                          F@_5,
                                                           TrUserData);
-        34 ->
+        26 ->
             d_field_describe_cluster_response_serverNodesStatus(Rest,
                                                                 0,
                                                                 0,
@@ -27274,9 +28251,8 @@ dg_read_field_def_describe_cluster_response(<<0:1, X:7,
                                                                 F@_2,
                                                                 F@_3,
                                                                 F@_4,
-                                                                F@_5,
                                                                 TrUserData);
-        40 ->
+        32 ->
             d_field_describe_cluster_response_clusterUpTime(Rest,
                                                             0,
                                                             0,
@@ -27284,7 +28260,6 @@ dg_read_field_def_describe_cluster_response(<<0:1, X:7,
                                                             F@_2,
                                                             F@_3,
                                                             F@_4,
-                                                            F@_5,
                                                             TrUserData);
         _ ->
             case Key band 7 of
@@ -27296,7 +28271,6 @@ dg_read_field_def_describe_cluster_response(<<0:1, X:7,
                                                           F@_2,
                                                           F@_3,
                                                           F@_4,
-                                                          F@_5,
                                                           TrUserData);
                 1 ->
                     skip_64_describe_cluster_response(Rest,
@@ -27306,7 +28280,6 @@ dg_read_field_def_describe_cluster_response(<<0:1, X:7,
                                                       F@_2,
                                                       F@_3,
                                                       F@_4,
-                                                      F@_5,
                                                       TrUserData);
                 2 ->
                     skip_length_delimited_describe_cluster_response(Rest,
@@ -27316,7 +28289,6 @@ dg_read_field_def_describe_cluster_response(<<0:1, X:7,
                                                                     F@_2,
                                                                     F@_3,
                                                                     F@_4,
-                                                                    F@_5,
                                                                     TrUserData);
                 3 ->
                     skip_group_describe_cluster_response(Rest,
@@ -27326,7 +28298,6 @@ dg_read_field_def_describe_cluster_response(<<0:1, X:7,
                                                          F@_2,
                                                          F@_3,
                                                          F@_4,
-                                                         F@_5,
                                                          TrUserData);
                 5 ->
                     skip_32_describe_cluster_response(Rest,
@@ -27336,15 +28307,12 @@ dg_read_field_def_describe_cluster_response(<<0:1, X:7,
                                                       F@_2,
                                                       F@_3,
                                                       F@_4,
-                                                      F@_5,
                                                       TrUserData)
             end
     end;
 dg_read_field_def_describe_cluster_response(<<>>, 0, 0,
-                                            F@_1, F@_2, R1, R2, F@_5,
-                                            TrUserData) ->
-    S1 = #{protocolVersion => F@_1, serverVersion => F@_2,
-           clusterUpTime => F@_5},
+                                            F@_1, R1, R2, F@_4, TrUserData) ->
+    S1 = #{protocolVersion => F@_1, clusterUpTime => F@_4},
     S2 = if R1 == '$undef' -> S1;
             true ->
                 S1#{serverNodes => lists_reverse(R1, TrUserData)}
@@ -27357,7 +28325,7 @@ dg_read_field_def_describe_cluster_response(<<>>, 0, 0,
 d_field_describe_cluster_response_protocolVersion(<<1:1,
                                                     X:7, Rest/binary>>,
                                                   N, Acc, F@_1, F@_2, F@_3,
-                                                  F@_4, F@_5, TrUserData)
+                                                  F@_4, TrUserData)
     when N < 57 ->
     d_field_describe_cluster_response_protocolVersion(Rest,
                                                       N + 7,
@@ -27366,12 +28334,11 @@ d_field_describe_cluster_response_protocolVersion(<<1:1,
                                                       F@_2,
                                                       F@_3,
                                                       F@_4,
-                                                      F@_5,
                                                       TrUserData);
 d_field_describe_cluster_response_protocolVersion(<<0:1,
                                                     X:7, Rest/binary>>,
                                                   N, Acc, _, F@_2, F@_3, F@_4,
-                                                  F@_5, TrUserData) ->
+                                                  TrUserData) ->
     {NewFValue, RestF} = begin
                              Len = X bsl N + Acc,
                              <<Bytes:Len/binary, Rest2/binary>> = Rest,
@@ -27384,46 +28351,12 @@ d_field_describe_cluster_response_protocolVersion(<<0:1,
                                                  F@_2,
                                                  F@_3,
                                                  F@_4,
-                                                 F@_5,
-                                                 TrUserData).
-
-d_field_describe_cluster_response_serverVersion(<<1:1,
-                                                  X:7, Rest/binary>>,
-                                                N, Acc, F@_1, F@_2, F@_3, F@_4,
-                                                F@_5, TrUserData)
-    when N < 57 ->
-    d_field_describe_cluster_response_serverVersion(Rest,
-                                                    N + 7,
-                                                    X bsl N + Acc,
-                                                    F@_1,
-                                                    F@_2,
-                                                    F@_3,
-                                                    F@_4,
-                                                    F@_5,
-                                                    TrUserData);
-d_field_describe_cluster_response_serverVersion(<<0:1,
-                                                  X:7, Rest/binary>>,
-                                                N, Acc, F@_1, _, F@_3, F@_4,
-                                                F@_5, TrUserData) ->
-    {NewFValue, RestF} = begin
-                             Len = X bsl N + Acc,
-                             <<Bytes:Len/binary, Rest2/binary>> = Rest,
-                             {id(binary:copy(Bytes), TrUserData), Rest2}
-                         end,
-    dfp_read_field_def_describe_cluster_response(RestF,
-                                                 0,
-                                                 0,
-                                                 F@_1,
-                                                 NewFValue,
-                                                 F@_3,
-                                                 F@_4,
-                                                 F@_5,
                                                  TrUserData).
 
 d_field_describe_cluster_response_serverNodes(<<1:1,
                                                 X:7, Rest/binary>>,
                                               N, Acc, F@_1, F@_2, F@_3, F@_4,
-                                              F@_5, TrUserData)
+                                              TrUserData)
     when N < 57 ->
     d_field_describe_cluster_response_serverNodes(Rest,
                                                   N + 7,
@@ -27432,12 +28365,11 @@ d_field_describe_cluster_response_serverNodes(<<1:1,
                                                   F@_2,
                                                   F@_3,
                                                   F@_4,
-                                                  F@_5,
                                                   TrUserData);
 d_field_describe_cluster_response_serverNodes(<<0:1,
                                                 X:7, Rest/binary>>,
-                                              N, Acc, F@_1, F@_2, Prev, F@_4,
-                                              F@_5, TrUserData) ->
+                                              N, Acc, F@_1, Prev, F@_3, F@_4,
+                                              TrUserData) ->
     {NewFValue, RestF} = begin
                              Len = X bsl N + Acc,
                              <<Bs:Len/binary, Rest2/binary>> = Rest,
@@ -27449,18 +28381,17 @@ d_field_describe_cluster_response_serverNodes(<<0:1,
                                                  0,
                                                  0,
                                                  F@_1,
-                                                 F@_2,
                                                  cons(NewFValue,
                                                       Prev,
                                                       TrUserData),
+                                                 F@_3,
                                                  F@_4,
-                                                 F@_5,
                                                  TrUserData).
 
 d_field_describe_cluster_response_serverNodesStatus(<<1:1,
                                                       X:7, Rest/binary>>,
                                                     N, Acc, F@_1, F@_2, F@_3,
-                                                    F@_4, F@_5, TrUserData)
+                                                    F@_4, TrUserData)
     when N < 57 ->
     d_field_describe_cluster_response_serverNodesStatus(Rest,
                                                         N + 7,
@@ -27469,12 +28400,11 @@ d_field_describe_cluster_response_serverNodesStatus(<<1:1,
                                                         F@_2,
                                                         F@_3,
                                                         F@_4,
-                                                        F@_5,
                                                         TrUserData);
 d_field_describe_cluster_response_serverNodesStatus(<<0:1,
                                                       X:7, Rest/binary>>,
-                                                    N, Acc, F@_1, F@_2, F@_3,
-                                                    Prev, F@_5, TrUserData) ->
+                                                    N, Acc, F@_1, F@_2, Prev,
+                                                    F@_4, TrUserData) ->
     {NewFValue, RestF} = begin
                              Len = X bsl N + Acc,
                              <<Bs:Len/binary, Rest2/binary>> = Rest,
@@ -27487,17 +28417,16 @@ d_field_describe_cluster_response_serverNodesStatus(<<0:1,
                                                  0,
                                                  F@_1,
                                                  F@_2,
-                                                 F@_3,
                                                  cons(NewFValue,
                                                       Prev,
                                                       TrUserData),
-                                                 F@_5,
+                                                 F@_4,
                                                  TrUserData).
 
 d_field_describe_cluster_response_clusterUpTime(<<1:1,
                                                   X:7, Rest/binary>>,
                                                 N, Acc, F@_1, F@_2, F@_3, F@_4,
-                                                F@_5, TrUserData)
+                                                TrUserData)
     when N < 57 ->
     d_field_describe_cluster_response_clusterUpTime(Rest,
                                                     N + 7,
@@ -27506,12 +28435,11 @@ d_field_describe_cluster_response_clusterUpTime(<<1:1,
                                                     F@_2,
                                                     F@_3,
                                                     F@_4,
-                                                    F@_5,
                                                     TrUserData);
 d_field_describe_cluster_response_clusterUpTime(<<0:1,
                                                   X:7, Rest/binary>>,
-                                                N, Acc, F@_1, F@_2, F@_3, F@_4,
-                                                _, TrUserData) ->
+                                                N, Acc, F@_1, F@_2, F@_3, _,
+                                                TrUserData) ->
     {NewFValue, RestF} = {id(X bsl N + Acc, TrUserData),
                           Rest},
     dfp_read_field_def_describe_cluster_response(RestF,
@@ -27520,13 +28448,12 @@ d_field_describe_cluster_response_clusterUpTime(<<0:1,
                                                  F@_1,
                                                  F@_2,
                                                  F@_3,
-                                                 F@_4,
                                                  NewFValue,
                                                  TrUserData).
 
 skip_varint_describe_cluster_response(<<1:1, _:7,
                                         Rest/binary>>,
-                                      Z1, Z2, F@_1, F@_2, F@_3, F@_4, F@_5,
+                                      Z1, Z2, F@_1, F@_2, F@_3, F@_4,
                                       TrUserData) ->
     skip_varint_describe_cluster_response(Rest,
                                           Z1,
@@ -27535,11 +28462,10 @@ skip_varint_describe_cluster_response(<<1:1, _:7,
                                           F@_2,
                                           F@_3,
                                           F@_4,
-                                          F@_5,
                                           TrUserData);
 skip_varint_describe_cluster_response(<<0:1, _:7,
                                         Rest/binary>>,
-                                      Z1, Z2, F@_1, F@_2, F@_3, F@_4, F@_5,
+                                      Z1, Z2, F@_1, F@_2, F@_3, F@_4,
                                       TrUserData) ->
     dfp_read_field_def_describe_cluster_response(Rest,
                                                  Z1,
@@ -27548,13 +28474,12 @@ skip_varint_describe_cluster_response(<<0:1, _:7,
                                                  F@_2,
                                                  F@_3,
                                                  F@_4,
-                                                 F@_5,
                                                  TrUserData).
 
 skip_length_delimited_describe_cluster_response(<<1:1,
                                                   X:7, Rest/binary>>,
                                                 N, Acc, F@_1, F@_2, F@_3, F@_4,
-                                                F@_5, TrUserData)
+                                                TrUserData)
     when N < 57 ->
     skip_length_delimited_describe_cluster_response(Rest,
                                                     N + 7,
@@ -27563,12 +28488,11 @@ skip_length_delimited_describe_cluster_response(<<1:1,
                                                     F@_2,
                                                     F@_3,
                                                     F@_4,
-                                                    F@_5,
                                                     TrUserData);
 skip_length_delimited_describe_cluster_response(<<0:1,
                                                   X:7, Rest/binary>>,
                                                 N, Acc, F@_1, F@_2, F@_3, F@_4,
-                                                F@_5, TrUserData) ->
+                                                TrUserData) ->
     Length = X bsl N + Acc,
     <<_:Length/binary, Rest2/binary>> = Rest,
     dfp_read_field_def_describe_cluster_response(Rest2,
@@ -27578,12 +28502,10 @@ skip_length_delimited_describe_cluster_response(<<0:1,
                                                  F@_2,
                                                  F@_3,
                                                  F@_4,
-                                                 F@_5,
                                                  TrUserData).
 
 skip_group_describe_cluster_response(Bin, FNum, Z2,
-                                     F@_1, F@_2, F@_3, F@_4, F@_5,
-                                     TrUserData) ->
+                                     F@_1, F@_2, F@_3, F@_4, TrUserData) ->
     {_, Rest} = read_group(Bin, FNum),
     dfp_read_field_def_describe_cluster_response(Rest,
                                                  0,
@@ -27592,12 +28514,10 @@ skip_group_describe_cluster_response(Bin, FNum, Z2,
                                                  F@_2,
                                                  F@_3,
                                                  F@_4,
-                                                 F@_5,
                                                  TrUserData).
 
 skip_32_describe_cluster_response(<<_:32, Rest/binary>>,
-                                  Z1, Z2, F@_1, F@_2, F@_3, F@_4, F@_5,
-                                  TrUserData) ->
+                                  Z1, Z2, F@_1, F@_2, F@_3, F@_4, TrUserData) ->
     dfp_read_field_def_describe_cluster_response(Rest,
                                                  Z1,
                                                  Z2,
@@ -27605,12 +28525,10 @@ skip_32_describe_cluster_response(<<_:32, Rest/binary>>,
                                                  F@_2,
                                                  F@_3,
                                                  F@_4,
-                                                 F@_5,
                                                  TrUserData).
 
 skip_64_describe_cluster_response(<<_:64, Rest/binary>>,
-                                  Z1, Z2, F@_1, F@_2, F@_3, F@_4, F@_5,
-                                  TrUserData) ->
+                                  Z1, Z2, F@_1, F@_2, F@_3, F@_4, TrUserData) ->
     dfp_read_field_def_describe_cluster_response(Rest,
                                                  Z1,
                                                  Z2,
@@ -27618,7 +28536,6 @@ skip_64_describe_cluster_response(<<_:64, Rest/binary>>,
                                                  F@_2,
                                                  F@_3,
                                                  F@_4,
-                                                 F@_5,
                                                  TrUserData).
 
 decode_msg_server_node(Bin, TrUserData) ->
@@ -27628,50 +28545,68 @@ decode_msg_server_node(Bin, TrUserData) ->
                                    id(0, TrUserData),
                                    id(<<>>, TrUserData),
                                    id(0, TrUserData),
+                                   id('$undef', TrUserData),
                                    TrUserData).
 
 dfp_read_field_def_server_node(<<8, Rest/binary>>, Z1,
-                               Z2, F@_1, F@_2, F@_3, TrUserData) ->
+                               Z2, F@_1, F@_2, F@_3, F@_4, TrUserData) ->
     d_field_server_node_id(Rest,
                            Z1,
                            Z2,
                            F@_1,
                            F@_2,
                            F@_3,
+                           F@_4,
                            TrUserData);
 dfp_read_field_def_server_node(<<18, Rest/binary>>, Z1,
-                               Z2, F@_1, F@_2, F@_3, TrUserData) ->
+                               Z2, F@_1, F@_2, F@_3, F@_4, TrUserData) ->
     d_field_server_node_host(Rest,
                              Z1,
                              Z2,
                              F@_1,
                              F@_2,
                              F@_3,
+                             F@_4,
                              TrUserData);
 dfp_read_field_def_server_node(<<24, Rest/binary>>, Z1,
-                               Z2, F@_1, F@_2, F@_3, TrUserData) ->
+                               Z2, F@_1, F@_2, F@_3, F@_4, TrUserData) ->
     d_field_server_node_port(Rest,
                              Z1,
                              Z2,
                              F@_1,
                              F@_2,
                              F@_3,
+                             F@_4,
                              TrUserData);
+dfp_read_field_def_server_node(<<34, Rest/binary>>, Z1,
+                               Z2, F@_1, F@_2, F@_3, F@_4, TrUserData) ->
+    d_field_server_node_version(Rest,
+                                Z1,
+                                Z2,
+                                F@_1,
+                                F@_2,
+                                F@_3,
+                                F@_4,
+                                TrUserData);
 dfp_read_field_def_server_node(<<>>, 0, 0, F@_1, F@_2,
-                               F@_3, _) ->
-    #{id => F@_1, host => F@_2, port => F@_3};
+                               F@_3, F@_4, _) ->
+    S1 = #{id => F@_1, host => F@_2, port => F@_3},
+    if F@_4 == '$undef' -> S1;
+       true -> S1#{version => F@_4}
+    end;
 dfp_read_field_def_server_node(Other, Z1, Z2, F@_1,
-                               F@_2, F@_3, TrUserData) ->
+                               F@_2, F@_3, F@_4, TrUserData) ->
     dg_read_field_def_server_node(Other,
                                   Z1,
                                   Z2,
                                   F@_1,
                                   F@_2,
                                   F@_3,
+                                  F@_4,
                                   TrUserData).
 
 dg_read_field_def_server_node(<<1:1, X:7, Rest/binary>>,
-                              N, Acc, F@_1, F@_2, F@_3, TrUserData)
+                              N, Acc, F@_1, F@_2, F@_3, F@_4, TrUserData)
     when N < 32 - 7 ->
     dg_read_field_def_server_node(Rest,
                                   N + 7,
@@ -27679,9 +28614,10 @@ dg_read_field_def_server_node(<<1:1, X:7, Rest/binary>>,
                                   F@_1,
                                   F@_2,
                                   F@_3,
+                                  F@_4,
                                   TrUserData);
 dg_read_field_def_server_node(<<0:1, X:7, Rest/binary>>,
-                              N, Acc, F@_1, F@_2, F@_3, TrUserData) ->
+                              N, Acc, F@_1, F@_2, F@_3, F@_4, TrUserData) ->
     Key = X bsl N + Acc,
     case Key of
         8 ->
@@ -27691,6 +28627,7 @@ dg_read_field_def_server_node(<<0:1, X:7, Rest/binary>>,
                                    F@_1,
                                    F@_2,
                                    F@_3,
+                                   F@_4,
                                    TrUserData);
         18 ->
             d_field_server_node_host(Rest,
@@ -27699,6 +28636,7 @@ dg_read_field_def_server_node(<<0:1, X:7, Rest/binary>>,
                                      F@_1,
                                      F@_2,
                                      F@_3,
+                                     F@_4,
                                      TrUserData);
         24 ->
             d_field_server_node_port(Rest,
@@ -27707,7 +28645,17 @@ dg_read_field_def_server_node(<<0:1, X:7, Rest/binary>>,
                                      F@_1,
                                      F@_2,
                                      F@_3,
+                                     F@_4,
                                      TrUserData);
+        34 ->
+            d_field_server_node_version(Rest,
+                                        0,
+                                        0,
+                                        F@_1,
+                                        F@_2,
+                                        F@_3,
+                                        F@_4,
+                                        TrUserData);
         _ ->
             case Key band 7 of
                 0 ->
@@ -27717,6 +28665,7 @@ dg_read_field_def_server_node(<<0:1, X:7, Rest/binary>>,
                                             F@_1,
                                             F@_2,
                                             F@_3,
+                                            F@_4,
                                             TrUserData);
                 1 ->
                     skip_64_server_node(Rest,
@@ -27725,6 +28674,7 @@ dg_read_field_def_server_node(<<0:1, X:7, Rest/binary>>,
                                         F@_1,
                                         F@_2,
                                         F@_3,
+                                        F@_4,
                                         TrUserData);
                 2 ->
                     skip_length_delimited_server_node(Rest,
@@ -27733,6 +28683,7 @@ dg_read_field_def_server_node(<<0:1, X:7, Rest/binary>>,
                                                       F@_1,
                                                       F@_2,
                                                       F@_3,
+                                                      F@_4,
                                                       TrUserData);
                 3 ->
                     skip_group_server_node(Rest,
@@ -27741,6 +28692,7 @@ dg_read_field_def_server_node(<<0:1, X:7, Rest/binary>>,
                                            F@_1,
                                            F@_2,
                                            F@_3,
+                                           F@_4,
                                            TrUserData);
                 5 ->
                     skip_32_server_node(Rest,
@@ -27749,15 +28701,19 @@ dg_read_field_def_server_node(<<0:1, X:7, Rest/binary>>,
                                         F@_1,
                                         F@_2,
                                         F@_3,
+                                        F@_4,
                                         TrUserData)
             end
     end;
 dg_read_field_def_server_node(<<>>, 0, 0, F@_1, F@_2,
-                              F@_3, _) ->
-    #{id => F@_1, host => F@_2, port => F@_3}.
+                              F@_3, F@_4, _) ->
+    S1 = #{id => F@_1, host => F@_2, port => F@_3},
+    if F@_4 == '$undef' -> S1;
+       true -> S1#{version => F@_4}
+    end.
 
 d_field_server_node_id(<<1:1, X:7, Rest/binary>>, N,
-                       Acc, F@_1, F@_2, F@_3, TrUserData)
+                       Acc, F@_1, F@_2, F@_3, F@_4, TrUserData)
     when N < 57 ->
     d_field_server_node_id(Rest,
                            N + 7,
@@ -27765,9 +28721,10 @@ d_field_server_node_id(<<1:1, X:7, Rest/binary>>, N,
                            F@_1,
                            F@_2,
                            F@_3,
+                           F@_4,
                            TrUserData);
 d_field_server_node_id(<<0:1, X:7, Rest/binary>>, N,
-                       Acc, _, F@_2, F@_3, TrUserData) ->
+                       Acc, _, F@_2, F@_3, F@_4, TrUserData) ->
     {NewFValue, RestF} = {id(X bsl N + Acc, TrUserData),
                           Rest},
     dfp_read_field_def_server_node(RestF,
@@ -27776,10 +28733,11 @@ d_field_server_node_id(<<0:1, X:7, Rest/binary>>, N,
                                    NewFValue,
                                    F@_2,
                                    F@_3,
+                                   F@_4,
                                    TrUserData).
 
 d_field_server_node_host(<<1:1, X:7, Rest/binary>>, N,
-                         Acc, F@_1, F@_2, F@_3, TrUserData)
+                         Acc, F@_1, F@_2, F@_3, F@_4, TrUserData)
     when N < 57 ->
     d_field_server_node_host(Rest,
                              N + 7,
@@ -27787,9 +28745,10 @@ d_field_server_node_host(<<1:1, X:7, Rest/binary>>, N,
                              F@_1,
                              F@_2,
                              F@_3,
+                             F@_4,
                              TrUserData);
 d_field_server_node_host(<<0:1, X:7, Rest/binary>>, N,
-                         Acc, F@_1, _, F@_3, TrUserData) ->
+                         Acc, F@_1, _, F@_3, F@_4, TrUserData) ->
     {NewFValue, RestF} = begin
                              Len = X bsl N + Acc,
                              <<Bytes:Len/binary, Rest2/binary>> = Rest,
@@ -27801,10 +28760,11 @@ d_field_server_node_host(<<0:1, X:7, Rest/binary>>, N,
                                    F@_1,
                                    NewFValue,
                                    F@_3,
+                                   F@_4,
                                    TrUserData).
 
 d_field_server_node_port(<<1:1, X:7, Rest/binary>>, N,
-                         Acc, F@_1, F@_2, F@_3, TrUserData)
+                         Acc, F@_1, F@_2, F@_3, F@_4, TrUserData)
     when N < 57 ->
     d_field_server_node_port(Rest,
                              N + 7,
@@ -27812,9 +28772,10 @@ d_field_server_node_port(<<1:1, X:7, Rest/binary>>, N,
                              F@_1,
                              F@_2,
                              F@_3,
+                             F@_4,
                              TrUserData);
 d_field_server_node_port(<<0:1, X:7, Rest/binary>>, N,
-                         Acc, F@_1, F@_2, _, TrUserData) ->
+                         Acc, F@_1, F@_2, _, F@_4, TrUserData) ->
     {NewFValue, RestF} = {id(X bsl N + Acc, TrUserData),
                           Rest},
     dfp_read_field_def_server_node(RestF,
@@ -27823,30 +28784,67 @@ d_field_server_node_port(<<0:1, X:7, Rest/binary>>, N,
                                    F@_1,
                                    F@_2,
                                    NewFValue,
+                                   F@_4,
+                                   TrUserData).
+
+d_field_server_node_version(<<1:1, X:7, Rest/binary>>,
+                            N, Acc, F@_1, F@_2, F@_3, F@_4, TrUserData)
+    when N < 57 ->
+    d_field_server_node_version(Rest,
+                                N + 7,
+                                X bsl N + Acc,
+                                F@_1,
+                                F@_2,
+                                F@_3,
+                                F@_4,
+                                TrUserData);
+d_field_server_node_version(<<0:1, X:7, Rest/binary>>,
+                            N, Acc, F@_1, F@_2, F@_3, Prev, TrUserData) ->
+    {NewFValue, RestF} = begin
+                             Len = X bsl N + Acc,
+                             <<Bs:Len/binary, Rest2/binary>> = Rest,
+                             {id(decode_msg_h_stream_version(Bs, TrUserData),
+                                 TrUserData),
+                              Rest2}
+                         end,
+    dfp_read_field_def_server_node(RestF,
+                                   0,
+                                   0,
+                                   F@_1,
+                                   F@_2,
+                                   F@_3,
+                                   if Prev == '$undef' -> NewFValue;
+                                      true ->
+                                          merge_msg_h_stream_version(Prev,
+                                                                     NewFValue,
+                                                                     TrUserData)
+                                   end,
                                    TrUserData).
 
 skip_varint_server_node(<<1:1, _:7, Rest/binary>>, Z1,
-                        Z2, F@_1, F@_2, F@_3, TrUserData) ->
+                        Z2, F@_1, F@_2, F@_3, F@_4, TrUserData) ->
     skip_varint_server_node(Rest,
                             Z1,
                             Z2,
                             F@_1,
                             F@_2,
                             F@_3,
+                            F@_4,
                             TrUserData);
 skip_varint_server_node(<<0:1, _:7, Rest/binary>>, Z1,
-                        Z2, F@_1, F@_2, F@_3, TrUserData) ->
+                        Z2, F@_1, F@_2, F@_3, F@_4, TrUserData) ->
     dfp_read_field_def_server_node(Rest,
                                    Z1,
                                    Z2,
                                    F@_1,
                                    F@_2,
                                    F@_3,
+                                   F@_4,
                                    TrUserData).
 
 skip_length_delimited_server_node(<<1:1, X:7,
                                     Rest/binary>>,
-                                  N, Acc, F@_1, F@_2, F@_3, TrUserData)
+                                  N, Acc, F@_1, F@_2, F@_3, F@_4, TrUserData)
     when N < 57 ->
     skip_length_delimited_server_node(Rest,
                                       N + 7,
@@ -27854,10 +28852,11 @@ skip_length_delimited_server_node(<<1:1, X:7,
                                       F@_1,
                                       F@_2,
                                       F@_3,
+                                      F@_4,
                                       TrUserData);
 skip_length_delimited_server_node(<<0:1, X:7,
                                     Rest/binary>>,
-                                  N, Acc, F@_1, F@_2, F@_3, TrUserData) ->
+                                  N, Acc, F@_1, F@_2, F@_3, F@_4, TrUserData) ->
     Length = X bsl N + Acc,
     <<_:Length/binary, Rest2/binary>> = Rest,
     dfp_read_field_def_server_node(Rest2,
@@ -27866,10 +28865,11 @@ skip_length_delimited_server_node(<<0:1, X:7,
                                    F@_1,
                                    F@_2,
                                    F@_3,
+                                   F@_4,
                                    TrUserData).
 
 skip_group_server_node(Bin, FNum, Z2, F@_1, F@_2, F@_3,
-                       TrUserData) ->
+                       F@_4, TrUserData) ->
     {_, Rest} = read_group(Bin, FNum),
     dfp_read_field_def_server_node(Rest,
                                    0,
@@ -27877,26 +28877,29 @@ skip_group_server_node(Bin, FNum, Z2, F@_1, F@_2, F@_3,
                                    F@_1,
                                    F@_2,
                                    F@_3,
+                                   F@_4,
                                    TrUserData).
 
 skip_32_server_node(<<_:32, Rest/binary>>, Z1, Z2, F@_1,
-                    F@_2, F@_3, TrUserData) ->
+                    F@_2, F@_3, F@_4, TrUserData) ->
     dfp_read_field_def_server_node(Rest,
                                    Z1,
                                    Z2,
                                    F@_1,
                                    F@_2,
                                    F@_3,
+                                   F@_4,
                                    TrUserData).
 
 skip_64_server_node(<<_:64, Rest/binary>>, Z1, Z2, F@_1,
-                    F@_2, F@_3, TrUserData) ->
+                    F@_2, F@_3, F@_4, TrUserData) ->
     dfp_read_field_def_server_node(Rest,
                                    Z1,
                                    Z2,
                                    F@_1,
                                    F@_2,
                                    F@_3,
+                                   F@_4,
                                    TrUserData).
 
 decode_msg_server_node_status(Bin, TrUserData) ->
@@ -28144,6 +29147,231 @@ skip_64_server_node_status(<<_:64, Rest/binary>>, Z1,
                                           F@_1,
                                           F@_2,
                                           TrUserData).
+
+decode_msg_h_stream_version(Bin, TrUserData) ->
+    dfp_read_field_def_h_stream_version(Bin,
+                                        0,
+                                        0,
+                                        id(<<>>, TrUserData),
+                                        id(<<>>, TrUserData),
+                                        TrUserData).
+
+dfp_read_field_def_h_stream_version(<<10, Rest/binary>>,
+                                    Z1, Z2, F@_1, F@_2, TrUserData) ->
+    d_field_h_stream_version_version(Rest,
+                                     Z1,
+                                     Z2,
+                                     F@_1,
+                                     F@_2,
+                                     TrUserData);
+dfp_read_field_def_h_stream_version(<<18, Rest/binary>>,
+                                    Z1, Z2, F@_1, F@_2, TrUserData) ->
+    d_field_h_stream_version_commit(Rest,
+                                    Z1,
+                                    Z2,
+                                    F@_1,
+                                    F@_2,
+                                    TrUserData);
+dfp_read_field_def_h_stream_version(<<>>, 0, 0, F@_1,
+                                    F@_2, _) ->
+    #{version => F@_1, commit => F@_2};
+dfp_read_field_def_h_stream_version(Other, Z1, Z2, F@_1,
+                                    F@_2, TrUserData) ->
+    dg_read_field_def_h_stream_version(Other,
+                                       Z1,
+                                       Z2,
+                                       F@_1,
+                                       F@_2,
+                                       TrUserData).
+
+dg_read_field_def_h_stream_version(<<1:1, X:7,
+                                     Rest/binary>>,
+                                   N, Acc, F@_1, F@_2, TrUserData)
+    when N < 32 - 7 ->
+    dg_read_field_def_h_stream_version(Rest,
+                                       N + 7,
+                                       X bsl N + Acc,
+                                       F@_1,
+                                       F@_2,
+                                       TrUserData);
+dg_read_field_def_h_stream_version(<<0:1, X:7,
+                                     Rest/binary>>,
+                                   N, Acc, F@_1, F@_2, TrUserData) ->
+    Key = X bsl N + Acc,
+    case Key of
+        10 ->
+            d_field_h_stream_version_version(Rest,
+                                             0,
+                                             0,
+                                             F@_1,
+                                             F@_2,
+                                             TrUserData);
+        18 ->
+            d_field_h_stream_version_commit(Rest,
+                                            0,
+                                            0,
+                                            F@_1,
+                                            F@_2,
+                                            TrUserData);
+        _ ->
+            case Key band 7 of
+                0 ->
+                    skip_varint_h_stream_version(Rest,
+                                                 0,
+                                                 0,
+                                                 F@_1,
+                                                 F@_2,
+                                                 TrUserData);
+                1 ->
+                    skip_64_h_stream_version(Rest,
+                                             0,
+                                             0,
+                                             F@_1,
+                                             F@_2,
+                                             TrUserData);
+                2 ->
+                    skip_length_delimited_h_stream_version(Rest,
+                                                           0,
+                                                           0,
+                                                           F@_1,
+                                                           F@_2,
+                                                           TrUserData);
+                3 ->
+                    skip_group_h_stream_version(Rest,
+                                                Key bsr 3,
+                                                0,
+                                                F@_1,
+                                                F@_2,
+                                                TrUserData);
+                5 ->
+                    skip_32_h_stream_version(Rest,
+                                             0,
+                                             0,
+                                             F@_1,
+                                             F@_2,
+                                             TrUserData)
+            end
+    end;
+dg_read_field_def_h_stream_version(<<>>, 0, 0, F@_1,
+                                   F@_2, _) ->
+    #{version => F@_1, commit => F@_2}.
+
+d_field_h_stream_version_version(<<1:1, X:7,
+                                   Rest/binary>>,
+                                 N, Acc, F@_1, F@_2, TrUserData)
+    when N < 57 ->
+    d_field_h_stream_version_version(Rest,
+                                     N + 7,
+                                     X bsl N + Acc,
+                                     F@_1,
+                                     F@_2,
+                                     TrUserData);
+d_field_h_stream_version_version(<<0:1, X:7,
+                                   Rest/binary>>,
+                                 N, Acc, _, F@_2, TrUserData) ->
+    {NewFValue, RestF} = begin
+                             Len = X bsl N + Acc,
+                             <<Bytes:Len/binary, Rest2/binary>> = Rest,
+                             {id(binary:copy(Bytes), TrUserData), Rest2}
+                         end,
+    dfp_read_field_def_h_stream_version(RestF,
+                                        0,
+                                        0,
+                                        NewFValue,
+                                        F@_2,
+                                        TrUserData).
+
+d_field_h_stream_version_commit(<<1:1, X:7,
+                                  Rest/binary>>,
+                                N, Acc, F@_1, F@_2, TrUserData)
+    when N < 57 ->
+    d_field_h_stream_version_commit(Rest,
+                                    N + 7,
+                                    X bsl N + Acc,
+                                    F@_1,
+                                    F@_2,
+                                    TrUserData);
+d_field_h_stream_version_commit(<<0:1, X:7,
+                                  Rest/binary>>,
+                                N, Acc, F@_1, _, TrUserData) ->
+    {NewFValue, RestF} = begin
+                             Len = X bsl N + Acc,
+                             <<Bytes:Len/binary, Rest2/binary>> = Rest,
+                             {id(binary:copy(Bytes), TrUserData), Rest2}
+                         end,
+    dfp_read_field_def_h_stream_version(RestF,
+                                        0,
+                                        0,
+                                        F@_1,
+                                        NewFValue,
+                                        TrUserData).
+
+skip_varint_h_stream_version(<<1:1, _:7, Rest/binary>>,
+                             Z1, Z2, F@_1, F@_2, TrUserData) ->
+    skip_varint_h_stream_version(Rest,
+                                 Z1,
+                                 Z2,
+                                 F@_1,
+                                 F@_2,
+                                 TrUserData);
+skip_varint_h_stream_version(<<0:1, _:7, Rest/binary>>,
+                             Z1, Z2, F@_1, F@_2, TrUserData) ->
+    dfp_read_field_def_h_stream_version(Rest,
+                                        Z1,
+                                        Z2,
+                                        F@_1,
+                                        F@_2,
+                                        TrUserData).
+
+skip_length_delimited_h_stream_version(<<1:1, X:7,
+                                         Rest/binary>>,
+                                       N, Acc, F@_1, F@_2, TrUserData)
+    when N < 57 ->
+    skip_length_delimited_h_stream_version(Rest,
+                                           N + 7,
+                                           X bsl N + Acc,
+                                           F@_1,
+                                           F@_2,
+                                           TrUserData);
+skip_length_delimited_h_stream_version(<<0:1, X:7,
+                                         Rest/binary>>,
+                                       N, Acc, F@_1, F@_2, TrUserData) ->
+    Length = X bsl N + Acc,
+    <<_:Length/binary, Rest2/binary>> = Rest,
+    dfp_read_field_def_h_stream_version(Rest2,
+                                        0,
+                                        0,
+                                        F@_1,
+                                        F@_2,
+                                        TrUserData).
+
+skip_group_h_stream_version(Bin, FNum, Z2, F@_1, F@_2,
+                            TrUserData) ->
+    {_, Rest} = read_group(Bin, FNum),
+    dfp_read_field_def_h_stream_version(Rest,
+                                        0,
+                                        Z2,
+                                        F@_1,
+                                        F@_2,
+                                        TrUserData).
+
+skip_32_h_stream_version(<<_:32, Rest/binary>>, Z1, Z2,
+                         F@_1, F@_2, TrUserData) ->
+    dfp_read_field_def_h_stream_version(Rest,
+                                        Z1,
+                                        Z2,
+                                        F@_1,
+                                        F@_2,
+                                        TrUserData).
+
+skip_64_h_stream_version(<<_:64, Rest/binary>>, Z1, Z2,
+                         F@_1, F@_2, TrUserData) ->
+    dfp_read_field_def_h_stream_version(Rest,
+                                        Z1,
+                                        Z2,
+                                        F@_1,
+                                        F@_2,
+                                        TrUserData).
 
 decode_msg_lookup_shard_request(Bin, TrUserData) ->
     dfp_read_field_def_lookup_shard_request(Bin,
@@ -29634,6 +30862,422 @@ skip_64_lookup_resource_request(<<_:64, Rest/binary>>,
                                                F@_1,
                                                F@_2,
                                                TrUserData).
+
+decode_msg_get_tail_record_id_request(Bin,
+                                      TrUserData) ->
+    dfp_read_field_def_get_tail_record_id_request(Bin,
+                                                  0,
+                                                  0,
+                                                  id(<<>>, TrUserData),
+                                                  id(0, TrUserData),
+                                                  TrUserData).
+
+dfp_read_field_def_get_tail_record_id_request(<<10,
+                                                Rest/binary>>,
+                                              Z1, Z2, F@_1, F@_2, TrUserData) ->
+    d_field_get_tail_record_id_request_streamName(Rest,
+                                                  Z1,
+                                                  Z2,
+                                                  F@_1,
+                                                  F@_2,
+                                                  TrUserData);
+dfp_read_field_def_get_tail_record_id_request(<<16,
+                                                Rest/binary>>,
+                                              Z1, Z2, F@_1, F@_2, TrUserData) ->
+    d_field_get_tail_record_id_request_shardId(Rest,
+                                               Z1,
+                                               Z2,
+                                               F@_1,
+                                               F@_2,
+                                               TrUserData);
+dfp_read_field_def_get_tail_record_id_request(<<>>, 0,
+                                              0, F@_1, F@_2, _) ->
+    #{streamName => F@_1, shardId => F@_2};
+dfp_read_field_def_get_tail_record_id_request(Other, Z1,
+                                              Z2, F@_1, F@_2, TrUserData) ->
+    dg_read_field_def_get_tail_record_id_request(Other,
+                                                 Z1,
+                                                 Z2,
+                                                 F@_1,
+                                                 F@_2,
+                                                 TrUserData).
+
+dg_read_field_def_get_tail_record_id_request(<<1:1, X:7,
+                                               Rest/binary>>,
+                                             N, Acc, F@_1, F@_2, TrUserData)
+    when N < 32 - 7 ->
+    dg_read_field_def_get_tail_record_id_request(Rest,
+                                                 N + 7,
+                                                 X bsl N + Acc,
+                                                 F@_1,
+                                                 F@_2,
+                                                 TrUserData);
+dg_read_field_def_get_tail_record_id_request(<<0:1, X:7,
+                                               Rest/binary>>,
+                                             N, Acc, F@_1, F@_2, TrUserData) ->
+    Key = X bsl N + Acc,
+    case Key of
+        10 ->
+            d_field_get_tail_record_id_request_streamName(Rest,
+                                                          0,
+                                                          0,
+                                                          F@_1,
+                                                          F@_2,
+                                                          TrUserData);
+        16 ->
+            d_field_get_tail_record_id_request_shardId(Rest,
+                                                       0,
+                                                       0,
+                                                       F@_1,
+                                                       F@_2,
+                                                       TrUserData);
+        _ ->
+            case Key band 7 of
+                0 ->
+                    skip_varint_get_tail_record_id_request(Rest,
+                                                           0,
+                                                           0,
+                                                           F@_1,
+                                                           F@_2,
+                                                           TrUserData);
+                1 ->
+                    skip_64_get_tail_record_id_request(Rest,
+                                                       0,
+                                                       0,
+                                                       F@_1,
+                                                       F@_2,
+                                                       TrUserData);
+                2 ->
+                    skip_length_delimited_get_tail_record_id_request(Rest,
+                                                                     0,
+                                                                     0,
+                                                                     F@_1,
+                                                                     F@_2,
+                                                                     TrUserData);
+                3 ->
+                    skip_group_get_tail_record_id_request(Rest,
+                                                          Key bsr 3,
+                                                          0,
+                                                          F@_1,
+                                                          F@_2,
+                                                          TrUserData);
+                5 ->
+                    skip_32_get_tail_record_id_request(Rest,
+                                                       0,
+                                                       0,
+                                                       F@_1,
+                                                       F@_2,
+                                                       TrUserData)
+            end
+    end;
+dg_read_field_def_get_tail_record_id_request(<<>>, 0, 0,
+                                             F@_1, F@_2, _) ->
+    #{streamName => F@_1, shardId => F@_2}.
+
+d_field_get_tail_record_id_request_streamName(<<1:1,
+                                                X:7, Rest/binary>>,
+                                              N, Acc, F@_1, F@_2, TrUserData)
+    when N < 57 ->
+    d_field_get_tail_record_id_request_streamName(Rest,
+                                                  N + 7,
+                                                  X bsl N + Acc,
+                                                  F@_1,
+                                                  F@_2,
+                                                  TrUserData);
+d_field_get_tail_record_id_request_streamName(<<0:1,
+                                                X:7, Rest/binary>>,
+                                              N, Acc, _, F@_2, TrUserData) ->
+    {NewFValue, RestF} = begin
+                             Len = X bsl N + Acc,
+                             <<Bytes:Len/binary, Rest2/binary>> = Rest,
+                             {id(binary:copy(Bytes), TrUserData), Rest2}
+                         end,
+    dfp_read_field_def_get_tail_record_id_request(RestF,
+                                                  0,
+                                                  0,
+                                                  NewFValue,
+                                                  F@_2,
+                                                  TrUserData).
+
+d_field_get_tail_record_id_request_shardId(<<1:1, X:7,
+                                             Rest/binary>>,
+                                           N, Acc, F@_1, F@_2, TrUserData)
+    when N < 57 ->
+    d_field_get_tail_record_id_request_shardId(Rest,
+                                               N + 7,
+                                               X bsl N + Acc,
+                                               F@_1,
+                                               F@_2,
+                                               TrUserData);
+d_field_get_tail_record_id_request_shardId(<<0:1, X:7,
+                                             Rest/binary>>,
+                                           N, Acc, F@_1, _, TrUserData) ->
+    {NewFValue, RestF} = {id(X bsl N + Acc, TrUserData),
+                          Rest},
+    dfp_read_field_def_get_tail_record_id_request(RestF,
+                                                  0,
+                                                  0,
+                                                  F@_1,
+                                                  NewFValue,
+                                                  TrUserData).
+
+skip_varint_get_tail_record_id_request(<<1:1, _:7,
+                                         Rest/binary>>,
+                                       Z1, Z2, F@_1, F@_2, TrUserData) ->
+    skip_varint_get_tail_record_id_request(Rest,
+                                           Z1,
+                                           Z2,
+                                           F@_1,
+                                           F@_2,
+                                           TrUserData);
+skip_varint_get_tail_record_id_request(<<0:1, _:7,
+                                         Rest/binary>>,
+                                       Z1, Z2, F@_1, F@_2, TrUserData) ->
+    dfp_read_field_def_get_tail_record_id_request(Rest,
+                                                  Z1,
+                                                  Z2,
+                                                  F@_1,
+                                                  F@_2,
+                                                  TrUserData).
+
+skip_length_delimited_get_tail_record_id_request(<<1:1,
+                                                   X:7, Rest/binary>>,
+                                                 N, Acc, F@_1, F@_2, TrUserData)
+    when N < 57 ->
+    skip_length_delimited_get_tail_record_id_request(Rest,
+                                                     N + 7,
+                                                     X bsl N + Acc,
+                                                     F@_1,
+                                                     F@_2,
+                                                     TrUserData);
+skip_length_delimited_get_tail_record_id_request(<<0:1,
+                                                   X:7, Rest/binary>>,
+                                                 N, Acc, F@_1, F@_2,
+                                                 TrUserData) ->
+    Length = X bsl N + Acc,
+    <<_:Length/binary, Rest2/binary>> = Rest,
+    dfp_read_field_def_get_tail_record_id_request(Rest2,
+                                                  0,
+                                                  0,
+                                                  F@_1,
+                                                  F@_2,
+                                                  TrUserData).
+
+skip_group_get_tail_record_id_request(Bin, FNum, Z2,
+                                      F@_1, F@_2, TrUserData) ->
+    {_, Rest} = read_group(Bin, FNum),
+    dfp_read_field_def_get_tail_record_id_request(Rest,
+                                                  0,
+                                                  Z2,
+                                                  F@_1,
+                                                  F@_2,
+                                                  TrUserData).
+
+skip_32_get_tail_record_id_request(<<_:32,
+                                     Rest/binary>>,
+                                   Z1, Z2, F@_1, F@_2, TrUserData) ->
+    dfp_read_field_def_get_tail_record_id_request(Rest,
+                                                  Z1,
+                                                  Z2,
+                                                  F@_1,
+                                                  F@_2,
+                                                  TrUserData).
+
+skip_64_get_tail_record_id_request(<<_:64,
+                                     Rest/binary>>,
+                                   Z1, Z2, F@_1, F@_2, TrUserData) ->
+    dfp_read_field_def_get_tail_record_id_request(Rest,
+                                                  Z1,
+                                                  Z2,
+                                                  F@_1,
+                                                  F@_2,
+                                                  TrUserData).
+
+decode_msg_get_tail_record_id_response(Bin,
+                                       TrUserData) ->
+    dfp_read_field_def_get_tail_record_id_response(Bin,
+                                                   0,
+                                                   0,
+                                                   id('$undef', TrUserData),
+                                                   TrUserData).
+
+dfp_read_field_def_get_tail_record_id_response(<<10,
+                                                 Rest/binary>>,
+                                               Z1, Z2, F@_1, TrUserData) ->
+    d_field_get_tail_record_id_response_tailRecordId(Rest,
+                                                     Z1,
+                                                     Z2,
+                                                     F@_1,
+                                                     TrUserData);
+dfp_read_field_def_get_tail_record_id_response(<<>>, 0,
+                                               0, F@_1, _) ->
+    S1 = #{},
+    if F@_1 == '$undef' -> S1;
+       true -> S1#{tailRecordId => F@_1}
+    end;
+dfp_read_field_def_get_tail_record_id_response(Other,
+                                               Z1, Z2, F@_1, TrUserData) ->
+    dg_read_field_def_get_tail_record_id_response(Other,
+                                                  Z1,
+                                                  Z2,
+                                                  F@_1,
+                                                  TrUserData).
+
+dg_read_field_def_get_tail_record_id_response(<<1:1,
+                                                X:7, Rest/binary>>,
+                                              N, Acc, F@_1, TrUserData)
+    when N < 32 - 7 ->
+    dg_read_field_def_get_tail_record_id_response(Rest,
+                                                  N + 7,
+                                                  X bsl N + Acc,
+                                                  F@_1,
+                                                  TrUserData);
+dg_read_field_def_get_tail_record_id_response(<<0:1,
+                                                X:7, Rest/binary>>,
+                                              N, Acc, F@_1, TrUserData) ->
+    Key = X bsl N + Acc,
+    case Key of
+        10 ->
+            d_field_get_tail_record_id_response_tailRecordId(Rest,
+                                                             0,
+                                                             0,
+                                                             F@_1,
+                                                             TrUserData);
+        _ ->
+            case Key band 7 of
+                0 ->
+                    skip_varint_get_tail_record_id_response(Rest,
+                                                            0,
+                                                            0,
+                                                            F@_1,
+                                                            TrUserData);
+                1 ->
+                    skip_64_get_tail_record_id_response(Rest,
+                                                        0,
+                                                        0,
+                                                        F@_1,
+                                                        TrUserData);
+                2 ->
+                    skip_length_delimited_get_tail_record_id_response(Rest,
+                                                                      0,
+                                                                      0,
+                                                                      F@_1,
+                                                                      TrUserData);
+                3 ->
+                    skip_group_get_tail_record_id_response(Rest,
+                                                           Key bsr 3,
+                                                           0,
+                                                           F@_1,
+                                                           TrUserData);
+                5 ->
+                    skip_32_get_tail_record_id_response(Rest,
+                                                        0,
+                                                        0,
+                                                        F@_1,
+                                                        TrUserData)
+            end
+    end;
+dg_read_field_def_get_tail_record_id_response(<<>>, 0,
+                                              0, F@_1, _) ->
+    S1 = #{},
+    if F@_1 == '$undef' -> S1;
+       true -> S1#{tailRecordId => F@_1}
+    end.
+
+d_field_get_tail_record_id_response_tailRecordId(<<1:1,
+                                                   X:7, Rest/binary>>,
+                                                 N, Acc, F@_1, TrUserData)
+    when N < 57 ->
+    d_field_get_tail_record_id_response_tailRecordId(Rest,
+                                                     N + 7,
+                                                     X bsl N + Acc,
+                                                     F@_1,
+                                                     TrUserData);
+d_field_get_tail_record_id_response_tailRecordId(<<0:1,
+                                                   X:7, Rest/binary>>,
+                                                 N, Acc, Prev, TrUserData) ->
+    {NewFValue, RestF} = begin
+                             Len = X bsl N + Acc,
+                             <<Bs:Len/binary, Rest2/binary>> = Rest,
+                             {id(decode_msg_record_id(Bs, TrUserData),
+                                 TrUserData),
+                              Rest2}
+                         end,
+    dfp_read_field_def_get_tail_record_id_response(RestF,
+                                                   0,
+                                                   0,
+                                                   if Prev == '$undef' ->
+                                                          NewFValue;
+                                                      true ->
+                                                          merge_msg_record_id(Prev,
+                                                                              NewFValue,
+                                                                              TrUserData)
+                                                   end,
+                                                   TrUserData).
+
+skip_varint_get_tail_record_id_response(<<1:1, _:7,
+                                          Rest/binary>>,
+                                        Z1, Z2, F@_1, TrUserData) ->
+    skip_varint_get_tail_record_id_response(Rest,
+                                            Z1,
+                                            Z2,
+                                            F@_1,
+                                            TrUserData);
+skip_varint_get_tail_record_id_response(<<0:1, _:7,
+                                          Rest/binary>>,
+                                        Z1, Z2, F@_1, TrUserData) ->
+    dfp_read_field_def_get_tail_record_id_response(Rest,
+                                                   Z1,
+                                                   Z2,
+                                                   F@_1,
+                                                   TrUserData).
+
+skip_length_delimited_get_tail_record_id_response(<<1:1,
+                                                    X:7, Rest/binary>>,
+                                                  N, Acc, F@_1, TrUserData)
+    when N < 57 ->
+    skip_length_delimited_get_tail_record_id_response(Rest,
+                                                      N + 7,
+                                                      X bsl N + Acc,
+                                                      F@_1,
+                                                      TrUserData);
+skip_length_delimited_get_tail_record_id_response(<<0:1,
+                                                    X:7, Rest/binary>>,
+                                                  N, Acc, F@_1, TrUserData) ->
+    Length = X bsl N + Acc,
+    <<_:Length/binary, Rest2/binary>> = Rest,
+    dfp_read_field_def_get_tail_record_id_response(Rest2,
+                                                   0,
+                                                   0,
+                                                   F@_1,
+                                                   TrUserData).
+
+skip_group_get_tail_record_id_response(Bin, FNum, Z2,
+                                       F@_1, TrUserData) ->
+    {_, Rest} = read_group(Bin, FNum),
+    dfp_read_field_def_get_tail_record_id_response(Rest,
+                                                   0,
+                                                   Z2,
+                                                   F@_1,
+                                                   TrUserData).
+
+skip_32_get_tail_record_id_response(<<_:32,
+                                      Rest/binary>>,
+                                    Z1, Z2, F@_1, TrUserData) ->
+    dfp_read_field_def_get_tail_record_id_response(Rest,
+                                                   Z1,
+                                                   Z2,
+                                                   F@_1,
+                                                   TrUserData).
+
+skip_64_get_tail_record_id_response(<<_:64,
+                                      Rest/binary>>,
+                                    Z1, Z2, F@_1, TrUserData) ->
+    dfp_read_field_def_get_tail_record_id_response(Rest,
+                                                   Z1,
+                                                   Z2,
+                                                   F@_1,
+                                                   TrUserData).
 
 decode_msg_stat_type(Bin, TrUserData) ->
     dfp_read_field_def_stat_type(Bin,
@@ -32714,6 +34358,8 @@ skip_64_empty(<<_:64, Rest/binary>>, Z1, Z2,
     'RequestMessages';
 'd_enum_hstream.server.SubscriptionStats'(7) ->
     'ResponseMessages';
+'d_enum_hstream.server.SubscriptionStats'(8) ->
+    'ChecklistSize';
 'd_enum_hstream.server.SubscriptionStats'(V) -> V.
 
 'd_enum_hstream.server.ConnectorStats'(0) ->
@@ -33066,6 +34712,8 @@ merge_msgs(Prev, New, MsgName, Opts) ->
             merge_msg_server_node(Prev, New, TrUserData);
         server_node_status ->
             merge_msg_server_node_status(Prev, New, TrUserData);
+        h_stream_version ->
+            merge_msg_h_stream_version(Prev, New, TrUserData);
         lookup_shard_request ->
             merge_msg_lookup_shard_request(Prev, New, TrUserData);
         lookup_shard_response ->
@@ -33090,6 +34738,14 @@ merge_msgs(Prev, New, MsgName, Opts) ->
             merge_msg_lookup_resource_request(Prev,
                                               New,
                                               TrUserData);
+        get_tail_record_id_request ->
+            merge_msg_get_tail_record_id_request(Prev,
+                                                 New,
+                                                 TrUserData);
+        get_tail_record_id_response ->
+            merge_msg_get_tail_record_id_response(Prev,
+                                                  New,
+                                                  TrUserData);
         stat_type -> merge_msg_stat_type(Prev, New, TrUserData);
         stat_value ->
             merge_msg_stat_value(Prev, New, TrUserData);
@@ -34072,18 +35728,28 @@ merge_msg_read_shard_stream_request(PMsg, NMsg,
                  S2#{shardId => PFshardId};
              _ -> S2
          end,
+    S4 = case {PMsg, NMsg} of
+             {#{from := PFfrom}, #{from := NFfrom}} ->
+                 S3#{from =>
+                         merge_msg_shard_offset(PFfrom, NFfrom, TrUserData)};
+             {_, #{from := NFfrom}} -> S3#{from => NFfrom};
+             {#{from := PFfrom}, _} -> S3#{from => PFfrom};
+             {_, _} -> S3
+         end,
+    S5 = case {PMsg, NMsg} of
+             {_, #{maxReadBatches := NFmaxReadBatches}} ->
+                 S4#{maxReadBatches => NFmaxReadBatches};
+             {#{maxReadBatches := PFmaxReadBatches}, _} ->
+                 S4#{maxReadBatches => PFmaxReadBatches};
+             _ -> S4
+         end,
     case {PMsg, NMsg} of
-        {#{shardOffset := PFshardOffset},
-         #{shardOffset := NFshardOffset}} ->
-            S3#{shardOffset =>
-                    merge_msg_shard_offset(PFshardOffset,
-                                           NFshardOffset,
-                                           TrUserData)};
-        {_, #{shardOffset := NFshardOffset}} ->
-            S3#{shardOffset => NFshardOffset};
-        {#{shardOffset := PFshardOffset}, _} ->
-            S3#{shardOffset => PFshardOffset};
-        {_, _} -> S3
+        {#{until := PFuntil}, #{until := NFuntil}} ->
+            S5#{until =>
+                    merge_msg_shard_offset(PFuntil, NFuntil, TrUserData)};
+        {_, #{until := NFuntil}} -> S5#{until => NFuntil};
+        {#{until := PFuntil}, _} -> S5#{until => PFuntil};
+        {_, _} -> S5
     end.
 
 -compile({nowarn_unused_function,merge_msg_read_shard_stream_response/3}).
@@ -34249,10 +35915,15 @@ merge_msg_query(PMsg, NMsg, TrUserData) ->
                  S6#{resultName => PFresultName};
              _ -> S6
          end,
+    S8 = case {PMsg, NMsg} of
+             {_, #{type := NFtype}} -> S7#{type => NFtype};
+             {#{type := PFtype}, _} -> S7#{type => PFtype};
+             _ -> S7
+         end,
     case {PMsg, NMsg} of
-        {_, #{type := NFtype}} -> S7#{type => NFtype};
-        {#{type := PFtype}, _} -> S7#{type => PFtype};
-        _ -> S7
+        {_, #{nodeId := NFnodeId}} -> S8#{nodeId => NFnodeId};
+        {#{nodeId := PFnodeId}, _} -> S8#{nodeId => PFnodeId};
+        _ -> S8
     end.
 
 -compile({nowarn_unused_function,merge_msg_delete_query_request/3}).
@@ -34462,15 +36133,37 @@ merge_msg_connector(PMsg, NMsg, TrUserData) ->
              {#{config := PFconfig}, _} -> S6#{config => PFconfig};
              _ -> S6
          end,
+    S8 = case {PMsg, NMsg} of
+             {#{offsets := PFoffsets}, #{offsets := NFoffsets}} ->
+                 S7#{offsets =>
+                         'erlang_++'(PFoffsets, NFoffsets, TrUserData)};
+             {_, #{offsets := NFoffsets}} ->
+                 S7#{offsets => NFoffsets};
+             {#{offsets := PFoffsets}, _} ->
+                 S7#{offsets => PFoffsets};
+             {_, _} -> S7
+         end,
+    S9 = case {PMsg, NMsg} of
+             {_, #{taskId := NFtaskId}} -> S8#{taskId => NFtaskId};
+             {#{taskId := PFtaskId}, _} -> S8#{taskId => PFtaskId};
+             _ -> S8
+         end,
+    S10 = case {PMsg, NMsg} of
+              {_, #{node := NFnode}} -> S9#{node => NFnode};
+              {#{node := PFnode}, _} -> S9#{node => PFnode};
+              _ -> S9
+          end,
+    S11 = case {PMsg, NMsg} of
+              {_, #{dockerStatus := NFdockerStatus}} ->
+                  S10#{dockerStatus => NFdockerStatus};
+              {#{dockerStatus := PFdockerStatus}, _} ->
+                  S10#{dockerStatus => PFdockerStatus};
+              _ -> S10
+          end,
     case {PMsg, NMsg} of
-        {#{offsets := PFoffsets}, #{offsets := NFoffsets}} ->
-            S7#{offsets =>
-                    'erlang_++'(PFoffsets, NFoffsets, TrUserData)};
-        {_, #{offsets := NFoffsets}} ->
-            S7#{offsets => NFoffsets};
-        {#{offsets := PFoffsets}, _} ->
-            S7#{offsets => PFoffsets};
-        {_, _} -> S7
+        {_, #{image := NFimage}} -> S11#{image => NFimage};
+        {#{image := PFimage}, _} -> S11#{image => PFimage};
+        _ -> S11
     end.
 
 -compile({nowarn_unused_function,merge_msg_delete_connector_request/3}).
@@ -34763,46 +36456,39 @@ merge_msg_describe_cluster_response(PMsg, NMsg,
              _ -> S1
          end,
     S3 = case {PMsg, NMsg} of
-             {_, #{serverVersion := NFserverVersion}} ->
-                 S2#{serverVersion => NFserverVersion};
-             {#{serverVersion := PFserverVersion}, _} ->
-                 S2#{serverVersion => PFserverVersion};
-             _ -> S2
-         end,
-    S4 = case {PMsg, NMsg} of
              {#{serverNodes := PFserverNodes},
               #{serverNodes := NFserverNodes}} ->
-                 S3#{serverNodes =>
+                 S2#{serverNodes =>
                          'erlang_++'(PFserverNodes, NFserverNodes, TrUserData)};
              {_, #{serverNodes := NFserverNodes}} ->
-                 S3#{serverNodes => NFserverNodes};
+                 S2#{serverNodes => NFserverNodes};
              {#{serverNodes := PFserverNodes}, _} ->
-                 S3#{serverNodes => PFserverNodes};
-             {_, _} -> S3
+                 S2#{serverNodes => PFserverNodes};
+             {_, _} -> S2
          end,
-    S5 = case {PMsg, NMsg} of
+    S4 = case {PMsg, NMsg} of
              {#{serverNodesStatus := PFserverNodesStatus},
               #{serverNodesStatus := NFserverNodesStatus}} ->
-                 S4#{serverNodesStatus =>
+                 S3#{serverNodesStatus =>
                          'erlang_++'(PFserverNodesStatus,
                                      NFserverNodesStatus,
                                      TrUserData)};
              {_, #{serverNodesStatus := NFserverNodesStatus}} ->
-                 S4#{serverNodesStatus => NFserverNodesStatus};
+                 S3#{serverNodesStatus => NFserverNodesStatus};
              {#{serverNodesStatus := PFserverNodesStatus}, _} ->
-                 S4#{serverNodesStatus => PFserverNodesStatus};
-             {_, _} -> S4
+                 S3#{serverNodesStatus => PFserverNodesStatus};
+             {_, _} -> S3
          end,
     case {PMsg, NMsg} of
         {_, #{clusterUpTime := NFclusterUpTime}} ->
-            S5#{clusterUpTime => NFclusterUpTime};
+            S4#{clusterUpTime => NFclusterUpTime};
         {#{clusterUpTime := PFclusterUpTime}, _} ->
-            S5#{clusterUpTime => PFclusterUpTime};
-        _ -> S5
+            S4#{clusterUpTime => PFclusterUpTime};
+        _ -> S4
     end.
 
 -compile({nowarn_unused_function,merge_msg_server_node/3}).
-merge_msg_server_node(PMsg, NMsg, _) ->
+merge_msg_server_node(PMsg, NMsg, TrUserData) ->
     S1 = #{},
     S2 = case {PMsg, NMsg} of
              {_, #{id := NFid}} -> S1#{id => NFid};
@@ -34814,10 +36500,22 @@ merge_msg_server_node(PMsg, NMsg, _) ->
              {#{host := PFhost}, _} -> S2#{host => PFhost};
              _ -> S2
          end,
+    S4 = case {PMsg, NMsg} of
+             {_, #{port := NFport}} -> S3#{port => NFport};
+             {#{port := PFport}, _} -> S3#{port => PFport};
+             _ -> S3
+         end,
     case {PMsg, NMsg} of
-        {_, #{port := NFport}} -> S3#{port => NFport};
-        {#{port := PFport}, _} -> S3#{port => PFport};
-        _ -> S3
+        {#{version := PFversion}, #{version := NFversion}} ->
+            S4#{version =>
+                    merge_msg_h_stream_version(PFversion,
+                                               NFversion,
+                                               TrUserData)};
+        {_, #{version := NFversion}} ->
+            S4#{version => NFversion};
+        {#{version := PFversion}, _} ->
+            S4#{version => PFversion};
+        {_, _} -> S4
     end.
 
 -compile({nowarn_unused_function,merge_msg_server_node_status/3}).
@@ -34834,6 +36532,22 @@ merge_msg_server_node_status(PMsg, NMsg, TrUserData) ->
     case {PMsg, NMsg} of
         {_, #{state := NFstate}} -> S2#{state => NFstate};
         {#{state := PFstate}, _} -> S2#{state => PFstate};
+        _ -> S2
+    end.
+
+-compile({nowarn_unused_function,merge_msg_h_stream_version/3}).
+merge_msg_h_stream_version(PMsg, NMsg, _) ->
+    S1 = #{},
+    S2 = case {PMsg, NMsg} of
+             {_, #{version := NFversion}} ->
+                 S1#{version => NFversion};
+             {#{version := PFversion}, _} ->
+                 S1#{version => PFversion};
+             _ -> S1
+         end,
+    case {PMsg, NMsg} of
+        {_, #{commit := NFcommit}} -> S2#{commit => NFcommit};
+        {#{commit := PFcommit}, _} -> S2#{commit => PFcommit};
         _ -> S2
     end.
 
@@ -34959,6 +36673,42 @@ merge_msg_lookup_resource_request(PMsg, NMsg, _) ->
         {_, #{resId := NFresId}} -> S2#{resId => NFresId};
         {#{resId := PFresId}, _} -> S2#{resId => PFresId};
         _ -> S2
+    end.
+
+-compile({nowarn_unused_function,merge_msg_get_tail_record_id_request/3}).
+merge_msg_get_tail_record_id_request(PMsg, NMsg, _) ->
+    S1 = #{},
+    S2 = case {PMsg, NMsg} of
+             {_, #{streamName := NFstreamName}} ->
+                 S1#{streamName => NFstreamName};
+             {#{streamName := PFstreamName}, _} ->
+                 S1#{streamName => PFstreamName};
+             _ -> S1
+         end,
+    case {PMsg, NMsg} of
+        {_, #{shardId := NFshardId}} ->
+            S2#{shardId => NFshardId};
+        {#{shardId := PFshardId}, _} ->
+            S2#{shardId => PFshardId};
+        _ -> S2
+    end.
+
+-compile({nowarn_unused_function,merge_msg_get_tail_record_id_response/3}).
+merge_msg_get_tail_record_id_response(PMsg, NMsg,
+                                      TrUserData) ->
+    S1 = #{},
+    case {PMsg, NMsg} of
+        {#{tailRecordId := PFtailRecordId},
+         #{tailRecordId := NFtailRecordId}} ->
+            S1#{tailRecordId =>
+                    merge_msg_record_id(PFtailRecordId,
+                                        NFtailRecordId,
+                                        TrUserData)};
+        {_, #{tailRecordId := NFtailRecordId}} ->
+            S1#{tailRecordId => NFtailRecordId};
+        {#{tailRecordId := PFtailRecordId}, _} ->
+            S1#{tailRecordId => PFtailRecordId};
+        {_, _} -> S1
     end.
 
 -compile({nowarn_unused_function,merge_msg_stat_type/3}).
@@ -35408,6 +37158,8 @@ verify_msg(Msg, MsgName, Opts) ->
             v_msg_server_node(Msg, [MsgName], TrUserData);
         server_node_status ->
             v_msg_server_node_status(Msg, [MsgName], TrUserData);
+        h_stream_version ->
+            v_msg_h_stream_version(Msg, [MsgName], TrUserData);
         lookup_shard_request ->
             v_msg_lookup_shard_request(Msg, [MsgName], TrUserData);
         lookup_shard_response ->
@@ -35432,6 +37184,14 @@ verify_msg(Msg, MsgName, Opts) ->
             v_msg_lookup_resource_request(Msg,
                                           [MsgName],
                                           TrUserData);
+        get_tail_record_id_request ->
+            v_msg_get_tail_record_id_request(Msg,
+                                             [MsgName],
+                                             TrUserData);
+        get_tail_record_id_response ->
+            v_msg_get_tail_record_id_response(Msg,
+                                              [MsgName],
+                                              TrUserData);
         stat_type ->
             v_msg_stat_type(Msg, [MsgName], TrUserData);
         stat_value ->
@@ -37171,15 +38931,25 @@ v_msg_read_shard_stream_request(#{} = M, Path,
         _ -> ok
     end,
     case M of
-        #{shardOffset := F3} ->
-            v_msg_shard_offset(F3,
-                               [shardOffset | Path],
-                               TrUserData);
+        #{from := F3} ->
+            v_msg_shard_offset(F3, [from | Path], TrUserData);
+        _ -> ok
+    end,
+    case M of
+        #{maxReadBatches := F4} ->
+            v_type_uint64(F4, [maxReadBatches | Path], TrUserData);
+        _ -> ok
+    end,
+    case M of
+        #{until := F5} ->
+            v_msg_shard_offset(F5, [until | Path], TrUserData);
         _ -> ok
     end,
     lists:foreach(fun (readerId) -> ok;
                       (shardId) -> ok;
-                      (shardOffset) -> ok;
+                      (from) -> ok;
+                      (maxReadBatches) -> ok;
+                      (until) -> ok;
                       (OtherKey) ->
                           mk_type_error({extraneous_key, OtherKey}, M, Path)
                   end,
@@ -37503,6 +39273,11 @@ v_msg_query(#{} = M, Path, TrUserData) ->
                                               TrUserData);
         _ -> ok
     end,
+    case M of
+        #{nodeId := F8} ->
+            v_type_uint32(F8, [nodeId | Path], TrUserData);
+        _ -> ok
+    end,
     lists:foreach(fun (id) -> ok;
                       (status) -> ok;
                       (createdTime) -> ok;
@@ -37510,6 +39285,7 @@ v_msg_query(#{} = M, Path, TrUserData) ->
                       (sources) -> ok;
                       (resultName) -> ok;
                       (type) -> ok;
+                      (nodeId) -> ok;
                       (OtherKey) ->
                           mk_type_error({extraneous_key, OtherKey}, M, Path)
                   end,
@@ -37994,6 +39770,26 @@ v_msg_connector(#{} = M, Path, TrUserData) ->
             end;
         _ -> ok
     end,
+    case M of
+        #{taskId := F8} ->
+            v_type_string(F8, [taskId | Path], TrUserData);
+        _ -> ok
+    end,
+    case M of
+        #{node := F9} ->
+            v_type_string(F9, [node | Path], TrUserData);
+        _ -> ok
+    end,
+    case M of
+        #{dockerStatus := F10} ->
+            v_type_string(F10, [dockerStatus | Path], TrUserData);
+        _ -> ok
+    end,
+    case M of
+        #{image := F11} ->
+            v_type_string(F11, [image | Path], TrUserData);
+        _ -> ok
+    end,
     lists:foreach(fun (name) -> ok;
                       (type) -> ok;
                       (target) -> ok;
@@ -38001,6 +39797,10 @@ v_msg_connector(#{} = M, Path, TrUserData) ->
                       (status) -> ok;
                       (config) -> ok;
                       (offsets) -> ok;
+                      (taskId) -> ok;
+                      (node) -> ok;
+                      (dockerStatus) -> ok;
+                      (image) -> ok;
                       (OtherKey) ->
                           mk_type_error({extraneous_key, OtherKey}, M, Path)
                   end,
@@ -38649,48 +40449,42 @@ v_msg_describe_cluster_response(#{} = M, Path,
         _ -> ok
     end,
     case M of
-        #{serverVersion := F2} ->
-            v_type_string(F2, [serverVersion | Path], TrUserData);
-        _ -> ok
-    end,
-    case M of
-        #{serverNodes := F3} ->
-            if is_list(F3) ->
+        #{serverNodes := F2} ->
+            if is_list(F2) ->
                    _ = [v_msg_server_node(Elem,
                                           [serverNodes | Path],
                                           TrUserData)
-                        || Elem <- F3],
+                        || Elem <- F2],
                    ok;
                true ->
                    mk_type_error({invalid_list_of, {msg, server_node}},
-                                 F3,
+                                 F2,
                                  [serverNodes | Path])
             end;
         _ -> ok
     end,
     case M of
-        #{serverNodesStatus := F4} ->
-            if is_list(F4) ->
+        #{serverNodesStatus := F3} ->
+            if is_list(F3) ->
                    _ = [v_msg_server_node_status(Elem,
                                                  [serverNodesStatus | Path],
                                                  TrUserData)
-                        || Elem <- F4],
+                        || Elem <- F3],
                    ok;
                true ->
                    mk_type_error({invalid_list_of,
                                   {msg, server_node_status}},
-                                 F4,
+                                 F3,
                                  [serverNodesStatus | Path])
             end;
         _ -> ok
     end,
     case M of
-        #{clusterUpTime := F5} ->
-            v_type_uint64(F5, [clusterUpTime | Path], TrUserData);
+        #{clusterUpTime := F4} ->
+            v_type_uint64(F4, [clusterUpTime | Path], TrUserData);
         _ -> ok
     end,
     lists:foreach(fun (protocolVersion) -> ok;
-                      (serverVersion) -> ok;
                       (serverNodes) -> ok;
                       (serverNodesStatus) -> ok;
                       (clusterUpTime) -> ok;
@@ -38729,9 +40523,17 @@ v_msg_server_node(#{} = M, Path, TrUserData) ->
             v_type_uint32(F3, [port | Path], TrUserData);
         _ -> ok
     end,
+    case M of
+        #{version := F4} ->
+            v_msg_h_stream_version(F4,
+                                   [version | Path],
+                                   TrUserData);
+        _ -> ok
+    end,
     lists:foreach(fun (id) -> ok;
                       (host) -> ok;
                       (port) -> ok;
+                      (version) -> ok;
                       (OtherKey) ->
                           mk_type_error({extraneous_key, OtherKey}, M, Path)
                   end,
@@ -38778,6 +40580,38 @@ v_msg_server_node_status(M, Path, _TrUserData)
                   Path);
 v_msg_server_node_status(X, Path, _TrUserData) ->
     mk_type_error({expected_msg, server_node_status},
+                  X,
+                  Path).
+
+-compile({nowarn_unused_function,v_msg_h_stream_version/3}).
+-dialyzer({nowarn_function,v_msg_h_stream_version/3}).
+v_msg_h_stream_version(#{} = M, Path, TrUserData) ->
+    case M of
+        #{version := F1} ->
+            v_type_string(F1, [version | Path], TrUserData);
+        _ -> ok
+    end,
+    case M of
+        #{commit := F2} ->
+            v_type_string(F2, [commit | Path], TrUserData);
+        _ -> ok
+    end,
+    lists:foreach(fun (version) -> ok;
+                      (commit) -> ok;
+                      (OtherKey) ->
+                          mk_type_error({extraneous_key, OtherKey}, M, Path)
+                  end,
+                  maps:keys(M)),
+    ok;
+v_msg_h_stream_version(M, Path, _TrUserData)
+    when is_map(M) ->
+    mk_type_error({missing_fields,
+                   [] -- maps:keys(M),
+                   h_stream_version},
+                  M,
+                  Path);
+v_msg_h_stream_version(X, Path, _TrUserData) ->
+    mk_type_error({expected_msg, h_stream_version},
                   X,
                   Path).
 
@@ -39000,6 +40834,70 @@ v_msg_lookup_resource_request(M, Path, _TrUserData)
                   Path);
 v_msg_lookup_resource_request(X, Path, _TrUserData) ->
     mk_type_error({expected_msg, lookup_resource_request},
+                  X,
+                  Path).
+
+-compile({nowarn_unused_function,v_msg_get_tail_record_id_request/3}).
+-dialyzer({nowarn_function,v_msg_get_tail_record_id_request/3}).
+v_msg_get_tail_record_id_request(#{} = M, Path,
+                                 TrUserData) ->
+    case M of
+        #{streamName := F1} ->
+            v_type_string(F1, [streamName | Path], TrUserData);
+        _ -> ok
+    end,
+    case M of
+        #{shardId := F2} ->
+            v_type_uint64(F2, [shardId | Path], TrUserData);
+        _ -> ok
+    end,
+    lists:foreach(fun (streamName) -> ok;
+                      (shardId) -> ok;
+                      (OtherKey) ->
+                          mk_type_error({extraneous_key, OtherKey}, M, Path)
+                  end,
+                  maps:keys(M)),
+    ok;
+v_msg_get_tail_record_id_request(M, Path, _TrUserData)
+    when is_map(M) ->
+    mk_type_error({missing_fields,
+                   [] -- maps:keys(M),
+                   get_tail_record_id_request},
+                  M,
+                  Path);
+v_msg_get_tail_record_id_request(X, Path,
+                                 _TrUserData) ->
+    mk_type_error({expected_msg,
+                   get_tail_record_id_request},
+                  X,
+                  Path).
+
+-compile({nowarn_unused_function,v_msg_get_tail_record_id_response/3}).
+-dialyzer({nowarn_function,v_msg_get_tail_record_id_response/3}).
+v_msg_get_tail_record_id_response(#{} = M, Path,
+                                  TrUserData) ->
+    case M of
+        #{tailRecordId := F1} ->
+            v_msg_record_id(F1, [tailRecordId | Path], TrUserData);
+        _ -> ok
+    end,
+    lists:foreach(fun (tailRecordId) -> ok;
+                      (OtherKey) ->
+                          mk_type_error({extraneous_key, OtherKey}, M, Path)
+                  end,
+                  maps:keys(M)),
+    ok;
+v_msg_get_tail_record_id_response(M, Path, _TrUserData)
+    when is_map(M) ->
+    mk_type_error({missing_fields,
+                   [] -- maps:keys(M),
+                   get_tail_record_id_response},
+                  M,
+                  Path);
+v_msg_get_tail_record_id_response(X, Path,
+                                  _TrUserData) ->
+    mk_type_error({expected_msg,
+                   get_tail_record_id_response},
                   X,
                   Path).
 
@@ -39555,6 +41453,9 @@ v_msg_empty(X, Path, _TrUserData) ->
 'v_enum_hstream.server.SubscriptionStats'('ResponseMessages',
                                           _Path, _TrUserData) ->
     ok;
+'v_enum_hstream.server.SubscriptionStats'('ChecklistSize',
+                                          _Path, _TrUserData) ->
+    ok;
 'v_enum_hstream.server.SubscriptionStats'(V, Path,
                                           TrUserData)
     when is_integer(V) ->
@@ -40040,7 +41941,8 @@ get_msg_defs() ->
        {'ResendRecordsFailed', 4},
        {'ReceivedAcks', 5},
        {'RequestMessages', 6},
-       {'ResponseMessages', 7}]},
+       {'ResponseMessages', 7},
+       {'ChecklistSize', 8}]},
      {{enum, 'hstream.server.ConnectorStats'},
       [{'DeliveredInRecords', 0}, {'DeliveredInBytes', 1}]},
      {{enum, 'hstream.server.QueryStats'},
@@ -40086,7 +41988,8 @@ get_msg_defs() ->
        {'ConnectorUnimplemented', 605},
        {'ConnectorInvalidStatus', 606},
        {'WrongServer', 800},
-       {'ShardReaderInvalidObjectIdentifier', 900}]},
+       {'ShardReaderInvalidObjectIdentifier', 900},
+       {'ShardReaderConflictOffset', 901}]},
      {{enum, 'google.protobuf.NullValue'},
       [{'NULL_VALUE', 0}]},
      {{msg, timestamp_offset},
@@ -40362,7 +42265,12 @@ get_msg_defs() ->
          type => string, occurrence => optional, opts => []},
        #{name => shardId, fnum => 2, rnum => 3, type => uint64,
          occurrence => optional, opts => []},
-       #{name => shardOffset, fnum => 3, rnum => 4,
+       #{name => from, fnum => 3, rnum => 4,
+         type => {msg, shard_offset}, occurrence => optional,
+         opts => []},
+       #{name => maxReadBatches, fnum => 4, rnum => 5,
+         type => uint64, occurrence => optional, opts => []},
+       #{name => until, fnum => 5, rnum => 6,
          type => {msg, shard_offset}, occurrence => optional,
          opts => []}]},
      {{msg, read_shard_stream_response},
@@ -40415,6 +42323,8 @@ get_msg_defs() ->
          type => string, occurrence => optional, opts => []},
        #{name => type, fnum => 7, rnum => 8,
          type => {enum, 'hstream.server.QueryType'},
+         occurrence => optional, opts => []},
+       #{name => nodeId, fnum => 8, rnum => 9, type => uint32,
          occurrence => optional, opts => []}]},
      {{msg, delete_query_request},
       [#{name => id, fnum => 1, rnum => 2, type => string,
@@ -40488,7 +42398,15 @@ get_msg_defs() ->
          occurrence => optional, opts => []},
        #{name => offsets, fnum => 7, rnum => 8,
          type => {msg, struct}, occurrence => repeated,
-         opts => []}]},
+         opts => []},
+       #{name => taskId, fnum => 8, rnum => 9, type => string,
+         occurrence => optional, opts => []},
+       #{name => node, fnum => 9, rnum => 10, type => string,
+         occurrence => optional, opts => []},
+       #{name => dockerStatus, fnum => 10, rnum => 11,
+         type => string, occurrence => optional, opts => []},
+       #{name => image, fnum => 11, rnum => 12, type => string,
+         occurrence => optional, opts => []}]},
      {{msg, delete_connector_request},
       [#{name => name, fnum => 1, rnum => 2, type => string,
          occurrence => optional, opts => []}]},
@@ -40575,15 +42493,13 @@ get_msg_defs() ->
      {{msg, describe_cluster_response},
       [#{name => protocolVersion, fnum => 1, rnum => 2,
          type => string, occurrence => optional, opts => []},
-       #{name => serverVersion, fnum => 2, rnum => 3,
-         type => string, occurrence => optional, opts => []},
-       #{name => serverNodes, fnum => 3, rnum => 4,
+       #{name => serverNodes, fnum => 2, rnum => 3,
          type => {msg, server_node}, occurrence => repeated,
          opts => []},
-       #{name => serverNodesStatus, fnum => 4, rnum => 5,
+       #{name => serverNodesStatus, fnum => 3, rnum => 4,
          type => {msg, server_node_status},
          occurrence => repeated, opts => []},
-       #{name => clusterUpTime, fnum => 5, rnum => 6,
+       #{name => clusterUpTime, fnum => 4, rnum => 5,
          type => uint64, occurrence => optional, opts => []}]},
      {{msg, server_node},
       [#{name => id, fnum => 1, rnum => 2, type => uint32,
@@ -40591,13 +42507,21 @@ get_msg_defs() ->
        #{name => host, fnum => 2, rnum => 3, type => string,
          occurrence => optional, opts => []},
        #{name => port, fnum => 3, rnum => 4, type => uint32,
-         occurrence => optional, opts => []}]},
+         occurrence => optional, opts => []},
+       #{name => version, fnum => 4, rnum => 5,
+         type => {msg, h_stream_version}, occurrence => optional,
+         opts => []}]},
      {{msg, server_node_status},
       [#{name => node, fnum => 1, rnum => 2,
          type => {msg, server_node}, occurrence => optional,
          opts => []},
        #{name => state, fnum => 2, rnum => 3,
          type => {enum, 'hstream.server.NodeState'},
+         occurrence => optional, opts => []}]},
+     {{msg, h_stream_version},
+      [#{name => version, fnum => 1, rnum => 2,
+         type => string, occurrence => optional, opts => []},
+       #{name => commit, fnum => 2, rnum => 3, type => string,
          occurrence => optional, opts => []}]},
      {{msg, lookup_shard_request},
       [#{name => shardId, fnum => 1, rnum => 2,
@@ -40632,6 +42556,15 @@ get_msg_defs() ->
          occurrence => optional, opts => []},
        #{name => resId, fnum => 2, rnum => 3, type => string,
          occurrence => optional, opts => []}]},
+     {{msg, get_tail_record_id_request},
+      [#{name => streamName, fnum => 1, rnum => 2,
+         type => string, occurrence => optional, opts => []},
+       #{name => shardId, fnum => 2, rnum => 3, type => uint64,
+         occurrence => optional, opts => []}]},
+     {{msg, get_tail_record_id_response},
+      [#{name => tailRecordId, fnum => 1, rnum => 2,
+         type => {msg, record_id}, occurrence => optional,
+         opts => []}]},
      {{msg, stat_type},
       [#{name => stat, rnum => 2,
          fields =>
@@ -40805,6 +42738,7 @@ get_msg_names() ->
      describe_cluster_response,
      server_node,
      server_node_status,
+     h_stream_version,
      lookup_shard_request,
      lookup_shard_response,
      lookup_subscription_request,
@@ -40812,6 +42746,8 @@ get_msg_names() ->
      lookup_shard_reader_request,
      lookup_shard_reader_response,
      lookup_resource_request,
+     get_tail_record_id_request,
+     get_tail_record_id_response,
      stat_type,
      stat_value,
      stat_error,
@@ -40924,6 +42860,7 @@ get_msg_or_group_names() ->
      describe_cluster_response,
      server_node,
      server_node_status,
+     h_stream_version,
      lookup_shard_request,
      lookup_shard_response,
      lookup_subscription_request,
@@ -40931,6 +42868,8 @@ get_msg_or_group_names() ->
      lookup_shard_reader_request,
      lookup_shard_reader_response,
      lookup_resource_request,
+     get_tail_record_id_request,
+     get_tail_record_id_response,
      stat_type,
      stat_value,
      stat_error,
@@ -41247,7 +43186,12 @@ find_msg_def(read_shard_stream_request) ->
        type => string, occurrence => optional, opts => []},
      #{name => shardId, fnum => 2, rnum => 3, type => uint64,
        occurrence => optional, opts => []},
-     #{name => shardOffset, fnum => 3, rnum => 4,
+     #{name => from, fnum => 3, rnum => 4,
+       type => {msg, shard_offset}, occurrence => optional,
+       opts => []},
+     #{name => maxReadBatches, fnum => 4, rnum => 5,
+       type => uint64, occurrence => optional, opts => []},
+     #{name => until, fnum => 5, rnum => 6,
        type => {msg, shard_offset}, occurrence => optional,
        opts => []}];
 find_msg_def(read_shard_stream_response) ->
@@ -41300,6 +43244,8 @@ find_msg_def(query) ->
        type => string, occurrence => optional, opts => []},
      #{name => type, fnum => 7, rnum => 8,
        type => {enum, 'hstream.server.QueryType'},
+       occurrence => optional, opts => []},
+     #{name => nodeId, fnum => 8, rnum => 9, type => uint32,
        occurrence => optional, opts => []}];
 find_msg_def(delete_query_request) ->
     [#{name => id, fnum => 1, rnum => 2, type => string,
@@ -41373,7 +43319,15 @@ find_msg_def(connector) ->
        occurrence => optional, opts => []},
      #{name => offsets, fnum => 7, rnum => 8,
        type => {msg, struct}, occurrence => repeated,
-       opts => []}];
+       opts => []},
+     #{name => taskId, fnum => 8, rnum => 9, type => string,
+       occurrence => optional, opts => []},
+     #{name => node, fnum => 9, rnum => 10, type => string,
+       occurrence => optional, opts => []},
+     #{name => dockerStatus, fnum => 10, rnum => 11,
+       type => string, occurrence => optional, opts => []},
+     #{name => image, fnum => 11, rnum => 12, type => string,
+       occurrence => optional, opts => []}];
 find_msg_def(delete_connector_request) ->
     [#{name => name, fnum => 1, rnum => 2, type => string,
        occurrence => optional, opts => []}];
@@ -41460,15 +43414,13 @@ find_msg_def(per_stream_time_series_stats_all_request) ->
 find_msg_def(describe_cluster_response) ->
     [#{name => protocolVersion, fnum => 1, rnum => 2,
        type => string, occurrence => optional, opts => []},
-     #{name => serverVersion, fnum => 2, rnum => 3,
-       type => string, occurrence => optional, opts => []},
-     #{name => serverNodes, fnum => 3, rnum => 4,
+     #{name => serverNodes, fnum => 2, rnum => 3,
        type => {msg, server_node}, occurrence => repeated,
        opts => []},
-     #{name => serverNodesStatus, fnum => 4, rnum => 5,
+     #{name => serverNodesStatus, fnum => 3, rnum => 4,
        type => {msg, server_node_status},
        occurrence => repeated, opts => []},
-     #{name => clusterUpTime, fnum => 5, rnum => 6,
+     #{name => clusterUpTime, fnum => 4, rnum => 5,
        type => uint64, occurrence => optional, opts => []}];
 find_msg_def(server_node) ->
     [#{name => id, fnum => 1, rnum => 2, type => uint32,
@@ -41476,13 +43428,21 @@ find_msg_def(server_node) ->
      #{name => host, fnum => 2, rnum => 3, type => string,
        occurrence => optional, opts => []},
      #{name => port, fnum => 3, rnum => 4, type => uint32,
-       occurrence => optional, opts => []}];
+       occurrence => optional, opts => []},
+     #{name => version, fnum => 4, rnum => 5,
+       type => {msg, h_stream_version}, occurrence => optional,
+       opts => []}];
 find_msg_def(server_node_status) ->
     [#{name => node, fnum => 1, rnum => 2,
        type => {msg, server_node}, occurrence => optional,
        opts => []},
      #{name => state, fnum => 2, rnum => 3,
        type => {enum, 'hstream.server.NodeState'},
+       occurrence => optional, opts => []}];
+find_msg_def(h_stream_version) ->
+    [#{name => version, fnum => 1, rnum => 2,
+       type => string, occurrence => optional, opts => []},
+     #{name => commit, fnum => 2, rnum => 3, type => string,
        occurrence => optional, opts => []}];
 find_msg_def(lookup_shard_request) ->
     [#{name => shardId, fnum => 1, rnum => 2,
@@ -41517,6 +43477,15 @@ find_msg_def(lookup_resource_request) ->
        occurrence => optional, opts => []},
      #{name => resId, fnum => 2, rnum => 3, type => string,
        occurrence => optional, opts => []}];
+find_msg_def(get_tail_record_id_request) ->
+    [#{name => streamName, fnum => 1, rnum => 2,
+       type => string, occurrence => optional, opts => []},
+     #{name => shardId, fnum => 2, rnum => 3, type => uint64,
+       occurrence => optional, opts => []}];
+find_msg_def(get_tail_record_id_response) ->
+    [#{name => tailRecordId, fnum => 1, rnum => 2,
+       type => {msg, record_id}, occurrence => optional,
+       opts => []}];
 find_msg_def(stat_type) ->
     [#{name => stat, rnum => 2,
        fields =>
@@ -41636,7 +43605,8 @@ find_enum_def('hstream.server.SubscriptionStats') ->
      {'ResendRecordsFailed', 4},
      {'ReceivedAcks', 5},
      {'RequestMessages', 6},
-     {'ResponseMessages', 7}];
+     {'ResponseMessages', 7},
+     {'ChecklistSize', 8}];
 find_enum_def('hstream.server.ConnectorStats') ->
     [{'DeliveredInRecords', 0}, {'DeliveredInBytes', 1}];
 find_enum_def('hstream.server.QueryStats') ->
@@ -41682,7 +43652,8 @@ find_enum_def('hstream.server.ErrorCode') ->
      {'ConnectorUnimplemented', 605},
      {'ConnectorInvalidStatus', 606},
      {'WrongServer', 800},
-     {'ShardReaderInvalidObjectIdentifier', 900}];
+     {'ShardReaderInvalidObjectIdentifier', 900},
+     {'ShardReaderConflictOffset', 901}];
 find_enum_def('google.protobuf.NullValue') ->
     [{'NULL_VALUE', 0}];
 find_enum_def(_) -> error.
@@ -41935,7 +43906,9 @@ enum_value_by_symbol('google.protobuf.NullValue',
 'enum_symbol_by_value_hstream.server.SubscriptionStats'(6) ->
     'RequestMessages';
 'enum_symbol_by_value_hstream.server.SubscriptionStats'(7) ->
-    'ResponseMessages'.
+    'ResponseMessages';
+'enum_symbol_by_value_hstream.server.SubscriptionStats'(8) ->
+    'ChecklistSize'.
 
 
 'enum_value_by_symbol_hstream.server.SubscriptionStats'('SendOutBytes') ->
@@ -41953,7 +43926,9 @@ enum_value_by_symbol('google.protobuf.NullValue',
 'enum_value_by_symbol_hstream.server.SubscriptionStats'('RequestMessages') ->
     6;
 'enum_value_by_symbol_hstream.server.SubscriptionStats'('ResponseMessages') ->
-    7.
+    7;
+'enum_value_by_symbol_hstream.server.SubscriptionStats'('ChecklistSize') ->
+    8.
 
 'enum_symbol_by_value_hstream.server.ConnectorStats'(0) ->
     'DeliveredInRecords';
@@ -42061,7 +44036,9 @@ enum_value_by_symbol('google.protobuf.NullValue',
 'enum_symbol_by_value_hstream.server.ErrorCode'(800) ->
     'WrongServer';
 'enum_symbol_by_value_hstream.server.ErrorCode'(900) ->
-    'ShardReaderInvalidObjectIdentifier'.
+    'ShardReaderInvalidObjectIdentifier';
+'enum_symbol_by_value_hstream.server.ErrorCode'(901) ->
+    'ShardReaderConflictOffset'.
 
 
 'enum_value_by_symbol_hstream.server.ErrorCode'('InternalError') ->
@@ -42137,7 +44114,9 @@ enum_value_by_symbol('google.protobuf.NullValue',
 'enum_value_by_symbol_hstream.server.ErrorCode'('WrongServer') ->
     800;
 'enum_value_by_symbol_hstream.server.ErrorCode'('ShardReaderInvalidObjectIdentifier') ->
-    900.
+    900;
+'enum_value_by_symbol_hstream.server.ErrorCode'('ShardReaderConflictOffset') ->
+    901.
 
 'enum_symbol_by_value_google.protobuf.NullValue'(0) ->
     'NULL_VALUE'.
@@ -42178,6 +44157,11 @@ get_service_def('hstream.server.HStreamApi') ->
       #{name => 'Append', input => append_request,
         output => append_response, input_stream => false,
         output_stream => false, opts => []},
+      #{name => 'GetTailRecordId',
+        input => get_tail_record_id_request,
+        output => get_tail_record_id_response,
+        input_stream => false, output_stream => false,
+        opts => []},
       #{name => 'ListShards', input => list_shards_request,
         output => list_shards_response, input_stream => false,
         output_stream => false, opts => []},
@@ -42373,6 +44357,7 @@ get_rpc_names('hstream.server.HStreamApi') ->
      'ListStreamsWithPrefix',
      'LookupShard',
      'Append',
+     'GetTailRecordId',
      'ListShards',
      'CreateShardReader',
      'LookupShardReader',
@@ -42460,6 +44445,12 @@ find_rpc_def(_, _) -> error.
     #{name => 'Append', input => append_request,
       output => append_response, input_stream => false,
       output_stream => false, opts => []};
+'find_rpc_def_hstream.server.HStreamApi'('GetTailRecordId') ->
+    #{name => 'GetTailRecordId',
+      input => get_tail_record_id_request,
+      output => get_tail_record_id_response,
+      input_stream => false, output_stream => false,
+      opts => []};
 'find_rpc_def_hstream.server.HStreamApi'('ListShards') ->
     #{name => 'ListShards', input => list_shards_request,
       output => list_shards_response, input_stream => false,
@@ -42734,6 +44725,8 @@ fqbins_to_service_and_rpc_name(<<"hstream.server.HStreamApi">>, <<"LookupShard">
     {'hstream.server.HStreamApi', 'LookupShard'};
 fqbins_to_service_and_rpc_name(<<"hstream.server.HStreamApi">>, <<"Append">>) ->
     {'hstream.server.HStreamApi', 'Append'};
+fqbins_to_service_and_rpc_name(<<"hstream.server.HStreamApi">>, <<"GetTailRecordId">>) ->
+    {'hstream.server.HStreamApi', 'GetTailRecordId'};
 fqbins_to_service_and_rpc_name(<<"hstream.server.HStreamApi">>, <<"ListShards">>) ->
     {'hstream.server.HStreamApi', 'ListShards'};
 fqbins_to_service_and_rpc_name(<<"hstream.server.HStreamApi">>, <<"CreateShardReader">>) ->
@@ -42860,6 +44853,9 @@ service_and_rpc_name_to_fqbins('hstream.server.HStreamApi',
 service_and_rpc_name_to_fqbins('hstream.server.HStreamApi',
                                'Append') ->
     {<<"hstream.server.HStreamApi">>, <<"Append">>};
+service_and_rpc_name_to_fqbins('hstream.server.HStreamApi',
+                               'GetTailRecordId') ->
+    {<<"hstream.server.HStreamApi">>, <<"GetTailRecordId">>};
 service_and_rpc_name_to_fqbins('hstream.server.HStreamApi',
                                'ListShards') ->
     {<<"hstream.server.HStreamApi">>, <<"ListShards">>};
@@ -43121,6 +45117,7 @@ fqbin_to_msg_name(<<"hstream.server.PerStreamTimeSeriesStatsAllRequest">>) ->
 fqbin_to_msg_name(<<"hstream.server.DescribeClusterResponse">>) -> describe_cluster_response;
 fqbin_to_msg_name(<<"hstream.server.ServerNode">>) -> server_node;
 fqbin_to_msg_name(<<"hstream.server.ServerNodeStatus">>) -> server_node_status;
+fqbin_to_msg_name(<<"hstream.server.HStreamVersion">>) -> h_stream_version;
 fqbin_to_msg_name(<<"hstream.server.LookupShardRequest">>) -> lookup_shard_request;
 fqbin_to_msg_name(<<"hstream.server.LookupShardResponse">>) -> lookup_shard_response;
 fqbin_to_msg_name(<<"hstream.server.LookupSubscriptionRequest">>) ->
@@ -43132,6 +45129,10 @@ fqbin_to_msg_name(<<"hstream.server.LookupShardReaderRequest">>) ->
 fqbin_to_msg_name(<<"hstream.server.LookupShardReaderResponse">>) ->
     lookup_shard_reader_response;
 fqbin_to_msg_name(<<"hstream.server.LookupResourceRequest">>) -> lookup_resource_request;
+fqbin_to_msg_name(<<"hstream.server.GetTailRecordIdRequest">>) ->
+    get_tail_record_id_request;
+fqbin_to_msg_name(<<"hstream.server.GetTailRecordIdResponse">>) ->
+    get_tail_record_id_response;
 fqbin_to_msg_name(<<"hstream.server.StatType">>) -> stat_type;
 fqbin_to_msg_name(<<"hstream.server.StatValue">>) -> stat_value;
 fqbin_to_msg_name(<<"hstream.server.StatError">>) -> stat_error;
@@ -43267,6 +45268,7 @@ msg_name_to_fqbin(per_stream_time_series_stats_all_request) ->
 msg_name_to_fqbin(describe_cluster_response) -> <<"hstream.server.DescribeClusterResponse">>;
 msg_name_to_fqbin(server_node) -> <<"hstream.server.ServerNode">>;
 msg_name_to_fqbin(server_node_status) -> <<"hstream.server.ServerNodeStatus">>;
+msg_name_to_fqbin(h_stream_version) -> <<"hstream.server.HStreamVersion">>;
 msg_name_to_fqbin(lookup_shard_request) -> <<"hstream.server.LookupShardRequest">>;
 msg_name_to_fqbin(lookup_shard_response) -> <<"hstream.server.LookupShardResponse">>;
 msg_name_to_fqbin(lookup_subscription_request) ->
@@ -43278,6 +45280,10 @@ msg_name_to_fqbin(lookup_shard_reader_request) ->
 msg_name_to_fqbin(lookup_shard_reader_response) ->
     <<"hstream.server.LookupShardReaderResponse">>;
 msg_name_to_fqbin(lookup_resource_request) -> <<"hstream.server.LookupResourceRequest">>;
+msg_name_to_fqbin(get_tail_record_id_request) ->
+    <<"hstream.server.GetTailRecordIdRequest">>;
+msg_name_to_fqbin(get_tail_record_id_response) ->
+    <<"hstream.server.GetTailRecordIdResponse">>;
 msg_name_to_fqbin(stat_type) -> <<"hstream.server.StatType">>;
 msg_name_to_fqbin(stat_value) -> <<"hstream.server.StatValue">>;
 msg_name_to_fqbin(stat_error) -> <<"hstream.server.StatError">>;
@@ -43434,9 +45440,12 @@ get_msg_containment("hstreamdb_api") ->
      get_stream_response,
      get_subscription_request,
      get_subscription_response,
+     get_tail_record_id_request,
+     get_tail_record_id_response,
      get_view_request,
      h_stream_record,
      h_stream_record_header,
+     h_stream_version,
      list_connectors_request,
      list_connectors_response,
      list_consumers_request,
@@ -43531,6 +45540,7 @@ get_rpc_containment("hstreamdb_api") ->
      {'hstream.server.HStreamApi', 'ListStreamsWithPrefix'},
      {'hstream.server.HStreamApi', 'LookupShard'},
      {'hstream.server.HStreamApi', 'Append'},
+     {'hstream.server.HStreamApi', 'GetTailRecordId'},
      {'hstream.server.HStreamApi', 'ListShards'},
      {'hstream.server.HStreamApi', 'CreateShardReader'},
      {'hstream.server.HStreamApi', 'LookupShardReader'},
@@ -43662,6 +45672,8 @@ get_proto_by_msg_name_as_fqbin(<<"hstream.server.ListConnectorsRequest">>) ->
     "hstreamdb_api";
 get_proto_by_msg_name_as_fqbin(<<"hstream.server.HStreamRecord">>) ->
     "hstreamdb_api";
+get_proto_by_msg_name_as_fqbin(<<"hstream.server.GetTailRecordIdRequest">>) ->
+    "hstreamdb_api";
 get_proto_by_msg_name_as_fqbin(<<"hstream.server.GetSubscriptionRequest">>) ->
     "hstreamdb_api";
 get_proto_by_msg_name_as_fqbin(<<"hstream.server.GetStreamRequest">>) ->
@@ -43711,6 +45723,8 @@ get_proto_by_msg_name_as_fqbin(<<"hstream.server.ListSubscriptionsResponse">>) -
     "hstreamdb_api";
 get_proto_by_msg_name_as_fqbin(<<"hstream.server.ListShardsResponse">>) ->
     "hstreamdb_api";
+get_proto_by_msg_name_as_fqbin(<<"hstream.server.GetTailRecordIdResponse">>) ->
+    "hstreamdb_api";
 get_proto_by_msg_name_as_fqbin(<<"hstream.server.GetSubscriptionResponse">>) ->
     "hstreamdb_api";
 get_proto_by_msg_name_as_fqbin(<<"hstream.server.GetStreamResponse">>) ->
@@ -43720,8 +45734,6 @@ get_proto_by_msg_name_as_fqbin(<<"hstream.server.CommandQueryResponse">>) ->
 get_proto_by_msg_name_as_fqbin(<<"hstream.server.CheckSubscriptionExistResponse">>) ->
     "hstreamdb_api";
 get_proto_by_msg_name_as_fqbin(<<"hstream.server.AdminCommandResponse">>) ->
-    "hstreamdb_api";
-get_proto_by_msg_name_as_fqbin(<<"hstream.server.View">>) ->
     "hstreamdb_api";
 get_proto_by_msg_name_as_fqbin(<<"google.protobuf.Empty">>) -> "empty";
 get_proto_by_msg_name_as_fqbin(<<"hstream.server.Query">>) ->
@@ -43735,6 +45747,8 @@ get_proto_by_msg_name_as_fqbin(<<"hstream.server.ExecuteViewQuerySql">>) ->
 get_proto_by_msg_name_as_fqbin(<<"hstream.server.Stream">>) ->
     "hstreamdb_api";
 get_proto_by_msg_name_as_fqbin(<<"hstream.server.Subscription">>) ->
+    "hstreamdb_api";
+get_proto_by_msg_name_as_fqbin(<<"hstream.server.HStreamVersion">>) ->
     "hstreamdb_api";
 get_proto_by_msg_name_as_fqbin(<<"google.protobuf.Timestamp">>) -> "timestamp";
 get_proto_by_msg_name_as_fqbin(<<"google.protobuf.Struct">>) -> "struct";
@@ -43830,6 +45844,8 @@ get_proto_by_msg_name_as_fqbin(<<"hstream.server.CreateShardReaderResponse">>) -
 get_proto_by_msg_name_as_fqbin(<<"hstream.server.CommandStreamTaskResponse">>) ->
     "hstreamdb_api";
 get_proto_by_msg_name_as_fqbin(<<"hstream.server.AppendResponse">>) ->
+    "hstreamdb_api";
+get_proto_by_msg_name_as_fqbin(<<"hstream.server.View">>) ->
     "hstreamdb_api";
 get_proto_by_msg_name_as_fqbin(E) ->
     error({gpb_error, {badmsg, E}}).

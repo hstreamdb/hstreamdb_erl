@@ -39,6 +39,10 @@
     -> {ok, hstreamdb_api:append_response(), grpc:metadata()}
      | {error, grpc_stream:error_response()}.
 
+-callback get_tail_record_id(hstreamdb_api:get_tail_record_id_request(), grpc:metadata())
+    -> {ok, hstreamdb_api:get_tail_record_id_response(), grpc:metadata()}
+     | {error, grpc_stream:error_response()}.
+
 -callback list_shards(hstreamdb_api:list_shards_request(), grpc:metadata())
     -> {ok, hstreamdb_api:list_shards_response(), grpc:metadata()}
      | {error, grpc_stream:error_response()}.
