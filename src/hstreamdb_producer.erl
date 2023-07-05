@@ -81,11 +81,11 @@ stop(Producer) ->
     ok = ecpool:stop_sup_pool(Producer),
     ok = ecpool:stop_sup_pool(writer_name(Producer)).
 
-append(Producer, Record) ->
+append(Producer, Records) ->
     ecpool:with_client(
       Producer,
       fun(Pid) ->
-              gen_server:call(Pid, {append, Record})
+              gen_server:call(Pid, {append, Records})
       end).
 
 flush(Producer) ->
@@ -137,11 +137,17 @@ init(Options) ->
         current_batches = #{}
     }}.
 
-handle_call({append, Record}, _From, State) ->
+handle_call({append, Records}, _From, State) ->
     if_not_overflooded(
       fun() ->
-              NState = do_append(Record, State),
-              {reply, ok, NState}
+        case is_list(Records) of
+            false ->
+                {reply, ok, do_append(Records, State)};
+            true ->
+                {reply, ok, lists:foldl(fun(Record, AccState) ->
+                    do_append(Record, AccState)
+                  end, State, Records)}
+        end
       end,
       State);
 
@@ -213,7 +219,7 @@ do_append({PartitioningKey, Record},
                                   NRecords = [Record],
                                   NRecordMap = RecordMap#{ShardId => NRecords},
                                   NFlushDeadlineMap = FlushDeadlineMap#{
-                                                        ShardId => 
+                                                        ShardId =>
                                                         Interval + erlang:monotonic_time(millisecond)
                                                        },
 
