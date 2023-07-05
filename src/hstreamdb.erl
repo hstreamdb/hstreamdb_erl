@@ -116,8 +116,8 @@ append(Producer, PartitioningKey, PayloadType, Payload) ->
     Record = to_record(PartitioningKey, PayloadType, Payload),
     append(Producer, Record).
 
-append(Producer, Record) ->
-    hstreamdb_producer:append(Producer, Record).
+append(Producer, Data) ->
+    hstreamdb_producer:append(Producer, Data).
 
 flush(Producer) ->
     hstreamdb_producer:flush(Producer).
