@@ -183,6 +183,26 @@ append(Req, Metadata, Options) ->
                            append_request, append_response, <<"hstream.server.AppendRequest">>),
                       Req, Metadata, Options).
 
+-spec get_tail_record_id(hstreamdb_api:get_tail_record_id_request())
+    -> {ok, hstreamdb_api:get_tail_record_id_response(), grpc:metadata()}
+     | {error, term()}.
+get_tail_record_id(Req) ->
+    get_tail_record_id(Req, #{}, #{}).
+
+-spec get_tail_record_id(hstreamdb_api:get_tail_record_id_request(), grpc:options())
+    -> {ok, hstreamdb_api:get_tail_record_id_response(), grpc:metadata()}
+     | {error, term()}.
+get_tail_record_id(Req, Options) ->
+    get_tail_record_id(Req, #{}, Options).
+
+-spec get_tail_record_id(hstreamdb_api:get_tail_record_id_request(), grpc:metadata(), grpc_client:options())
+    -> {ok, hstreamdb_api:get_tail_record_id_response(), grpc:metadata()}
+     | {error, term()}.
+get_tail_record_id(Req, Metadata, Options) ->
+    grpc_client:unary(?DEF(<<"/hstream.server.HStreamApi/GetTailRecordId">>,
+                           get_tail_record_id_request, get_tail_record_id_response, <<"hstream.server.GetTailRecordIdRequest">>),
+                      Req, Metadata, Options).
+
 -spec list_shards(hstreamdb_api:list_shards_request())
     -> {ok, hstreamdb_api:list_shards_response(), grpc:metadata()}
      | {error, term()}.
