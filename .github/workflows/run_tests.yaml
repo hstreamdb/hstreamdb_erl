@@ -34,6 +34,9 @@ jobs:
     - name: run cover
       run: |
         ./rebar3 cover
+    - name: run xref
+      run: |
+        ./rebar3 xref
     - name: docker compose down
       run: |
         make -C ./.ci down

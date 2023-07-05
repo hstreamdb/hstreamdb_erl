@@ -105,11 +105,13 @@ services:
       - "-c"
       - |
         set -ex
+        # N.B. "enable-dscp-reflection=false" is required for linux kernel which
+        # doesn't support dscp reflection, e.g. centos7.
         /usr/local/bin/ld-dev-cluster --root /data/store \
         --use-tcp --tcp-host $$(hostname -I | awk '{print $$1}') \
         --user-admin-port 6440 \
+        --param enable-dscp-reflection=false \
         --no-interactive
-
   zookeeper:
     image: zookeeper
     expose:
