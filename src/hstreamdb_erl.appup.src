@@ -1,13 +1,5 @@
 %% -*- mode: erlang -*-
 {VSN,
-  [{"0.3.1+v0.13.0",
-    [{load_module,hstreamdb,brutal_purge,soft_purge,[]},
-     {load_module,hstreamdb_producer,brutal_purge,soft_purge,[]}
-    ]},
-   {<<".*">>,[{restart_application,hstreamdb_erl}]}],
-  [{"0.3.1+v0.13.0",
-    [{load_module,hstreamdb,brutal_purge,soft_purge,[]},
-     {load_module,hstreamdb_producer,brutal_purge,soft_purge,[]}
-    ]},
-   {<<".*">>,[{restart_application,hstreamdb_erl}]}]
+  [{<<".*">>,[{restart_application,hstreamdb_erl}]}],
+  [{<<".*">>,[{restart_application,hstreamdb_erl}]}]
 }.
