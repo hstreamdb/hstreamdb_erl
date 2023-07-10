@@ -52,25 +52,24 @@ start_client(Name, Options) ->
     HostMapping = maps:get(host_mapping, Options, #{}),
     ChannelName = hstreamdb_channel_mgr:channel_name(Name),
     GRPCTimeout = maps:get(grpc_timeout, Options, ?GRPC_TIMEOUT),
-    case url_prefix(ServerURL) of
-        {ok, Prefix} ->
+    case validate_url_and_opts(ServerURL, maps:get(gun_opts, RPCOptions, #{})) of
+        {ok, ServerURLMap, GunOpts} ->
             Client =
                 #{
                     channel => ChannelName,
-                    url => ServerURL,
-                    rpc_options => RPCOptions,
-                    url_prefix => Prefix,
+                    url_map => ServerURLMap,
+                    rpc_options => RPCOptions#{gun_opts => GunOpts},
                     host_mapping => HostMapping,
                     grpc_timeout => GRPCTimeout
                 },
-            case hstreamdb_channel_mgr:start_channel(ChannelName, ServerURL, RPCOptions) of
+            case hstreamdb_channel_mgr:start_channel(ChannelName, ServerURLMap, RPCOptions) of
                 {ok, _} ->
                     {ok, Client};
                 {error, Reason} ->
                     {error, Reason}
             end;
-        error ->
-            {error, invalid_server_url}
+        {error, _} = Error ->
+            Error
     end.
 
 stop_client(#{channel := Channel}) ->
@@ -132,14 +131,35 @@ append_flush(Producer, Data) ->
 %% -------------------------------------------------------------------------------------------------
 %% internal
 
-url_prefix(URL) when is_list(URL) ->
-    url_prefix(list_to_binary(URL));
-url_prefix(<<"https://", _/binary>>) ->
-    {ok, "https://"};
-url_prefix(<<"http://", _/binary>>) ->
-    {ok, "http://"};
-url_prefix(_) ->
-    error.
+validate_url_and_opts(URL, GunOpts) when is_binary(URL) ->
+    validate_url_and_opts(list_to_binary(URL), GunOpts);
+validate_url_and_opts(URL, GunOpts) when is_list(URL) ->
+    case uri_string:parse(URL) of
+        {error, What, Term} ->
+            {error, {invalid_url, What, Term}};
+        URIMap when is_map(URIMap) ->
+            validate_scheme_and_opts(set_default_port(URIMap), GunOpts)
+    end.
+
+set_default_port(#{port := _Port} = URIMap) ->
+    URIMap;
+set_default_port(URIMap) ->
+    URIMap#{port => ?DEFAULT_HSTREAMDB_PORT}.
+
+validate_scheme_and_opts(#{scheme := "hstreams"} = URIMap, GunOpts) ->
+    validate_scheme_and_opts(URIMap#{scheme := "https"}, GunOpts);
+validate_scheme_and_opts(#{scheme := "hstream"} = URIMap, GunOpts) ->
+    validate_scheme_and_opts(URIMap#{scheme := "http"}, GunOpts);
+validate_scheme_and_opts(#{scheme := "https"}, #{transport := tcp}) ->
+    {error, {https_invalid_transport, tcp}};
+validate_scheme_and_opts(#{scheme := "https"} = URIMap, GunOpts) ->
+    {ok, URIMap, GunOpts#{transport => tls}};
+validate_scheme_and_opts(#{scheme := "http"}, #{transport := tls}) ->
+    {error, {http_invalid_transport, tls}};
+validate_scheme_and_opts(#{scheme := "http"} = URIMap, GunOpts) ->
+    {ok, URIMap, GunOpts#{transport => tcp}};
+validate_scheme_and_opts(_URIMap, _GunOpts) ->
+    {error, unknown_scheme}.
 
 do_echo(#{channel := Channel, grpc_timeout := Timeout}) ->
     case ?HSTREAMDB_CLIENT:echo(#{}, #{channel => Channel, timeout => Timeout}) of

@@ -37,7 +37,7 @@ start(Options) ->
             rpc_options := RPCOptions,
             host_mapping := HostMapping,
             grpc_timeout := GRPCTimeout,
-            url_prefix := UrlPrefix
+            url_map := ServerURLMap
         } ->
             Stream = proplists:get_value(stream, Options, undefined),
             Stream == undefined andalso erlang:error({bad_options, no_stream_name}),
@@ -48,7 +48,7 @@ start(Options) ->
                 grpc_timeout => GRPCTimeout,
                 stream => Stream,
                 rpc_options => RPCOptions,
-                url_prefix => UrlPrefix
+                url_map => ServerURLMap
             };
         C ->
             erlang:error({bad_options, {bad_client, C}})
@@ -64,7 +64,7 @@ lookup_channel(
         channels_by_shard := Channels,
         host_mapping := HostMapping,
         rpc_options := RPCOptions0,
-        url_prefix := UrlPrefix
+        url_map := #{scheme := UrlScheme}
     }
 ) ->
     case maps:get(ShardId, Channels, undefined) of
@@ -72,15 +72,15 @@ lookup_channel(
             case lookup_shard(ShardId, ChannelM) of
                 {ok, {Host, Port}} ->
                     %% Producer need only one channel. Because it is a sync call.
-                    ServerURL = lists:concat(
-                        io_lib:format(
-                            "~s~s~s~p",
-                            [UrlPrefix, maybe_map_host(HostMapping, Host), ":", Port]
-                        )
-                    ),
-                    logger:info("ServerURL for new channel: ~p~n", [ServerURL]),
+                    ChannelUrlMap = #{
+                        scheme => UrlScheme,
+                        host => maybe_map_host(HostMapping, Host),
+                        port => Port,
+                        path => ""
+                    },
+                    logger:info("ServerURL for new channel: ~p~n", [ChannelUrlMap]),
                     RPCOptions = RPCOptions0#{pool_size => 1},
-                    case start_channel(random_channel_name(ServerURL), ServerURL, RPCOptions) of
+                    case start_channel(random_channel_name(Host), ChannelUrlMap, RPCOptions) of
                         {ok, Channel} ->
                             case echo(Channel, ChannelM) of
                                 ok ->
@@ -142,15 +142,17 @@ stop_channel(Channel) ->
     end.
 
 random_channel_name(Name) ->
-    lists:concat([Name, erlang:unique_integer()]).
+    lists:concat([to_channel_name(Name), erlang:unique_integer()]).
+
 channel_name(Name) ->
-    lists:concat([Name]).
+    to_channel_name(Name).
 
 maybe_map_host(HostMapping, Host) ->
-    maps:get(Host, HostMapping, Host).
+    host_to_string(maps:get(Host, HostMapping, Host)).
 
-start_channel(ChannelName, ServerURL, RPCOptions) ->
-    case grpc_client_sup:create_channel_pool(ChannelName, ServerURL, RPCOptions) of
+start_channel(ChannelName, URLMap, RPCOptions) ->
+    URL = uri_string:recompose(URLMap),
+    case grpc_client_sup:create_channel_pool(ChannelName, URL, RPCOptions) of
         {ok, _, _} ->
             {ok, ChannelName};
         {ok, _} ->
@@ -158,3 +160,17 @@ start_channel(ChannelName, ServerURL, RPCOptions) ->
         {error, Reason} ->
             {error, Reason}
     end.
+
+to_channel_name(Integer) when is_integer(Integer) ->
+    integer_to_list(Integer);
+to_channel_name(Atom) when is_atom(Atom) ->
+    atom_to_list(Atom);
+to_channel_name(Binary) when is_binary(Binary) ->
+    unicode:characters_to_list(Binary);
+to_channel_name(List) when is_list(List) ->
+    List.
+
+host_to_string(Host) when is_list(Host) ->
+    Host;
+host_to_string(Host) when is_binary(Host) ->
+    unicode:characters_to_list(Host).

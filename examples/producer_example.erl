@@ -11,7 +11,7 @@ start() ->
     RPCOptions = #{
         pool_size => 3
         % gun_opts => #{
-        %     transport => ssl,
+        %     transport => tls,
         %     transport_opts => [{cacertfile, CA}]
         % }
     },
