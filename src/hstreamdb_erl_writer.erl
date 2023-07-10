@@ -18,19 +18,21 @@
 
 -behaviour(gen_server).
 
--export([ start_link/1
-        , stop/1
-        , write/3
-        , connect/1
-        ]).
+-export([
+    start_link/1,
+    stop/1,
+    write/3,
+    connect/1
+]).
 
--export([ init/1
-        , handle_call/3
-        , handle_cast/2
-        , handle_info/2
-        , terminate/2
-        , code_change/3
-        ]).
+-export([
+    init/1,
+    handle_call/3,
+    handle_cast/2,
+    handle_info/2,
+    terminate/2,
+    code_change/3
+]).
 
 -define(DEFAULT_GRPC_TIMEOUT, 30000).
 
@@ -65,10 +67,10 @@ init([Opts]) ->
     StreamName = proplists:get_value(stream, Opts),
     GRPCTimeout = proplists:get_value(grpc_timeout, Opts, ?DEFAULT_GRPC_TIMEOUT),
     {ok, #state{
-            stream = StreamName,
-            grpc_timeout = GRPCTimeout,
-            channel_manager = hstreamdb_channel_mgr:start(Opts)
-           }}.
+        stream = StreamName,
+        grpc_timeout = GRPCTimeout,
+        channel_manager = hstreamdb_channel_mgr:start(Opts)
+    }}.
 
 handle_cast({write, ShardId, #batch{id = BatchId} = Batch, Caller}, State) ->
     {Result, NState} = do_write(ShardId, Batch, State),
@@ -91,13 +93,23 @@ code_change(_OldVsn, State, _Extra) ->
 %% -------------------------------------------------------------------------------------------------
 %% internal functions
 
-do_write(ShardId, #batch{records = Records, compression_type = CompressionType},
-         State = #state{channel_manager = ChannelM0,
-                        stream = Stream,
-                        grpc_timeout = GRPCTimeout}) ->
+do_write(
+    ShardId,
+    #batch{records = Records, compression_type = CompressionType},
+    State = #state{
+        channel_manager = ChannelM0,
+        stream = Stream,
+        grpc_timeout = GRPCTimeout
+    }
+) ->
     case hstreamdb_channel_mgr:lookup_channel(ShardId, ChannelM0) of
         {ok, Channel, ChannelM1} ->
-            Req = #{streamName => Stream, records => Records, shardId => ShardId, compressionType => CompressionType},
+            Req = #{
+                streamName => Stream,
+                records => Records,
+                shardId => ShardId,
+                compressionType => CompressionType
+            },
             Options = #{channel => Channel, timeout => GRPCTimeout},
             case flush(ShardId, Req, Options) of
                 {ok, _} = Res ->
@@ -110,22 +122,35 @@ do_write(ShardId, #batch{records = Records, compression_type = CompressionType},
             {Error, State}
     end.
 
-flush(ShardId,
-      #{records := Records, compressionType := CompressionType, streamName := StreamName},
-      #{channel := Channel, timeout := Timeout} = Options) ->
+flush(
+    ShardId,
+    #{records := Records, compressionType := CompressionType, streamName := StreamName},
+    #{channel := Channel, timeout := Timeout} = Options
+) ->
     case encode_records(Records, CompressionType) of
         {ok, NRecords} ->
-            BatchedRecord = #{payload => NRecords, batchSize => length(Records), compressionType => compression_type_to_enum(CompressionType)},
+            BatchedRecord = #{
+                payload => NRecords,
+                batchSize => length(Records),
+                compressionType => compression_type_to_enum(CompressionType)
+            },
             NReq = #{streamName => StreamName, shardId => ShardId, records => BatchedRecord},
             case timer:tc(fun() -> ?HSTREAMDB_CLIENT:append(NReq, Options) end) of
                 {Time, {ok, Resp, _MetaData}} ->
-                    logger:info("flush_request[~p, ~p], pid=~p, SUCCESS, ~p records in ~p ms~n", [Channel, ShardId, self(), length(Records), Time div 1000]),
+                    logger:info("flush_request[~p, ~p], pid=~p, SUCCESS, ~p records in ~p ms~n", [
+                        Channel, ShardId, self(), length(Records), Time div 1000
+                    ]),
                     {ok, Resp};
                 {Time, {error, R}} ->
-                    logger:error("flush_request[~p, ~p], pid=~p, timeout=~p, ERROR: ~p, in ~p ms~n", [Channel, ShardId, self(), Timeout, R, Time div 1000]),
+                    logger:error(
+                        "flush_request[~p, ~p], pid=~p, timeout=~p, ERROR: ~p, in ~p ms~n", [
+                            Channel, ShardId, self(), Timeout, R, Time div 1000
+                        ]
+                    ),
                     {error, R}
             end;
-        {error, R} -> {error, R}
+        {error, R} ->
+            {error, R}
     end.
 
 encode_records(Records, CompressionType) ->
@@ -136,7 +161,8 @@ encode_records(Records, CompressionType) ->
                 gzip -> gzip(Payload);
                 zstd -> zstd(Payload)
             end;
-        {error, _} = Error -> Error
+        {error, _} = Error ->
+            Error
     end.
 
 compression_type_to_enum(CompressionType) ->
@@ -149,10 +175,10 @@ compression_type_to_enum(CompressionType) ->
 safe_encode_msg(Records) ->
     try
         Payload = hstreamdb_api:encode_msg(
-                    #{records => Records}
-                    , batch_h_stream_records
-                    , []
-                   ),
+            #{records => Records},
+            batch_h_stream_records,
+            []
+        ),
         {ok, Payload}
     catch
         error:Reason -> {error, {encode_msg, Reason}}
@@ -170,4 +196,3 @@ zstd(Payload) ->
         {error, R} -> {error, {zstd, R}};
         R -> {ok, R}
     end.
-

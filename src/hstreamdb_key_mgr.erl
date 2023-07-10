@@ -16,21 +16,23 @@
 
 -module(hstreamdb_key_mgr).
 
--export([ start/1
-        , stop/1
-        ]).
+-export([
+    start/1,
+    stop/1
+]).
 
--export([ choose_shard/2 ]).
+-export([choose_shard/2]).
 
 -include("hstreamdb.hrl").
 
 -define(DEFAULT_SHARD_UPDATE_INTERVAL, 3000000).
 
-
 start(Options) ->
     case proplists:get_value(client, Options, undefined) of
-        #{channel := Channel,
-         grpc_timeout := GRPCTimeout} ->
+        #{
+            channel := Channel,
+            grpc_timeout := GRPCTimeout
+        } ->
             Stream = proplists:get_value(stream, Options, undefined),
             Stream == undefined andalso erlang:error({bad_options, no_stream_name}),
             #{
@@ -39,9 +41,10 @@ start(Options) ->
                 grpc_timeout => GRPCTimeout,
                 shards => undefined,
                 shard_update_interval => proplists:get_value(
-                                           shard_update_interval,
-                                           Options,
-                                           ?DEFAULT_SHARD_UPDATE_INTERVAL),
+                    shard_update_interval,
+                    Options,
+                    ?DEFAULT_SHARD_UPDATE_INTERVAL
+                ),
                 shard_update_deadline => erlang:monotonic_time(millisecond)
             };
         C ->
@@ -51,18 +54,23 @@ start(Options) ->
 stop(#{}) ->
     ok.
 
-update_shards(#{shard_update_deadline := Deadline,
-                shard_update_interval := ShardUpateInterval} = ChannelM) ->
+update_shards(
+    #{
+        shard_update_deadline := Deadline,
+        shard_update_interval := ShardUpateInterval
+    } = ChannelM
+) ->
     Now = erlang:monotonic_time(millisecond),
     case Deadline =< Now of
         true ->
             #{stream := StreamName, channel := Channel, grpc_timeout := Timeout} = ChannelM,
-            ChannelM#{shards := list_shards(StreamName, Channel, Timeout),
-                      shard_update_deadline := Now + ShardUpateInterval};
+            ChannelM#{
+                shards := list_shards(StreamName, Channel, Timeout),
+                shard_update_deadline := Now + ShardUpateInterval
+            };
         false ->
             ChannelM
     end.
-
 
 list_shards(Stream, Channel, GRPCTimeout) ->
     Req = #{'streamName' => Stream},
@@ -80,12 +88,16 @@ choose_shard(PartitioningKey, ChannelM0) ->
     #{shards := Shards} = ChannelM1,
     <<IntHash:128/big-unsigned-integer>> = crypto:hash(md5, PartitioningKey),
     [#{shardId := ShardId}] =
-    lists:filter(
-      fun(#{startHashRangeKey := SHRK,
-            endHashRangeKey := EHRK}) ->
-              IntHash >= binary_to_integer(SHRK) andalso
-              IntHash =< binary_to_integer(EHRK)
-      end,
-      Shards),
+        lists:filter(
+            fun(
+                #{
+                    startHashRangeKey := SHRK,
+                    endHashRangeKey := EHRK
+                }
+            ) ->
+                IntHash >= binary_to_integer(SHRK) andalso
+                    IntHash =< binary_to_integer(EHRK)
+            end,
+            Shards
+        ),
     {ShardId, ChannelM1}.
-
