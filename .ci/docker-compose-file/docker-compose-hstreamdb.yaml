@@ -4,8 +4,10 @@ services:
   hserver0:
     image: hstreamdb/hstream:v0.15.4
     depends_on:
-      - zookeeper
-      - hstore
+      zookeeper:
+        condition: service_started
+      hstore:
+        condition: service_healthy
     ports:
       - "127.0.0.1:6570:6570"
     expose:
@@ -38,8 +40,10 @@ services:
   hserver1:
     image: hstreamdb/hstream:v0.15.4
     depends_on:
-      - zookeeper
-      - hstore
+      zookeeper:
+        condition: service_started
+      hstore:
+        condition: service_healthy
     ports:
       - "127.0.0.1:6572:6572"
     expose:
@@ -105,10 +109,20 @@ services:
       - "-c"
       - |
         set -ex
+        # N.B. "enable-dscp-reflection=false" is required for linux kernel which
+        # doesn't support dscp reflection, e.g. centos7.
         /usr/local/bin/ld-dev-cluster --root /data/store \
         --use-tcp --tcp-host $$(hostname -I | awk '{print $$1}') \
         --user-admin-port 6440 \
-        --no-interactive
+        --param enable-dscp-reflection=false \
+        --no-interactive \
+        > /data/store/hstore.log 2>&1
+    healthcheck:
+      test: ["CMD", "grep", "LogDevice Cluster running", "/data/store/hstore.log"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
 
   zookeeper:
     image: zookeeper
