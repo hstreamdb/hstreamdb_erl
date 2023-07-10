@@ -37,6 +37,9 @@ jobs:
     - name: run xref
       run: |
         ./rebar3 xref
+    - name: check formatting
+      run: |
+        ./rebar3 fmt --check
     - name: docker compose down
       run: |
         make -C ./.ci down

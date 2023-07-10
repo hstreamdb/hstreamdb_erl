@@ -1,8 +1,9 @@
 -module(producer_example).
 
--export([ start/0
-        , callback/1
-        ]).
+-export([
+    start/0,
+    callback/1
+]).
 
 start() ->
     %% producer_example:start().
@@ -16,10 +17,12 @@ start() ->
     },
     ClientOptions = [
         % {url,  "http://119.3.80.172:6570"},
-        {url,  "http://127.0.0.1:6570"},
+        {url, "http://127.0.0.1:6570"},
         {rpc_options, RPCOptions},
-        {host_mapping, #{<<"10.5.0.4">> => <<"127.0.0.1">>,
-                         <<"10.5.0.5">> => <<"127.0.0.1">>}}
+        {host_mapping, #{
+            <<"10.5.0.4">> => <<"127.0.0.1">>,
+            <<"10.5.0.5">> => <<"127.0.0.1">>
+        }}
     ],
     {ok, Client} = hstreamdb:start_client(test_c, ClientOptions),
     io:format("start client  ~p~n", [Client]),
@@ -34,8 +37,8 @@ start() ->
 
     Echo = hstreamdb:echo(Client),
     io:format("echo: ~p~n", [Echo]),
-    
-    CreateStream = hstreamdb:create_stream( Client, "demo2", 2, 24*60*60, 2),
+
+    CreateStream = hstreamdb:create_stream(Client, "demo2", 2, 24 * 60 * 60, 2),
     io:format("create_stream: ~p~n", [CreateStream]),
 
     ProducerOptions = [
@@ -55,11 +58,13 @@ start() ->
     Record2 = hstreamdb:to_record(PartitioningKey, PayloadType, <<"batch 1">>),
     io:format("to record ~p~n", [Record1]),
 
-    do_n(1000,
-         fun() ->
-                 _Append1 = hstreamdb:append(Producer, Record1),
-                 _Append2 = hstreamdb:append(Producer, Record2)
-         end),
+    do_n(
+        1000,
+        fun() ->
+            _Append1 = hstreamdb:append(Producer, Record1),
+            _Append2 = hstreamdb:append(Producer, Record2)
+        end
+    ),
     % Append = [
     %     begin
     %         RecordN = hstreamdb:to_record(PartitioningKey, PayloadType, list_to_binary(io_lib:format("message ~p", [N]))),
@@ -79,7 +84,7 @@ start() ->
     AppendFlush = hstreamdb:append_flush(Producer, {BatchK, [R1, R2]}),
     io:format("append flush AppendFlushSingle ~p~n", [AppendFlushSingle]),
     io:format("append flush ~p~n", [AppendFlush]),
-    
+
     timer:sleep(1000),
     Stop = hstreamdb:stop_producer(Producer),
     io:format("stop producer  ~p~n", [Stop]),

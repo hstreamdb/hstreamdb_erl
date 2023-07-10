@@ -28,4 +28,3 @@ start_link() ->
 
 init([]) ->
     {ok, {#{strategy => one_for_one, intensity => 5, period => 30}, []}}.
-

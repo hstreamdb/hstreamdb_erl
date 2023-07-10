@@ -16,26 +16,29 @@
 
 -module(hstreamdb).
 
--export([ start_client/2
-        , stop_client/1
-        , start_producer/3
-        , stop_producer/1
-        , start_consumer/3
-        , stop_consumer/1
-        ]).
+-export([
+    start_client/2,
+    stop_client/1,
+    start_producer/3,
+    stop_producer/1,
+    start_consumer/3,
+    stop_consumer/1
+]).
 
--export([ echo/1,
-          create_stream/5,
-          delete_stream/2,
-          delete_stream/4
-        ]).
+-export([
+    echo/1,
+    create_stream/5,
+    delete_stream/2,
+    delete_stream/4
+]).
 
--export([ to_record/3
-        , append/2
-        , append/4
-        , flush/1
-        , append_flush/2
-        ]).
+-export([
+    to_record/3,
+    append/2,
+    append/4,
+    flush/1,
+    append_flush/2
+]).
 
 -define(GRPC_TIMEOUT, 5000).
 
@@ -61,7 +64,7 @@ start_client(Name, Options) ->
                     grpc_timeout => GRPCTimeout
                 },
             case hstreamdb_channel_mgr:start_channel(ChannelName, ServerURL, RPCOptions) of
-                {ok,_} ->
+                {ok, _} ->
                     {ok, Client};
                 {error, Reason} ->
                     {error, Reason}
@@ -73,7 +76,7 @@ start_client(Name, Options) ->
 stop_client(#{channel := Channel}) ->
     grpc_client_sup:stop_channel_pool(Channel);
 stop_client(Name) ->
-    Channel =  hstreamdb_channel_mgr:channel_name(Name),
+    Channel = hstreamdb_channel_mgr:channel_name(Name),
     grpc_client_sup:stop_channel_pool(Channel).
 
 start_producer(Client, Producer, ProducerOptions) ->
@@ -91,12 +94,13 @@ stop_consumer(_) ->
 to_record(PartitioningKey, PayloadType, Payload) ->
     {PartitioningKey, #{
         header => #{
-            flag => case PayloadType of
-                        json -> 0;
-                        raw -> 1
-                    end,
+            flag =>
+                case PayloadType of
+                    json -> 0;
+                    raw -> 1
+                end,
             key => PartitioningKey
-            },
+        },
         payload => Payload
     }}.
 
@@ -145,14 +149,19 @@ do_echo(#{channel := Channel, grpc_timeout := Timeout}) ->
             {error, R}
     end.
 
-do_create_stream(#{channel := Channel, grpc_timeout := Timeout},
-                 Name, ReplFactor, BacklogDuration, ShardCount) ->
+do_create_stream(
+    #{channel := Channel, grpc_timeout := Timeout},
+    Name,
+    ReplFactor,
+    BacklogDuration,
+    ShardCount
+) ->
     Req = #{
-      streamName => Name,
-      replicationFactor => ReplFactor,
-      backlogDuration => BacklogDuration,
-      shardCount => ShardCount
-     },
+        streamName => Name,
+        replicationFactor => ReplFactor,
+        backlogDuration => BacklogDuration,
+        shardCount => ShardCount
+    },
     Options = #{channel => Channel, timeout => Timeout},
     case ?HSTREAMDB_CLIENT:create_stream(Req, Options) of
         {ok, _, _} ->
@@ -161,13 +170,17 @@ do_create_stream(#{channel := Channel, grpc_timeout := Timeout},
             {error, R}
     end.
 
-do_delete_stream(#{channel := Channel, grpc_timeout := Timeout},
-                 Name, IgnoreNonExist, Force) ->
+do_delete_stream(
+    #{channel := Channel, grpc_timeout := Timeout},
+    Name,
+    IgnoreNonExist,
+    Force
+) ->
     Req = #{
-      streamName => Name,
-      ignoreNonExist => IgnoreNonExist,
-      force => Force
-     },
+        streamName => Name,
+        ignoreNonExist => IgnoreNonExist,
+        force => Force
+    },
     Options = #{channel => Channel, timeout => Timeout},
     case ?HSTREAMDB_CLIENT:delete_stream(Req, Options) of
         {ok, _, _} ->
