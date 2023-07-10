@@ -36,8 +36,8 @@ client(Name, N) ->
         {ok, echo} = hstreamdb:echo(Client),
         Client
     catch
-        Class:Error ->
-            ct:print("Error connecting: ~p", [{Class, Error}]),
+        Class:Error:Stack ->
+            ct:print("Error connecting: ~p~n~p", [{Class, Error}, Stack]),
             ct:sleep(timer:seconds(1)),
             client(Name, N - 1)
     end.

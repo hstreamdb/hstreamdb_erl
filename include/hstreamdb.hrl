@@ -20,6 +20,8 @@
 
 -type compression_type() :: none | gzip | zstd.
 
+-define(DEFAULT_HSTREAMDB_PORT, 6570).
+
 -record(batch, {
     id :: reference(),
     from :: gen_server:from(),
