@@ -10,19 +10,19 @@
 
 -define(STREAM, "stream2").
 
--define(assertFlushResult(Result, N),
+-define(assertFlushResult(Result),
         begin
             receive
-                {producer_result, {{flush, ?STREAM, N}, Result}} ->
+                {producer_result, {{flush, ?STREAM, 1}, Result}} ->
                     ok
             after 300 ->
                       ct:fail("producer result not received")
             end
         end).
 
--define(assertOkFlushResult(N), ?assertFlushResult({ok, _}, N)).
+-define(assertOkFlushResult(), ?assertFlushResult({ok, _})).
 
-all() -> 
+all() ->
     hstreamdb_test_helpers:test_cases(?MODULE).
 
 init_per_suite(Config) ->
@@ -75,7 +75,7 @@ t_flush_by_timeout(Config) ->
        ok,
        hstreamdb:append(Producer, sample_record())),
 
-    ?assertOkFlushResult(1),
+    ?assertOkFlushResult(),
 
     ok = hstreamdb:stop_producer(Producer).
 
@@ -98,7 +98,7 @@ t_flush_explicit(Config) ->
 
     ok = hstreamdb:flush(Producer),
 
-    ?assertOkFlushResult(1),
+    ?assertOkFlushResult(),
 
     ok = hstreamdb:stop_producer(Producer).
 
@@ -115,7 +115,6 @@ t_append_flush_no_callback(Config) ->
                       ],
 
     {ok, Producer} = hstreamdb:start_producer(Client, test_producer, ProducerOptions),
-
 
     ?assertMatch(
        {ok, _},
@@ -145,7 +144,7 @@ t_flush_by_limit(Config) ->
 
     ok = hstreamdb:flush(Producer),
 
-    ?assertOkFlushResult(20),
+    ok = assert_ok_flush_result(20),
 
     ok = hstreamdb:stop_producer(Producer).
 
@@ -171,7 +170,7 @@ t_append_batch(Config) ->
 
     ok = hstreamdb:flush(Producer),
 
-    ?assertOkFlushResult(100),
+    ok = assert_ok_flush_result(100),
 
     ok = hstreamdb:stop_producer(Producer).
 
@@ -189,11 +188,15 @@ t_overflooded(Config) ->
 
     {ok, Producer} = hstreamdb:start_producer(Client, test_producer, ProducerOptions),
 
-    ok = hstreamdb:append(Producer, sample_record()),
+    lists:foreach(
+      fun(_) ->
+        _ = hstreamdb:append(Producer, sample_record())
+      end,
+      lists:seq(1, 100)),
 
     ?assertMatch(
-       {error, {overflooded, _}}, 
-       hstreamdb:append(Producer, sample_record())),
+        {error,{batch_count_too_large, _}},
+       hstreamdb:append_flush(Producer, sample_record())),
 
     ok = hstreamdb:stop_producer(Producer).
 
@@ -216,7 +219,7 @@ t_batch_reap(Config) ->
 
     ok = hstreamdb:flush(Producer),
 
-    ?assertFlushResult({error, reaped}, 1),
+    ?assertFlushResult({error, timeout}),
 
     ok = hstreamdb:stop_producer(Producer).
 
@@ -241,13 +244,11 @@ t_append_flush(Config) ->
       lists:seq(1, 5)),
 
     {PKey, Record} = sample_record(),
-    {ok, #{recordIds := RecordIds}} = hstreamdb:append_flush(Producer, {PKey, [Record, Record]}),
-    
-    ?assertEqual(2, length(RecordIds)),
+    {ok, _} = hstreamdb:append_flush(Producer, {PKey, Record}),
 
     lists:foreach(
       fun(_) ->
-        ?assertOkFlushResult(1)
+        ?assertOkFlushResult()
       end,
       lists:seq(1, 5)),
 
@@ -266,11 +267,11 @@ t_append_gzip(Config) ->
     {ok, Producer} = hstreamdb:start_producer(Client, test_producer, ProducerOptions),
 
     {PKey0, Record0} = sample_record(),
-    {ok, _} = hstreamdb:append_flush(Producer, {PKey0, [Record0, Record0]}),
-    
+    {ok, _} = hstreamdb:append_flush(Producer, {PKey0, Record0}),
+
     {PKey1, Record1} = bad_payload_record(),
-    {error, _} = hstreamdb:append_flush(Producer, {PKey1, [Record1, Record1]}),
-    
+    {error, _} = hstreamdb:append_flush(Producer, {PKey1, Record1}),
+
     ok = hstreamdb:stop_producer(Producer).
 
 t_append_zstd(Config) ->
@@ -286,10 +287,10 @@ t_append_zstd(Config) ->
     {ok, Producer} = hstreamdb:start_producer(Client, test_producer, ProducerOptions),
 
     {PKey0, Record0} = sample_record(),
-    {ok, _} = hstreamdb:append_flush(Producer, {PKey0, [Record0, Record0]}),
-    
+    {ok, _} = hstreamdb:append_flush(Producer, {PKey0, Record0}),
+
     {PKey1, Record1} = bad_payload_record(),
-    {error, _} = hstreamdb:append_flush(Producer, {PKey1, [Record1, Record1]}),
+    {error, _} = hstreamdb:append_flush(Producer, {PKey1, Record1}),
 
     ok = hstreamdb:stop_producer(Producer).
 
@@ -310,4 +311,10 @@ callback() ->
     fun(Result) ->
             Pid ! {producer_result, Result}
     end.
+
+assert_ok_flush_result(0) ->
+    ok;
+assert_ok_flush_result(N) when N > 0 ->
+    ?assertOkFlushResult(),
+    assert_ok_flush_result(N - 1).
 

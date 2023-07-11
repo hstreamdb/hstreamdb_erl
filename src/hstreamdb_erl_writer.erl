@@ -21,7 +21,7 @@
 -export([
     start_link/1,
     stop/1,
-    write/3,
+    write/2,
     connect/1
 ]).
 
@@ -47,8 +47,8 @@
 start_link(Opts) ->
     gen_server:start_link(?MODULE, [Opts], []).
 
-write(Pid, ShardId, Records) ->
-    gen_server:cast(Pid, {write, ShardId, Records, self()}).
+write(Pid, Batch) ->
+    gen_server:cast(Pid, {write, Batch, self()}).
 
 stop(Pid) ->
     gen_server:call(Pid, stop).
@@ -72,8 +72,8 @@ init([Opts]) ->
         channel_manager = hstreamdb_channel_mgr:start(Opts)
     }}.
 
-handle_cast({write, ShardId, #batch{id = BatchId} = Batch, Caller}, State) ->
-    {Result, NState} = do_write(ShardId, Batch, State),
+handle_cast({write, #batch{shard_id = ShardId, id = BatchId} = Batch, Caller}, State) ->
+    {Result, NState} = do_write(ShardId, records(Batch), Batch, State),
     ok = gen_server:cast(Caller, {write_result, ShardId, BatchId, Result}),
     {noreply, NState}.
 
@@ -93,9 +93,36 @@ code_change(_OldVsn, State, _Extra) ->
 %% -------------------------------------------------------------------------------------------------
 %% internal functions
 
+records(#batch{id = BatchId, tab = Tab}) ->
+    case ets:lookup(Tab, BatchId) of
+        [{_, Records}] ->
+            drop_timepout(Records);
+        [] ->
+            []
+    end.
+
+drop_timepout(Records) ->
+    Now = erlang:monotonic_time(millisecond),
+    lists:flatmap(
+        fun(#{deadline := Deadline, data := Data}) ->
+            case Deadline of
+                T when T >= Now ->
+                    [Data];
+                infinity ->
+                    [Data];
+                _ ->
+                    []
+            end
+        end,
+        Records
+    ).
+
+do_write(_ShardId, [], _Batch, State) ->
+    {ok, State};
 do_write(
     ShardId,
-    #batch{records = Records, compression_type = CompressionType},
+    Records,
+    #batch{compression_type = CompressionType},
     State = #state{
         channel_manager = ChannelM0,
         stream = Stream,

@@ -14,17 +14,28 @@
 %% limitations under the License.
 %%--------------------------------------------------------------------
 
--define(HSTREAMDB_CLIENT, hstream_server_h_stream_api_client).
+-include_lib("stdlib/include/assert.hrl").
 
--type append_record() :: map().
+-define(DEFAULT_RECEIVE_TIMEOUT, 200).
 
--type compression_type() :: none | gzip | zstd.
+-define(assertReceive(Pattern), ?assertReceive(Pattern, ?DEFAULT_RECEIVE_TIMEOUT)).
+-define(assertReceived(Pattern), ?assertReceive(Pattern, 0)).
 
--define(DEFAULT_HSTREAMDB_PORT, 6570).
+-define(assertReceive(Pattern, Timeout),
+    receive
+        Pattern -> ok
+    after Timeout ->
+        ?assert(false, "Expected message not received")
+    end
+).
 
--record(batch, {
-    id :: reference(),
-    shard_id :: integer(),
-    tab :: ets:table(),
-    compression_type :: compression_type()
-}).
+-define(refuteReceive(Pattern), ?refuteReceive(Pattern, ?DEFAULT_RECEIVE_TIMEOUT)).
+-define(refuteReceived(Pattern), ?refuteReceive(Pattern, 0)).
+
+-define(refuteReceive(Pattern, Timeout),
+    receive
+        Pattern -> ?assert(false, "Unexpected message received")
+    after Timeout ->
+        ok
+    end
+).
