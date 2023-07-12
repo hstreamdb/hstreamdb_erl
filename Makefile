@@ -19,4 +19,11 @@ cover: ct
 fmt: $(REBAR)
 	$(REBAR) fmt
 
+.PHONY: fmt-check
+fmt: $(REBAR)
+	$(REBAR) fmt --check
+
+.PHONY: xref
+fmt: $(REBAR)
+	$(REBAR) xref
 

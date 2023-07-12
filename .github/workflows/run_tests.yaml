@@ -28,18 +28,15 @@ jobs:
     - name: docker compose up
       run: |
         make -C ./.ci up
-    - name: run common test
+    - name: run common test & cover
       run: |
-        ./rebar3 ct --name 'test@127.0.0.1' --readable true -v -c
-    - name: run cover
-      run: |
-        ./rebar3 cover
+        make cover
     - name: run xref
       run: |
-        ./rebar3 xref
+        make xref
     - name: check formatting
       run: |
-        ./rebar3 fmt --check
+        make fmt-check
     - name: docker compose down
       run: |
         make -C ./.ci down
