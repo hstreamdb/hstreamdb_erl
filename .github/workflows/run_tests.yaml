@@ -10,8 +10,6 @@ jobs:
       matrix:
         include:
           - runs_on: ubuntu-20.04
-            otp_release: 23.3.4.9
-          - runs_on: ubuntu-20.04
             otp_release: 24.1.6
           - runs_on: ubuntu-20.04
             otp_release: 25.1.1
