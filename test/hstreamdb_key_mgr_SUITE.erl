@@ -8,7 +8,7 @@
 
 -define(DAY, (24 * 60 * 60)).
 
-all() -> 
+all() ->
     hstreamdb_test_helpers:test_cases(?MODULE).
 
 init_per_suite(Config) ->
@@ -25,14 +25,16 @@ t_invalid_options(Config) ->
     Client = ?config(client, Config),
 
     ?assertException(
-       error,
-       {bad_options, _},
-       hstreamdb_key_mgr:start([{client, Client}])),
+        error,
+        {bad_options, _},
+        hstreamdb_key_mgr:start([{client, Client}])
+    ),
 
     ?assertException(
-       error,
-       {bad_options, _},
-       hstreamdb_key_mgr:start([{stream, "stream1"}])).
+        error,
+        {bad_options, _},
+        hstreamdb_key_mgr:start([{stream, "stream1"}])
+    ).
 
 t_choose_shard(Config) ->
     Client = ?config(client, Config),
@@ -46,28 +48,30 @@ t_choose_shard(Config) ->
     %% cached shards
     ok = test_choose_shard(Client, 10000).
 
-
 test_choose_shard(Client, UpdateInterval) ->
     KeyMgr0 = hstreamdb_key_mgr:start(
-            [{client, Client},
-             {stream, "stream1"},
-             {shard_update_interval, UpdateInterval}]),
+        [
+            {client, Client},
+            {stream, "stream1"},
+            {shard_update_interval, UpdateInterval}
+        ]
+    ),
 
     RandomKeys = [integer_to_binary(rand:uniform(999999)) || _ <- lists:seq(1, 100)],
 
     {ShardIds, KeyMgr1} = lists:mapfoldl(
-                            fun(Key, KeyMgr) ->
-                                    hstreamdb_key_mgr:choose_shard(Key, KeyMgr)
-                            end,
-                            KeyMgr0,
-                            RandomKeys),
+        fun(Key, KeyMgr) ->
+            hstreamdb_key_mgr:choose_shard(Key, KeyMgr)
+        end,
+        KeyMgr0,
+        RandomKeys
+    ),
 
     UniqShardIds = lists:usort(ShardIds),
 
     ?assertEqual(
-       5,
-       length(UniqShardIds)),
+        5,
+        length(UniqShardIds)
+    ),
 
     ok = hstreamdb_key_mgr:stop(KeyMgr1).
-
-

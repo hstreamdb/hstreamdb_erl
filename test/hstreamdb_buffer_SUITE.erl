@@ -192,7 +192,9 @@ t_reply_callback_exception(Config) ->
     Buffer0 = new_buffer(Config),
 
     {ok, Buffer1} = hstreamdb_buffer:append(Buffer0, from0, [<<"rec">>], infinity),
-    {ok, Buffer2} = hstreamdb_buffer:append(Buffer1, fun(_) -> error(oops) end, [<<"rec">>], infinity),
+    {ok, Buffer2} = hstreamdb_buffer:append(
+        Buffer1, fun(_) -> error(oops) end, [<<"rec">>], infinity
+    ),
     {ok, Buffer3} = hstreamdb_buffer:append(Buffer2, from1, [<<"rec">>], infinity),
 
     Buffer4 = hstreamdb_buffer:flush(Buffer3),
@@ -222,7 +224,6 @@ t_response_after_deadline(Config) ->
         ct:fail("Did not receive send_batch message")
     end.
 
-
 %% We send 10000 records, send occasional flushes.
 %% Client timeouts some batches.
 %% We should receive all responses (ok or {error, timeout})
@@ -243,9 +244,10 @@ t_real_client(Config) ->
                     ok = hstreamdb_test_buffer_user:flush(Pid);
                 false ->
                     ok
-                end
+            end
         end,
-    lists:seq(1, NRecs)),
+        lists:seq(1, NRecs)
+    ),
     ?assert(hstreamdb_test_buffer_user:wait_for_empty(Pid, 5)),
 
     ok = assert_receive_all_responses(NRecs),
@@ -256,7 +258,6 @@ t_real_client(Config) ->
     ),
 
     ok = hstreamdb_test_buffer_user:stop(Pid).
-
 
 %%--------------------------------------------------------------------
 %% Helper Functions
@@ -302,4 +303,3 @@ assert_receive_all_responses(0) ->
 assert_receive_all_responses(N) when N > 0 ->
     ?assertReceived({N, _}),
     assert_receive_all_responses(N - 1).
-

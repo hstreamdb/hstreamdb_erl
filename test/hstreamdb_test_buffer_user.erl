@@ -67,7 +67,8 @@ flush(Pid) ->
 is_empty(Pid) ->
     gen_server:call(Pid, is_empty).
 
-wait_for_empty(_Pid, 0) -> false;
+wait_for_empty(_Pid, 0) ->
+    false;
 wait_for_empty(Pid, NSecs) when NSecs > 0 ->
     case is_empty(Pid) of
         true ->
@@ -84,7 +85,6 @@ wait_for_empty(Pid, NSecs) when NSecs > 0 ->
 handle_cast({append, From, Rec}, #st{buffer = Buffer} = St) ->
     {ok, NewBuffer} = hstreamdb_buffer:append(Buffer, From, [Rec], infinity),
     {noreply, St#st{buffer = NewBuffer}};
-
 handle_cast(flush, #st{buffer = Buffer} = St) ->
     NewBuffer = hstreamdb_buffer:flush(Buffer),
     {noreply, St#st{buffer = NewBuffer}}.
@@ -134,4 +134,3 @@ new_buffer(BatchTab) ->
         end
     },
     hstreamdb_buffer:new(Opts).
-

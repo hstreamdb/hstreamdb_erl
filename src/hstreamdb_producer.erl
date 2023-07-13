@@ -271,7 +271,6 @@ format_response(ok) -> ok;
 format_response({ok, _}) -> ok;
 format_response({error, _} = Error) -> Error.
 
-
 with_shart_buffer(
     {PartitioningKey, Record},
     Fun,

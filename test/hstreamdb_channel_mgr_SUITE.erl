@@ -8,7 +8,7 @@
 
 -define(DAY, (24 * 60 * 60)).
 
-all() -> 
+all() ->
     hstreamdb_test_helpers:test_cases(?MODULE).
 
 init_per_suite(Config) ->
@@ -25,14 +25,16 @@ t_invalid_options(Config) ->
     Client = ?config(client, Config),
 
     ?assertException(
-       error,
-       {bad_options, _},
-       hstreamdb_key_mgr:start([{client, Client}])),
+        error,
+        {bad_options, _},
+        hstreamdb_key_mgr:start([{client, Client}])
+    ),
 
     ?assertException(
-       error,
-       {bad_options, _},
-       hstreamdb_key_mgr:start([{stream, "stream1"}])).
+        error,
+        {bad_options, _},
+        hstreamdb_key_mgr:start([{stream, "stream1"}])
+    ).
 
 t_lookup_channel(Config) ->
     Client = ?config(client, Config),
@@ -41,12 +43,18 @@ t_lookup_channel(Config) ->
     ok = hstreamdb:create_stream(Client, "stream1", 2, ?DAY, 5),
 
     KeyMgr0 = hstreamdb_key_mgr:start(
-                [{client, Client},
-                 {stream, "stream1"}]),
+        [
+            {client, Client},
+            {stream, "stream1"}
+        ]
+    ),
 
     ChanMgr0 = hstreamdb_channel_mgr:start(
-                [{client, Client},
-                 {stream, "stream1"}]),
+        [
+            {client, Client},
+            {stream, "stream1"}
+        ]
+    ),
 
     Key = <<"key">>,
 
@@ -64,6 +72,3 @@ t_lookup_channel(Config) ->
 
     ok = hstreamdb_key_mgr:stop(KeyMgr1),
     ok = hstreamdb_channel_mgr:stop(ChanMgr4).
-
-
-
