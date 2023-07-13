@@ -97,7 +97,7 @@ handle_info({send_batch, #{batch_ref := Ref}}, #st{buffer = Buffer} = St) ->
         true ->
             {noreply, St};
         false ->
-            NewBuffer = hstreamdb_buffer:handle_event(Buffer, {batch_response, Ref, ok}),
+            NewBuffer = hstreamdb_buffer:handle_batch_response(Buffer, Ref, ok),
             {noreply, St#st{buffer = NewBuffer}}
     end.
 

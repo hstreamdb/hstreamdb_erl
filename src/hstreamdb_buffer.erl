@@ -23,7 +23,10 @@
     is_empty/1
 ]).
 
--export([handle_event/2]).
+-export([
+    handle_event/2,
+    handle_batch_response/3
+]).
 
 -export_type([hstreamdb_buffer/0, options/0]).
 
@@ -150,12 +153,14 @@ handle_event(#{inflight_batch_ref := BatchRef} = Buffer0, {batch_timeout, BatchR
     maybe_send_batch(Buffer1#{inflight_batch_ref => undefined});
 %% May happen due to concurrency
 handle_event(Buffer, {batch_timeout, _BatchRef}) ->
-    Buffer;
-handle_event(#{inflight_batch_ref := BatchRef} = Buffer0, {batch_response, BatchRef, Response}) ->
+    Buffer.
+
+-spec handle_batch_response(hstreamdb_buffer(), reference(), term()) -> hstreamdb_buffer().
+handle_batch_response(#{inflight_batch_ref := BatchRef} = Buffer0, BatchRef, Response) ->
     Buffer1 = send_responses(Buffer0, BatchRef, Response),
     maybe_send_batch(Buffer1#{inflight_batch_ref => undefined});
 %% Late response, the batch has been reaped by timeout timer
-handle_event(Buffer, {batch_response, _BatchRef, _Response}) ->
+handle_batch_response(Buffer, _BatchRef, _Response) ->
     Buffer.
 
 -spec is_empty(hstreamdb_buffer()) -> boolean().

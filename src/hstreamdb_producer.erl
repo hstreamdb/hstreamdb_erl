@@ -360,7 +360,7 @@ handle_write_result(
     Result
 ) ->
     {Buffer0, State1} = get_shard_buffer(ShardId, State0),
-    Buffer1 = hstreamdb_buffer:handle_event(Buffer0, {batch_response, BatchRef, Result}),
+    Buffer1 = hstreamdb_buffer:handle_batch_response(Buffer0, BatchRef, Result),
     set_shard_buffer(ShardId, Buffer1, State1).
 
 handle_shard_buffer_event(State0, ShardId, Event) ->
