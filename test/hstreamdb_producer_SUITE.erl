@@ -261,6 +261,30 @@ t_append_sync(Config) ->
         hstreamdb_producer:append_sync(producer(Config), sample_record(), 100)
     ).
 
+t_graceful_stop(Config) ->
+    ProducerOptions = [
+        {pool_size, 5},
+        {stream, ?STREAM},
+        {callback, callback()},
+        {max_records, 1000},
+        {max_batches, 10},
+        {interval, 1000}
+    ],
+
+    ok = start_producer(Config, ProducerOptions),
+
+    N = 500,
+
+    lists:foreach(
+        fun(_) ->
+            ok = hstreamdb:append(producer(Config), sample_record())
+        end,
+        lists:seq(1, N)
+    ),
+
+    ok = hstreamdb:stop_producer(producer(Config)),
+
+    assert_ok_flush_result(N).
 
 t_append_gzip(Config) ->
     ProducerOptions = [

@@ -32,7 +32,8 @@ start_link(Producer, Opts) ->
 init([Producer, Opts]) ->
     ChildSpecs = [
         buffer_pool_spec(Producer, Opts),
-        writer_pool_spec(Producer, Opts)
+        writer_pool_spec(Producer, Opts),
+        terminator_spec(Producer, Opts)
     ],
     {ok, {#{strategy => one_for_one, intensity => 5, period => 30}, ChildSpecs}}.
 
@@ -53,17 +54,30 @@ spec(Producer, Opts) ->
         start => {?MODULE, start_link, [Producer, Opts]},
         restart => permanent,
         shutdown => infinity,
-        type => supervisor,
-        modules => [?MODULE]
+        type => supervisor
     }.
 
 child_id(Producer) ->
     {?MODULE, Producer}.
 
 ecpool_spec(Pool, Mod, Opts) ->
-    #{id => {pool_sup, Pool},
+    #{
+        id => {pool_sup, Pool},
         start => {ecpool_pool_sup, start_link, [Pool, Mod, Opts]},
         restart => transient,
         shutdown => infinity,
-        type => supervisor,
-        modules => [ecpool_pool_sup]}.
+        type => supervisor
+    }.
+
+terminator_spec(Producer, Opts) ->
+    StopTimeout = proplists:get_value(stop_timeout, Opts, ?DEFAULT_STOP_TIMEOUT),
+    #{
+        id => terminator,
+        start =>
+            {hstreamdb_producer_terminator, start_link, [
+                #{producer => Producer, timeout => StopTimeout}
+            ]},
+        restart => permanent,
+        shutdown => StopTimeout + 1000,
+        type => worker
+    }.

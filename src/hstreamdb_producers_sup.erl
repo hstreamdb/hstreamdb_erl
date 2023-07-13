@@ -40,8 +40,7 @@ spec() ->
         start => {?MODULE, start_link, []},
         restart => permanent,
         shutdown => infinity,
-        type => supervisor,
-        modules => [?MODULE]
+        type => supervisor
     }.
 
 start(Producer, Opts) ->
@@ -49,9 +48,9 @@ start(Producer, Opts) ->
 
 stop(Producer) ->
     ChildId = hstreamdb_producer_sup:child_id(Producer),
-	case supervisor:terminate_child(?SERVER, ChildId) of
+    case supervisor:terminate_child(?SERVER, ChildId) of
         ok ->
             supervisor:delete_child(?SERVER, ChildId);
         {error, Reason} ->
             {error, Reason}
-	end.
+    end.

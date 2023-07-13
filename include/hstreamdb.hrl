@@ -29,6 +29,8 @@
 -define(DEFAULT_WRITER_POOL_SIZE, 64).
 -define(DEFAULT_BATCH_REAP_TIMEOUT, 120000).
 
+-define(DEFAULT_STOP_TIMEOUT, 5000).
+
 -record(batch, {
     id :: reference(),
     shard_id :: integer(),

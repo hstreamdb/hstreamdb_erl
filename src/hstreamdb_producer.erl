@@ -52,7 +52,9 @@
     batch_tab,
     buffers,
     buffer_opts,
-    key_manager
+    key_manager,
+
+    terminator = undefined
 }).
 
 append(Producer, {_PartitioningKey, _Record} = PKeyRecord) ->
@@ -91,6 +93,8 @@ connect(Options) ->
 %% gen_server part
 
 init(Options) ->
+    _ = process_flag(trap_exit, true),
+
     StreamName = proplists:get_value(stream, Options),
     Callback = proplists:get_value(callback, Options),
 
@@ -118,6 +122,8 @@ init(Options) ->
         key_manager = hstreamdb_key_mgr:start(Options)
     }}.
 
+handle_call(_Req, _From, #state{terminator = Terminator} = State) when Terminator =/= undefined ->
+    {reply, {error, terminating}, State};
 handle_call({append, PKeyRecord}, _From, State) ->
     {Resp, NState} = with_shart_buffer(
         PKeyRecord,
@@ -152,12 +158,15 @@ handle_info(
     {write_result, ShardId, BatchRef, Result},
     State
 ) ->
-    {noreply, handle_write_result(State, ShardId, BatchRef, Result)};
+    {noreply, maybe_report_empty(handle_write_result(State, ShardId, BatchRef, Result))};
 handle_info({shard_buffer_event, ShardId, Message}, State) ->
-    {noreply, handle_shard_buffer_event(State, ShardId, Message)};
+    {noreply, maybe_report_empty(handle_shard_buffer_event(State, ShardId, Message))};
 handle_info(_Request, State) ->
     {noreply, State}.
 
+handle_cast({stop, Terminator}, State0) ->
+    State1 = do_flush(State0),
+    {noreply, maybe_report_empty(State1#state{terminator = Terminator})};
 handle_cast(_Request, State) ->
     {noreply, State}.
 
@@ -169,7 +178,6 @@ code_change(_OldVsn, State, _Extra) ->
 
 %% -------------------------------------------------------------------------------------------------
 %% internal functions
-
 
 sync_request(Producer, Req, Timeout) ->
     Self = alias([reply]),
@@ -338,6 +346,25 @@ handle_shard_buffer_event(State0, ShardId, Event) ->
     {Buffer0, State1} = get_shard_buffer(ShardId, State0),
     Buffer1 = hstreamdb_buffer:handle_event(Buffer0, Event),
     set_shard_buffer(ShardId, Buffer1, State1).
+
+maybe_report_empty(#state{terminator = undefined} = State) ->
+    State;
+maybe_report_empty(#state{terminator = Terminator} = State) ->
+    case are_all_buffers_empty(State) of
+        true ->
+            erlang:send(Terminator, {empty, Terminator}),
+            State;
+        false ->
+            State
+    end.
+
+are_all_buffers_empty(#state{buffers = Buffers}) ->
+    lists:all(
+        fun(Buffer) ->
+            hstreamdb_buffer:is_empty(Buffer)
+        end,
+        maps:values(Buffers)
+    ).
 
 apply_callback({M, F}, R) ->
     erlang:apply(M, F, [R]);
