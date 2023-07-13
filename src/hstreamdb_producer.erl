@@ -33,6 +33,9 @@
     append/2,
     flush/1,
     append_flush/2,
+    append_flush/3,
+    append_sync/2,
+    append_sync/3,
     connect/1
 ]).
 
@@ -89,6 +92,12 @@ append(Producer, {_PartitioningKey, _Record} = PKeyRecord) ->
         end
     ).
 
+append_sync(Producer, {_PartitioningKey, _Record} = PKeyRecord) ->
+    append_sync(Producer, PKeyRecord, infinity).
+
+append_sync(Producer, {_PartitioningKey, _Record} = PKeyRecord, Timeout) ->
+    sync_request(Producer, {append_sync, PKeyRecord}, Timeout).
+
 flush(Producer) ->
     foreach_worker(
         fun(Pid) -> gen_server:call(Pid, flush) end,
@@ -99,20 +108,7 @@ append_flush(Producer, {_PartitioningKey, _Record} = PKeyRecord) ->
     append_flush(Producer, PKeyRecord, infinity).
 
 append_flush(Producer, {_PartitioningKey, _Record} = PKeyRecord, Timeout) ->
-    Self = alias([reply]),
-    case
-        ecpool:with_client(
-            Producer,
-            fun(Pid) ->
-                gen_server:call(Pid, {append_flush, PKeyRecord, Self, Timeout})
-            end
-        )
-    of
-        {error, _} = Error ->
-            Error;
-        ok ->
-            wait_reply(Self, Timeout)
-    end.
+    sync_request(Producer, {append_flush, PKeyRecord}, Timeout).
 
 %%-------------------------------------------------------------------------------------------------
 %% ecpool part
@@ -160,10 +156,17 @@ handle_call({append, PKeyRecord}, _From, State) ->
     {reply, Resp, NState};
 handle_call(flush, _From, State) ->
     {reply, ok, do_flush(State)};
-handle_call({append_flush, PKeyRecord, From, Timeout}, _From, State) ->
+handle_call({sync_req, From, {append_flush, PKeyRecord}, Timeout}, _From, State) ->
     {Resp, NState} = with_shart_buffer(
         PKeyRecord,
         fun(Buffer, Record) -> do_append_flush(Buffer, Record, From, Timeout) end,
+        State
+    ),
+    {reply, Resp, NState};
+handle_call({sync_req, From, {append_sync, PKeyRecord}, Timeout}, _From, State) ->
+    {Resp, NState} = with_shart_buffer(
+        PKeyRecord,
+        fun(Buffer, Record) -> do_append_sync(Buffer, Record, From, Timeout) end,
         State
     ),
     {reply, Resp, NState};
@@ -171,8 +174,8 @@ handle_call({append_flush, PKeyRecord, From, Timeout}, _From, State) ->
 handle_call(stop, _From, State) ->
     NState = do_flush(State),
     {reply, ok, NState};
-handle_call(_Request, _From, State) ->
-    {reply, {error, unknown_call}, State}.
+handle_call(Request, _From, State) ->
+    {reply, {error, {unknown_call, Request}}, State}.
 
 handle_info(
     {write_result, ShardId, BatchRef, Result},
@@ -195,6 +198,23 @@ code_change(_OldVsn, State, _Extra) ->
 
 %% -------------------------------------------------------------------------------------------------
 %% internal functions
+
+
+sync_request(Producer, Req, Timeout) ->
+    Self = alias([reply]),
+    case
+        ecpool:with_client(
+            Producer,
+            fun(Pid) ->
+                gen_server:call(Pid, {sync_req, Self, Req, Timeout})
+            end
+        )
+    of
+        {error, _} = Error ->
+            Error;
+        ok ->
+            wait_reply(Self, Timeout)
+    end.
 
 wait_reply(Self, Timeout) ->
     receive
@@ -298,6 +318,9 @@ do_append_flush(Buffer0, Record, From, Timeout) ->
         {error, _} = Error ->
             Error
     end.
+
+do_append_sync(Buffer, Record, From, Timeout) ->
+    hstreamdb_buffer:append(Buffer, From, [Record], Timeout).
 
 write(ShardId, #{batch_ref := Ref, tab := Tab}, #state{
     writer_name = WriterName, compression_type = CompressionType

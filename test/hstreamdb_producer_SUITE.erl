@@ -10,7 +10,7 @@
 
 -define(STREAM, "stream2").
 
--define(assertFlushResult(Result), begin
+-define(assertResult(Result), begin
     receive
         {producer_result, {{flush, ?STREAM, 1}, Result}} ->
             ok
@@ -19,7 +19,7 @@
     end
 end).
 
--define(assertOkFlushResult(), ?assertFlushResult(ok)).
+-define(assertOkResult(), ?assertResult(ok)).
 
 all() ->
     hstreamdb_test_helpers:test_cases(?MODULE).
@@ -79,7 +79,7 @@ t_flush_by_timeout(Config) ->
         hstreamdb:append(Producer, sample_record())
     ),
 
-    ?assertOkFlushResult().
+    ?assertOkResult().
 
 t_flush_explicit(Config) ->
     ProducerOptions = [
@@ -98,7 +98,7 @@ t_flush_explicit(Config) ->
 
     ok = hstreamdb:flush(Producer),
 
-    ?assertOkFlushResult().
+    ?assertOkResult().
 
 t_append_flush_no_callback(Config) ->
     ProducerOptions = [
@@ -139,7 +139,7 @@ t_flush_by_limit(Config) ->
 
     ok = assert_ok_flush_result(20).
 
-t_append_batch(Config) ->
+t_append(Config) ->
     ProducerOptions = [
         {pool_size, 1},
         {stream, ?STREAM},
@@ -204,7 +204,7 @@ t_batch_reap(Config) ->
 
     ok = hstreamdb:flush(Producer),
 
-    ?assertFlushResult({error, timeout}).
+    ?assertResult({error, timeout}).
 
 t_append_flush(Config) ->
     ProducerOptions = [
@@ -230,10 +230,36 @@ t_append_flush(Config) ->
 
     lists:foreach(
         fun(_) ->
-            ?assertOkFlushResult()
+            ?assertOkResult()
         end,
         lists:seq(1, 5)
     ).
+
+t_append_sync(Config) ->
+    ProducerOptions = [
+        {pool_size, 1},
+        {stream, ?STREAM},
+        {callback, callback()},
+        {max_records, 10},
+        {max_batches, 10},
+        {interval, 500}
+    ],
+
+    {ok, Producer} = start_producer(Config, ProducerOptions),
+
+    {Time, Res} = timer:tc(
+        fun() ->
+            hstreamdb_producer:append_sync(Producer, sample_record(), 1000)
+        end
+    ),
+    ?assertEqual(ok, Res),
+    ?assert(Time > 500),
+
+    ?assertEqual(
+        {error, timeout},
+        hstreamdb_producer:append_sync(Producer, sample_record(), 100)
+    ).
+
 
 t_append_gzip(Config) ->
     ProducerOptions = [
@@ -308,5 +334,5 @@ callback() ->
 assert_ok_flush_result(0) ->
     ok;
 assert_ok_flush_result(N) when N > 0 ->
-    ?assertOkFlushResult(),
+    ?assertOkResult(),
     assert_ok_flush_result(N - 1).
