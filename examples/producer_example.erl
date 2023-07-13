@@ -1,5 +1,9 @@
 -module(producer_example).
 
+%% $ ./rebar3 shell
+%% > c("examples/producer_example").
+%% > producer_example:start().
+
 -export([
     start/0,
     callback/1
@@ -26,14 +30,6 @@ start() ->
     ],
     {ok, Client} = hstreamdb:start_client(test_c, ClientOptions),
     io:format("start client  ~p~n", [Client]),
-    % Start2 = hstreamdb:start_client(test_c, ClientOptions),
-    % io:format("start client2  ~p~n", [Start2]),
-
-    % StopClient = hstreamdb:stop_client(test_c),
-    % io:format("stop client ~p~n", [StopClient]),
-
-    % Start3 = hstreamdb:start_client(test_c, ClientOptions),
-    % io:format("start client3  ~p~n", [Start3]),
 
     Echo = hstreamdb:echo(Client),
     io:format("echo: ~p~n", [Echo]),
@@ -65,25 +61,13 @@ start() ->
             _Append2 = hstreamdb:append(Producer, Record2)
         end
     ),
-    % Append = [
-    %     begin
-    %         RecordN = hstreamdb:to_record(PartitioningKey, PayloadType, list_to_binary(io_lib:format("message ~p", [N]))),
-    %         hstreamdb:append(Producer, RecordN)
-    %     end || N <- lists:seq(0, 100)],
-    % io:format("append1 ~p~n", [Append1]),
-    % io:format("append2 ~p~n", [Append2]),
 
     timer:sleep(3000),
 
     io:format("start append flush ~n"),
 
-    {BatchK, R1} = hstreamdb:to_record(PartitioningKey, PayloadType, Payload),
-    {BatchK, R2} = hstreamdb:to_record(PartitioningKey, PayloadType, <<"batch 1">>),
-
     AppendFlushSingle = hstreamdb:append_flush(Producer, Record1),
-    AppendFlush = hstreamdb:append_flush(Producer, {BatchK, [R1, R2]}),
     io:format("append flush AppendFlushSingle ~p~n", [AppendFlushSingle]),
-    io:format("append flush ~p~n", [AppendFlush]),
 
     timer:sleep(1000),
     Stop = hstreamdb:stop_producer(Producer),

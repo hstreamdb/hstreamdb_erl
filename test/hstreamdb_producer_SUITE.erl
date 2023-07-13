@@ -20,7 +20,7 @@
             end
         end).
 
--define(assertOkFlushResult(), ?assertFlushResult({ok, _})).
+-define(assertOkFlushResult(), ?assertFlushResult(ok)).
 
 all() ->
     hstreamdb_test_helpers:test_cases(?MODULE).
@@ -38,9 +38,13 @@ end_per_suite(Config) ->
     _ = application:stop(hstreamdb_erl),
     ok.
 
-t_start_stop(Config) ->
-    Client = ?config(client, Config),
+init_per_testcase(_TestCase, Config) ->
+    [{producer_name, test_producer} | Config].
+end_per_testcase(_TestCase, Config) ->
+    catch hstreamdb:stop_producer(?config(producer_name, Config)),
+    ok.
 
+t_start_stop(Config) ->
     ProducerOptions = [
                        {pool_size, 4},
                        {stream, "stream1"},
@@ -49,19 +53,17 @@ t_start_stop(Config) ->
                        {interval, 1000}
                       ],
 
-    {ok, _} = hstreamdb:start_producer(Client, test_producer, ProducerOptions),
+    {ok, _} = start_producer(Config, ProducerOptions),
 
     ?assertMatch(
        {error, _},
-       hstreamdb:start_producer(Client, test_producer, ProducerOptions)),
+       start_producer(Config, ProducerOptions)),
 
     ?assertEqual(
        ok,
-       hstreamdb:stop_producer(test_producer)).
+       hstreamdb:stop_producer(?config(producer_name, Config))).
 
 t_flush_by_timeout(Config) ->
-    Client = ?config(client, Config),
-
     ProducerOptions = [
                        {stream, ?STREAM},
                        {callback, callback()},
@@ -69,20 +71,15 @@ t_flush_by_timeout(Config) ->
                        {interval, 100}
                       ],
 
-    {ok, Producer} = hstreamdb:start_producer(Client, test_producer, ProducerOptions),
+    {ok, Producer} = start_producer(Config, ProducerOptions),
 
     ?assertEqual(
        ok,
        hstreamdb:append(Producer, sample_record())),
 
-    ?assertOkFlushResult(),
-
-    ok = hstreamdb:stop_producer(Producer).
-
+    ?assertOkFlushResult().
 
 t_flush_explicit(Config) ->
-    Client = ?config(client, Config),
-
     ProducerOptions = [
                        {stream, ?STREAM},
                        {callback, callback()},
@@ -90,7 +87,7 @@ t_flush_explicit(Config) ->
                        {interval, 10000}
                       ],
 
-    {ok, Producer} = hstreamdb:start_producer(Client, test_producer, ProducerOptions),
+    {ok, Producer} = start_producer(Config, ProducerOptions),
 
     ?assertEqual(
        ok,
@@ -98,13 +95,9 @@ t_flush_explicit(Config) ->
 
     ok = hstreamdb:flush(Producer),
 
-    ?assertOkFlushResult(),
-
-    ok = hstreamdb:stop_producer(Producer).
+    ?assertOkFlushResult().
 
 t_append_flush_no_callback(Config) ->
-    Client = ?config(client, Config),
-
     ProducerOptions = [
                        {stream, ?STREAM},
                        {callback, fun(_Result) ->
@@ -114,17 +107,13 @@ t_append_flush_no_callback(Config) ->
                        {interval, 10000}
                       ],
 
-    {ok, Producer} = hstreamdb:start_producer(Client, test_producer, ProducerOptions),
+    {ok, Producer} = start_producer(Config, ProducerOptions),
 
-    ?assertMatch(
-       {ok, _},
-       hstreamdb:append_flush(Producer, sample_record())),
-
-    ok = hstreamdb:stop_producer(Producer).
+    ?assertEqual(
+       ok,
+       hstreamdb:append_flush(Producer, sample_record())).
 
 t_flush_by_limit(Config) ->
-    Client = ?config(client, Config),
-
     ProducerOptions = [
                        {pool_size, 1},
                        {stream, ?STREAM},
@@ -133,8 +122,7 @@ t_flush_by_limit(Config) ->
                        {interval, 10000}
                       ],
 
-    {ok, Producer} = hstreamdb:start_producer(Client, test_producer, ProducerOptions),
-
+    {ok, Producer} = start_producer(Config, ProducerOptions),
 
     lists:foreach(
       fun(_) ->
@@ -144,13 +132,10 @@ t_flush_by_limit(Config) ->
 
     ok = hstreamdb:flush(Producer),
 
-    ok = assert_ok_flush_result(20),
+    ok = assert_ok_flush_result(20).
 
-    ok = hstreamdb:stop_producer(Producer).
 
 t_append_batch(Config) ->
-    Client = ?config(client, Config),
-
     ProducerOptions = [
                        {pool_size, 1},
                        {stream, ?STREAM},
@@ -159,8 +144,7 @@ t_append_batch(Config) ->
                        {interval, 10000}
                       ],
 
-    {ok, Producer} = hstreamdb:start_producer(Client, test_producer, ProducerOptions),
-
+    {ok, Producer} = start_producer(Config, ProducerOptions),
 
     lists:foreach(
       fun(_) ->
@@ -175,8 +159,6 @@ t_append_batch(Config) ->
     ok = hstreamdb:stop_producer(Producer).
 
 t_overflooded(Config) ->
-    Client = ?config(client, Config),
-
     ProducerOptions = [
                        {pool_size, 1},
                        {stream, ?STREAM},
@@ -186,7 +168,7 @@ t_overflooded(Config) ->
                        {interval, 10000}
                       ],
 
-    {ok, Producer} = hstreamdb:start_producer(Client, test_producer, ProducerOptions),
+                      {ok, Producer} = start_producer(Config, ProducerOptions),
 
     lists:foreach(
       fun(_) ->
@@ -196,13 +178,10 @@ t_overflooded(Config) ->
 
     ?assertMatch(
         {error,{batch_count_too_large, _}},
-       hstreamdb:append_flush(Producer, sample_record())),
+       hstreamdb:append_flush(Producer, sample_record())).
 
-    ok = hstreamdb:stop_producer(Producer).
 
 t_batch_reap(Config) ->
-    Client = ?config(client, Config),
-
     ProducerOptions = [
                        {pool_size, 1},
                        {stream, ?STREAM},
@@ -213,19 +192,15 @@ t_batch_reap(Config) ->
                        {interval, 10000}
                       ],
 
-    {ok, Producer} = hstreamdb:start_producer(Client, test_producer, ProducerOptions),
+    {ok, Producer} = start_producer(Config, ProducerOptions),
 
     ok = hstreamdb:append(Producer, sample_record()),
 
     ok = hstreamdb:flush(Producer),
 
-    ?assertFlushResult({error, timeout}),
-
-    ok = hstreamdb:stop_producer(Producer).
+    ?assertFlushResult({error, timeout}).
 
 t_append_flush(Config) ->
-    Client = ?config(client, Config),
-
     ProducerOptions = [
                        {pool_size, 1},
                        {stream, ?STREAM},
@@ -235,7 +210,7 @@ t_append_flush(Config) ->
                        {interval, 10000}
                       ],
 
-    {ok, Producer} = hstreamdb:start_producer(Client, test_producer, ProducerOptions),
+    {ok, Producer} = start_producer(Config, ProducerOptions),
 
     lists:foreach(
       fun(_) ->
@@ -244,19 +219,15 @@ t_append_flush(Config) ->
       lists:seq(1, 5)),
 
     {PKey, Record} = sample_record(),
-    {ok, _} = hstreamdb:append_flush(Producer, {PKey, Record}),
+    ok = hstreamdb:append_flush(Producer, {PKey, Record}),
 
     lists:foreach(
       fun(_) ->
         ?assertOkFlushResult()
       end,
-      lists:seq(1, 5)),
-
-    ok = hstreamdb:stop_producer(Producer).
+      lists:seq(1, 5)).
 
 t_append_gzip(Config) ->
-    Client = ?config(client, Config),
-
     ProducerOptions = [
                        {pool_size, 1},
                        {stream, ?STREAM},
@@ -264,19 +235,21 @@ t_append_gzip(Config) ->
                        {compression_type, gzip}
                       ],
 
-    {ok, Producer} = hstreamdb:start_producer(Client, test_producer, ProducerOptions),
+    {ok, Producer} = start_producer(Config, ProducerOptions),
 
     {PKey0, Record0} = sample_record(),
-    {ok, _} = hstreamdb:append_flush(Producer, {PKey0, Record0}),
+    ?assertMatch(
+        ok,
+        hstreamdb:append_flush(Producer, {PKey0, Record0})
+    ),
 
     {PKey1, Record1} = bad_payload_record(),
-    {error, _} = hstreamdb:append_flush(Producer, {PKey1, Record1}),
-
-    ok = hstreamdb:stop_producer(Producer).
+    ?assertMatch(
+        {error, _},
+        hstreamdb:append_flush(Producer, {PKey1, Record1})
+    ).
 
 t_append_zstd(Config) ->
-    Client = ?config(client, Config),
-
     ProducerOptions = [
                        {pool_size, 1},
                        {stream, ?STREAM},
@@ -284,15 +257,27 @@ t_append_zstd(Config) ->
                        {compression_type, zstd}
                       ],
 
-    {ok, Producer} = hstreamdb:start_producer(Client, test_producer, ProducerOptions),
+    {ok, Producer} = start_producer(Config, ProducerOptions),
 
     {PKey0, Record0} = sample_record(),
-    {ok, _} = hstreamdb:append_flush(Producer, {PKey0, Record0}),
+    ?assertMatch(
+        ok,
+        hstreamdb:append_flush(Producer, {PKey0, Record0})
+    ),
 
     {PKey1, Record1} = bad_payload_record(),
-    {error, _} = hstreamdb:append_flush(Producer, {PKey1, Record1}),
+    ?assertMatch(
+        {error, _},
+        hstreamdb:append_flush(Producer, {PKey1, Record1})
+    ).
 
-    ok = hstreamdb:stop_producer(Producer).
+%%--------------------------------------------------------------------
+%% Helper functions
+%%--------------------------------------------------------------------
+
+start_producer(Config, Options) ->
+    Client = ?config(client, Config),
+    hstreamdb:start_producer(Client, ?config(producer_name, Config), Options).
 
 sample_record() ->
     PartitioningKey = "PK",

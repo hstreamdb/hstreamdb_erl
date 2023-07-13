@@ -14,7 +14,7 @@
 %% limitations under the License.
 %%--------------------------------------------------------------------
 
--module(hstreamdb_erl_writer).
+-module(hstreamdb_batch_writer).
 
 -behaviour(gen_server).
 
@@ -74,7 +74,7 @@ init([Opts]) ->
 
 handle_cast({write, #batch{shard_id = ShardId, id = BatchId} = Batch, Caller}, State) ->
     {Result, NState} = do_write(ShardId, records(Batch), Batch, State),
-    ok = gen_server:cast(Caller, {write_result, ShardId, BatchId, Result}),
+    _ = erlang:send(Caller, {write_result, ShardId, BatchId, Result}),
     {noreply, NState}.
 
 handle_call(stop, _From, State) ->
@@ -139,8 +139,8 @@ do_write(
             },
             Options = #{channel => Channel, timeout => GRPCTimeout},
             case flush(ShardId, Req, Options) of
-                {ok, _} = Res ->
-                    {Res, State#state{channel_manager = ChannelM1}};
+                {ok, _} = _Res ->
+                    {{ok, length(Records)}, State#state{channel_manager = ChannelM1}};
                 {error, _} = Error ->
                     ChannelM2 = hstreamdb_channel_mgr:bad_channel(Channel, ChannelM1),
                     {Error, State#state{channel_manager = ChannelM2}}

@@ -14,7 +14,7 @@
 %% limitations under the License.
 %%--------------------------------------------------------------------
 
--module(hstreamdb_erl_sup).
+-module(hstreamdb_sup).
 
 -behaviour(supervisor).
 

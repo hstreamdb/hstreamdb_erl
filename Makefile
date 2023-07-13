@@ -20,10 +20,10 @@ fmt: $(REBAR)
 	$(REBAR) fmt
 
 .PHONY: fmt-check
-fmt: $(REBAR)
+fmt-check: $(REBAR)
 	$(REBAR) fmt --check
 
 .PHONY: xref
-fmt: $(REBAR)
+xref: $(REBAR)
 	$(REBAR) xref
 

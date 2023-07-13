@@ -65,7 +65,7 @@ start(Producer, Options) ->
             ),
             WriterOptions = [{pool_size, WriterPoolSise} | proplists:delete(pool_size, Options)],
             case
-                ecpool:start_sup_pool(writer_name(Producer), hstreamdb_erl_writer, WriterOptions)
+                ecpool:start_sup_pool(writer_name(Producer), hstreamdb_batch_writer, WriterOptions)
             of
                 {ok, _PidWriters} ->
                     {ok, Producer};
@@ -174,15 +174,17 @@ handle_call(stop, _From, State) ->
 handle_call(_Request, _From, State) ->
     {reply, {error, unknown_call}, State}.
 
-handle_cast(
+handle_info(
     {write_result, ShardId, BatchRef, Result},
     State
 ) ->
-    {noreply, handle_write_result(State, ShardId, BatchRef, Result)}.
-
+    {noreply, handle_write_result(State, ShardId, BatchRef, Result)};
 handle_info({shard_buffer_event, ShardId, Message}, State) ->
     {noreply, handle_shard_buffer_event(State, ShardId, Message)};
 handle_info(_Request, State) ->
+    {noreply, State}.
+
+handle_cast(_Request, State) ->
     {noreply, State}.
 
 terminate(_Reason, _State) ->
@@ -255,14 +257,20 @@ new_buffer(
     hstreamdb_buffer:new(maps:merge(BufferOpts, Opts)).
 
 send_reply(From, Response, Callback, Stream) ->
+    FormattedResponse = format_response(Response),
     case From of
         undefined ->
-            apply_callback(Callback, {{flush, Stream, 1}, Response});
-        AliasRef ->
-            erlang:send(AliasRef, {reply, AliasRef, Response});
+            apply_callback(Callback, {{flush, Stream, 1}, FormattedResponse});
+        AliasRef when is_reference(AliasRef) ->
+            erlang:send(AliasRef, {reply, AliasRef, FormattedResponse});
         _ ->
             logger:warning("[hstreamdb_producer] Unexpected From: ~p", [From])
     end.
+
+format_response(ok) -> ok;
+format_response({ok, _}) -> ok;
+format_response({error, _} = Error) -> Error.
+
 
 with_shart_buffer(
     {PartitioningKey, Record},
@@ -304,7 +312,7 @@ write(ShardId, #{batch_ref := Ref, tab := Tab}, #state{
     ecpool:with_client(
         WriterName,
         fun(WriterPid) ->
-            ok = hstreamdb_erl_writer:write(WriterPid, Batch)
+            ok = hstreamdb_batch_writer:write(WriterPid, Batch)
         end
     ).
 
