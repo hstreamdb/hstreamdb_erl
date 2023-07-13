@@ -52,7 +52,10 @@ t_start_stop(Config) ->
         {interval, 1000}
     ],
 
-    {ok, _} = start_producer(Config, ProducerOptions),
+    ?assertEqual(
+        ok,
+        start_producer(Config, ProducerOptions)
+    ),
 
     ?assertMatch(
         {error, _},
@@ -72,11 +75,11 @@ t_flush_by_timeout(Config) ->
         {interval, 100}
     ],
 
-    {ok, Producer} = start_producer(Config, ProducerOptions),
+    ok = start_producer(Config, ProducerOptions),
 
     ?assertEqual(
         ok,
-        hstreamdb:append(Producer, sample_record())
+        hstreamdb:append(producer(Config), sample_record())
     ),
 
     ?assertOkResult().
@@ -89,14 +92,14 @@ t_flush_explicit(Config) ->
         {interval, 10000}
     ],
 
-    {ok, Producer} = start_producer(Config, ProducerOptions),
+    ok = start_producer(Config, ProducerOptions),
 
     ?assertEqual(
         ok,
-        hstreamdb:append(Producer, sample_record())
+        hstreamdb:append(producer(Config), sample_record())
     ),
 
-    ok = hstreamdb:flush(Producer),
+    ok = hstreamdb:flush(producer(Config)),
 
     ?assertOkResult().
 
@@ -110,11 +113,11 @@ t_append_flush_no_callback(Config) ->
         {interval, 10000}
     ],
 
-    {ok, Producer} = start_producer(Config, ProducerOptions),
+    ok = start_producer(Config, ProducerOptions),
 
     ?assertEqual(
         ok,
-        hstreamdb:append_flush(Producer, sample_record())
+        hstreamdb:append_flush(producer(Config), sample_record())
     ).
 
 t_flush_by_limit(Config) ->
@@ -126,16 +129,16 @@ t_flush_by_limit(Config) ->
         {interval, 10000}
     ],
 
-    {ok, Producer} = start_producer(Config, ProducerOptions),
+    ok = start_producer(Config, ProducerOptions),
 
     lists:foreach(
         fun(_) ->
-            ok = hstreamdb:append(Producer, sample_record())
+            ok = hstreamdb:append(producer(Config), sample_record())
         end,
         lists:seq(1, 30)
     ),
 
-    ok = hstreamdb:flush(Producer),
+    ok = hstreamdb:flush(producer(Config)),
 
     ok = assert_ok_flush_result(20).
 
@@ -148,20 +151,18 @@ t_append(Config) ->
         {interval, 10000}
     ],
 
-    {ok, Producer} = start_producer(Config, ProducerOptions),
+    ok = start_producer(Config, ProducerOptions),
 
     lists:foreach(
         fun(_) ->
-            ok = hstreamdb:append(Producer, sample_record())
+            ok = hstreamdb:append(producer(Config), sample_record())
         end,
         lists:seq(1, 100)
     ),
 
-    ok = hstreamdb:flush(Producer),
+    ok = hstreamdb:flush(producer(Config)),
 
-    ok = assert_ok_flush_result(100),
-
-    ok = hstreamdb:stop_producer(Producer).
+    ok = assert_ok_flush_result(100).
 
 t_overflooded(Config) ->
     ProducerOptions = [
@@ -173,18 +174,18 @@ t_overflooded(Config) ->
         {interval, 10000}
     ],
 
-    {ok, Producer} = start_producer(Config, ProducerOptions),
+    ok = start_producer(Config, ProducerOptions),
 
     lists:foreach(
         fun(_) ->
-            _ = hstreamdb:append(Producer, sample_record())
+            _ = hstreamdb:append(producer(Config), sample_record())
         end,
         lists:seq(1, 100)
     ),
 
     ?assertMatch(
         {error, {batch_count_too_large, _}},
-        hstreamdb:append_flush(Producer, sample_record())
+        hstreamdb:append_flush(producer(Config), sample_record())
     ).
 
 t_batch_reap(Config) ->
@@ -198,11 +199,11 @@ t_batch_reap(Config) ->
         {interval, 10000}
     ],
 
-    {ok, Producer} = start_producer(Config, ProducerOptions),
+    ok = start_producer(Config, ProducerOptions),
 
-    ok = hstreamdb:append(Producer, sample_record()),
+    ok = hstreamdb:append(producer(Config), sample_record()),
 
-    ok = hstreamdb:flush(Producer),
+    ok = hstreamdb:flush(producer(Config)),
 
     ?assertResult({error, timeout}).
 
@@ -216,17 +217,17 @@ t_append_flush(Config) ->
         {interval, 10000}
     ],
 
-    {ok, Producer} = start_producer(Config, ProducerOptions),
+    ok = start_producer(Config, ProducerOptions),
 
     lists:foreach(
         fun(_) ->
-            ok = hstreamdb:append(Producer, sample_record())
+            ok = hstreamdb:append(producer(Config), sample_record())
         end,
         lists:seq(1, 5)
     ),
 
     {PKey, Record} = sample_record(),
-    ok = hstreamdb:append_flush(Producer, {PKey, Record}),
+    ok = hstreamdb:append_flush(producer(Config), {PKey, Record}),
 
     lists:foreach(
         fun(_) ->
@@ -245,11 +246,11 @@ t_append_sync(Config) ->
         {interval, 500}
     ],
 
-    {ok, Producer} = start_producer(Config, ProducerOptions),
+    ok = start_producer(Config, ProducerOptions),
 
     {Time, Res} = timer:tc(
         fun() ->
-            hstreamdb_producer:append_sync(Producer, sample_record(), 1000)
+            hstreamdb_producer:append_sync(producer(Config), sample_record(), 1000)
         end
     ),
     ?assertEqual(ok, Res),
@@ -257,7 +258,7 @@ t_append_sync(Config) ->
 
     ?assertEqual(
         {error, timeout},
-        hstreamdb_producer:append_sync(Producer, sample_record(), 100)
+        hstreamdb_producer:append_sync(producer(Config), sample_record(), 100)
     ).
 
 
@@ -269,18 +270,18 @@ t_append_gzip(Config) ->
         {compression_type, gzip}
     ],
 
-    {ok, Producer} = start_producer(Config, ProducerOptions),
+    ok = start_producer(Config, ProducerOptions),
 
     {PKey0, Record0} = sample_record(),
     ?assertMatch(
         ok,
-        hstreamdb:append_flush(Producer, {PKey0, Record0})
+        hstreamdb:append_flush(producer(Config), {PKey0, Record0})
     ),
 
     {PKey1, Record1} = bad_payload_record(),
     ?assertMatch(
         {error, _},
-        hstreamdb:append_flush(Producer, {PKey1, Record1})
+        hstreamdb:append_flush(producer(Config), {PKey1, Record1})
     ).
 
 t_append_zstd(Config) ->
@@ -291,18 +292,18 @@ t_append_zstd(Config) ->
         {compression_type, zstd}
     ],
 
-    {ok, Producer} = start_producer(Config, ProducerOptions),
+    ok = start_producer(Config, ProducerOptions),
 
     {PKey0, Record0} = sample_record(),
     ?assertMatch(
         ok,
-        hstreamdb:append_flush(Producer, {PKey0, Record0})
+        hstreamdb:append_flush(producer(Config), {PKey0, Record0})
     ),
 
     {PKey1, Record1} = bad_payload_record(),
     ?assertMatch(
         {error, _},
-        hstreamdb:append_flush(Producer, {PKey1, Record1})
+        hstreamdb:append_flush(producer(Config), {PKey1, Record1})
     ).
 
 %%--------------------------------------------------------------------
@@ -336,3 +337,6 @@ assert_ok_flush_result(0) ->
 assert_ok_flush_result(N) when N > 0 ->
     ?assertOkResult(),
     assert_ok_flush_result(N - 1).
+
+producer(Config) ->
+    ?config(producer_name, Config).

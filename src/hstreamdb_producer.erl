@@ -18,25 +18,20 @@
 
 -include("hstreamdb.hrl").
 
--define(DEFAULT_MAX_RECORDS, 100).
--define(DEFAULT_MAX_BATCHES, 500).
--define(DEFAULT_INTERVAL, 3000).
--define(POOL_TIMEOUT, 60000).
--define(DEFAULT_WRITER_POOL_SIZE, 64).
--define(DEFAULT_BATCH_REAP_TIMEOUT, 120000).
-
 -behaviour(gen_server).
 
 -export([
-    start/2,
-    stop/1,
     append/2,
     flush/1,
     append_flush/2,
     append_flush/3,
     append_sync/2,
-    append_sync/3,
-    connect/1
+    append_sync/3
+]).
+
+-export([
+    connect/1,
+    writer_name/1
 ]).
 
 -export([
@@ -59,30 +54,6 @@
     buffer_opts,
     key_manager
 }).
-
-start(Producer, Options) ->
-    case ecpool:start_sup_pool(Producer, ?MODULE, [{producer_name, Producer} | Options]) of
-        {ok, _Pid} ->
-            WriterPoolSise = proplists:get_value(
-                writer_pool_size, Options, ?DEFAULT_WRITER_POOL_SIZE
-            ),
-            WriterOptions = [{pool_size, WriterPoolSise} | proplists:delete(pool_size, Options)],
-            case
-                ecpool:start_sup_pool(writer_name(Producer), hstreamdb_batch_writer, WriterOptions)
-            of
-                {ok, _PidWriters} ->
-                    {ok, Producer};
-                {error, _} = Error ->
-                    Error
-            end;
-        {error, _} = Error ->
-            Error
-    end.
-
-%% TODO: graceful stop
-stop(Producer) ->
-    ok = ecpool:stop_sup_pool(Producer),
-    ok = ecpool:stop_sup_pool(writer_name(Producer)).
 
 append(Producer, {_PartitioningKey, _Record} = PKeyRecord) ->
     ecpool:with_client(
@@ -376,4 +347,4 @@ apply_callback(F, R) ->
     F(R).
 
 writer_name(ProducerName) ->
-    list_to_atom(atom_to_list(ProducerName) ++ "-writer").
+    {ProducerName, writer}.

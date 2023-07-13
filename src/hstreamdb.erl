@@ -79,10 +79,15 @@ stop_client(Name) ->
     grpc_client_sup:stop_channel_pool(Channel).
 
 start_producer(Client, Producer, ProducerOptions) ->
-    hstreamdb_producer:start(Producer, [{client, Client} | ProducerOptions]).
+    case hstreamdb_producers_sup:start(Producer, [{client, Client} | ProducerOptions]) of
+        {ok, _Pid} ->
+            ok;
+        {error, _} = Error ->
+            Error
+    end.
 
 stop_producer(Producer) ->
-    hstreamdb_producer:stop(Producer).
+    hstreamdb_producers_sup:stop(Producer).
 
 start_consumer(_Client, Consumer, _ConsumerOptions) ->
     {ok, Consumer}.

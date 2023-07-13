@@ -22,6 +22,13 @@
 
 -define(DEFAULT_HSTREAMDB_PORT, 6570).
 
+-define(DEFAULT_MAX_RECORDS, 100).
+-define(DEFAULT_MAX_BATCHES, 500).
+-define(DEFAULT_INTERVAL, 3000).
+-define(POOL_TIMEOUT, 60000).
+-define(DEFAULT_WRITER_POOL_SIZE, 64).
+-define(DEFAULT_BATCH_REAP_TIMEOUT, 120000).
+
 -record(batch, {
     id :: reference(),
     shard_id :: integer(),

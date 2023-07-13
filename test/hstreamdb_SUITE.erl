@@ -87,11 +87,11 @@ t_start_stop_producer(Config) ->
         {max_records, 1000},
         {interval, 1000}
     ],
-    {ok, Producer} = hstreamdb:start_producer(Client, test_producer, ProducerOptions),
+    ok = hstreamdb:start_producer(Client, test_producer, ProducerOptions),
 
     ?assertEqual(
         ok,
-        hstreamdb:stop_producer(Producer)
+        hstreamdb:stop_producer(test_producer)
     ),
 
     ok = hstreamdb:delete_stream(Client, "stream2").
