@@ -118,7 +118,7 @@ drop_timepout(Records) ->
     ).
 
 do_write(_ShardId, [], _Batch, State) ->
-    {ok, State};
+    {{ok, 0}, State};
 do_write(
     ShardId,
     Records,

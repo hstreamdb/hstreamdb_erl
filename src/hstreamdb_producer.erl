@@ -147,10 +147,6 @@ handle_call({sync_req, From, {append_sync, PKeyRecord}, Timeout}, _From, State) 
         State
     ),
     {reply, Resp, NState};
-%% TDOD: graceful stop
-handle_call(stop, _From, State) ->
-    NState = do_flush(State),
-    {reply, ok, NState};
 handle_call(Request, _From, State) ->
     {reply, {error, {unknown_call, Request}}, State}.
 
@@ -266,7 +262,6 @@ send_reply(From, Response, Callback, Stream) ->
             logger:warning("[hstreamdb_producer] Unexpected From: ~p", [From])
     end.
 
-format_response(ok) -> ok;
 format_response({ok, _}) -> ok;
 format_response({error, _} = Error) -> Error.
 
