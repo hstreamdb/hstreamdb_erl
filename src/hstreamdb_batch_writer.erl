@@ -65,11 +65,12 @@ connect(Opts) ->
 init([Opts]) ->
     process_flag(trap_exit, true),
     StreamName = proplists:get_value(stream, Opts),
+    Client = proplists:get_value(client, Opts),
     GRPCTimeout = proplists:get_value(grpc_timeout, Opts, ?DEFAULT_GRPC_TIMEOUT),
     {ok, #state{
         stream = StreamName,
         grpc_timeout = GRPCTimeout,
-        channel_manager = hstreamdb_channel_mgr:start(Opts)
+        channel_manager = hstreamdb_channel_mgr:start(Client)
     }}.
 
 handle_cast({write, #batch{shard_id = ShardId, id = BatchId} = Batch, Caller}, State) ->
@@ -129,97 +130,24 @@ do_write(
         grpc_timeout = GRPCTimeout
     }
 ) ->
-    case hstreamdb_channel_mgr:lookup_channel(ShardId, ChannelM0) of
-        {ok, Channel, ChannelM1} ->
+    case hstreamdb_channel_mgr:lookup_client(ChannelM0, ShardId) of
+        {ok, Client, ChannelM1} ->
             Req = #{
-                streamName => Stream,
+                stream_name => Stream,
                 records => Records,
-                shardId => ShardId,
-                compressionType => CompressionType
+                shard_id => ShardId,
+                compression_type => CompressionType
             },
-            Options = #{channel => Channel, timeout => GRPCTimeout},
-            case flush(ShardId, Req, Options) of
+            Options = #{
+                timeout => GRPCTimeout
+            },
+            case hstreamdb_client:append(Client, Req, Options) of
                 {ok, _} = _Res ->
                     {{ok, length(Records)}, State#state{channel_manager = ChannelM1}};
                 {error, _} = Error ->
-                    ChannelM2 = hstreamdb_channel_mgr:bad_channel(Channel, ChannelM1),
+                    ChannelM2 = hstreamdb_channel_mgr:bad_client(ChannelM1, ShardId),
                     {Error, State#state{channel_manager = ChannelM2}}
             end;
         {error, _} = Error ->
             {Error, State}
-    end.
-
-flush(
-    ShardId,
-    #{records := Records, compressionType := CompressionType, streamName := StreamName},
-    #{channel := Channel, timeout := Timeout} = Options
-) ->
-    case encode_records(Records, CompressionType) of
-        {ok, NRecords} ->
-            BatchedRecord = #{
-                payload => NRecords,
-                batchSize => length(Records),
-                compressionType => compression_type_to_enum(CompressionType)
-            },
-            NReq = #{streamName => StreamName, shardId => ShardId, records => BatchedRecord},
-            case timer:tc(fun() -> ?HSTREAMDB_CLIENT:append(NReq, Options) end) of
-                {Time, {ok, Resp, _MetaData}} ->
-                    logger:info("flush_request[~p, ~p], pid=~p, SUCCESS, ~p records in ~p ms~n", [
-                        Channel, ShardId, self(), length(Records), Time div 1000
-                    ]),
-                    {ok, Resp};
-                {Time, {error, R}} ->
-                    logger:error(
-                        "flush_request[~p, ~p], pid=~p, timeout=~p, ERROR: ~p, in ~p ms~n", [
-                            Channel, ShardId, self(), Timeout, R, Time div 1000
-                        ]
-                    ),
-                    {error, R}
-            end;
-        {error, R} ->
-            {error, R}
-    end.
-
-encode_records(Records, CompressionType) ->
-    case safe_encode_msg(Records) of
-        {ok, Payload} ->
-            case CompressionType of
-                none -> {ok, Payload};
-                gzip -> gzip(Payload);
-                zstd -> zstd(Payload)
-            end;
-        {error, _} = Error ->
-            Error
-    end.
-
-compression_type_to_enum(CompressionType) ->
-    case CompressionType of
-        none -> 0;
-        gzip -> 1;
-        zstd -> 2
-    end.
-
-safe_encode_msg(Records) ->
-    try
-        Payload = hstreamdb_api:encode_msg(
-            #{records => Records},
-            batch_h_stream_records,
-            []
-        ),
-        {ok, Payload}
-    catch
-        error:Reason -> {error, {encode_msg, Reason}}
-    end.
-
-gzip(Payload) ->
-    try
-        {ok, zlib:gzip(Payload)}
-    catch
-        error:Reason -> {error, {gzip, Reason}}
-    end.
-
-zstd(Payload) ->
-    case ezstd:compress(Payload) of
-        {error, R} -> {error, {zstd, R}};
-        R -> {ok, R}
     end.

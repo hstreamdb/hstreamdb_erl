@@ -27,13 +27,13 @@ all() ->
 init_per_suite(Config) ->
     _ = application:ensure_all_started(hstreamdb_erl),
     Client = hstreamdb_test_helpers:client(test_c),
-    _ = hstreamdb:delete_stream(Client, ?STREAM),
-    ok = hstreamdb:create_stream(Client, ?STREAM, 2, ?DAY, 5),
+    _ = hstreamdb_client:delete_stream(Client, ?STREAM),
+    ok = hstreamdb_client:create_stream(Client, ?STREAM, 2, ?DAY, 5),
     [{client, Client} | Config].
 end_per_suite(Config) ->
     Client = ?config(client, Config),
-    _ = hstreamdb:delete_stream(Client, ?STREAM),
-    _ = hstreamdb:stop_client(Client),
+    _ = hstreamdb_client:delete_stream(Client, ?STREAM),
+    _ = hstreamdb_client:stop(Client),
     _ = application:stop(hstreamdb_erl),
     ok.
 

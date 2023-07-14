@@ -17,7 +17,7 @@ init_per_suite(Config) ->
     [{client, Client} | Config].
 end_per_suite(Config) ->
     Client = ?config(client, Config),
-    _ = hstreamdb:stop_client(Client),
+    _ = hstreamdb_client:stop(Client),
     _ = application:stop(hstreamdb_erl),
     ok.
 
@@ -26,7 +26,7 @@ t_stop_client_by_name(_Config) ->
 
     ?assertEqual(
         ok,
-        hstreamdb:stop_client(test_c1)
+        hstreamdb_client:stop(test_c1)
     ).
 
 t_start_client_error(_Config) ->
@@ -34,12 +34,12 @@ t_start_client_error(_Config) ->
 
     ?assertMatch(
         {error, _},
-        hstreamdb:start_client(test_c2, lists:keyreplace(url, 1, ClientOptions, {url, "#badurl#"}))
+        hstreamdb_client:start(test_c2, lists:keyreplace(url, 1, ClientOptions, {url, "#badurl#"}))
     ),
 
     ?assertMatch(
         {error, _},
-        hstreamdb:start_client(
+        hstreamdb_client:start(
             test_c2, lists:keyreplace(url, 1, ClientOptions, {url, "http://#badurl#"})
         )
     ).
@@ -47,38 +47,38 @@ t_start_client_error(_Config) ->
 t_echo(Config) ->
     Client = ?config(client, Config),
     ?assertEqual(
-        {ok, echo},
-        hstreamdb:echo(Client)
+        ok,
+        hstreamdb_client:echo(Client)
     ).
 
 t_create_delete_stream(Config) ->
     Client = ?config(client, Config),
 
-    _ = hstreamdb:delete_stream(Client, "stream1"),
+    _ = hstreamdb_client:delete_stream(Client, "stream1"),
 
     ?assertEqual(
         ok,
-        hstreamdb:create_stream(Client, "stream1", 2, ?DAY, 5)
+        hstreamdb_client:create_stream(Client, "stream1", 2, ?DAY, 5)
     ),
 
     ?assertMatch(
         {error, {already_exists, _}},
-        hstreamdb:create_stream(Client, "stream1", 2, ?DAY, 5)
+        hstreamdb_client:create_stream(Client, "stream1", 2, ?DAY, 5)
     ),
 
-    _ = hstreamdb:delete_stream(Client, "stream1"),
+    _ = hstreamdb_client:delete_stream(Client, "stream1"),
 
     ?assertEqual(
         ok,
-        hstreamdb:create_stream(Client, "stream1", 2, ?DAY, 5)
+        hstreamdb_client:create_stream(Client, "stream1", 2, ?DAY, 5)
     ),
 
-    _ = hstreamdb:delete_stream(Client, "stream1").
+    _ = hstreamdb_client:delete_stream(Client, "stream1").
 
 t_start_stop_producer(Config) ->
     Client = ?config(client, Config),
 
-    _ = hstreamdb:create_stream(Client, "stream2", 2, ?DAY, 5),
+    _ = hstreamdb_client:create_stream(Client, "stream2", 2, ?DAY, 5),
 
     ProducerOptions = [
         {pool_size, 4},
@@ -94,7 +94,7 @@ t_start_stop_producer(Config) ->
         hstreamdb:stop_producer(test_producer)
     ),
 
-    ok = hstreamdb:delete_stream(Client, "stream2").
+    ok = hstreamdb_client:delete_stream(Client, "stream2").
 
 %% no op
 t_start_stop_consumer(Config) ->

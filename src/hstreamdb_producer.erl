@@ -97,6 +97,7 @@ init(Options) ->
 
     StreamName = proplists:get_value(stream, Options),
     Callback = proplists:get_value(callback, Options),
+    Client = proplists:get_value(client, Options),
 
     BatchTab = ets:new(?MODULE, [public]),
 
@@ -119,7 +120,7 @@ init(Options) ->
         batch_tab = BatchTab,
         buffer_opts = BufferOpts,
         buffers = #{},
-        key_manager = hstreamdb_key_mgr:start(Options)
+        key_manager = hstreamdb_key_mgr:start(Client, StreamName)
     }}.
 
 handle_call(_Req, _From, #state{terminator = Terminator} = State) when Terminator =/= undefined ->

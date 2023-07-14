@@ -17,30 +17,15 @@ init_per_suite(Config) ->
     [{client, Client} | Config].
 end_per_suite(Config) ->
     Client = ?config(client, Config),
-    _ = hstreamdb:stop_client(Client),
+    _ = hstreamdb_client:stop(Client),
     _ = application:stop(hstreamdb_erl),
     ok.
-
-t_invalid_options(Config) ->
-    Client = ?config(client, Config),
-
-    ?assertException(
-        error,
-        {bad_options, _},
-        hstreamdb_key_mgr:start([{client, Client}])
-    ),
-
-    ?assertException(
-        error,
-        {bad_options, _},
-        hstreamdb_key_mgr:start([{stream, "stream1"}])
-    ).
 
 t_choose_shard(Config) ->
     Client = ?config(client, Config),
 
-    _ = hstreamdb:delete_stream(Client, "stream1"),
-    ok = hstreamdb:create_stream(Client, "stream1", 2, ?DAY, 5),
+    _ = hstreamdb_client:delete_stream(Client, "stream1"),
+    ok = hstreamdb_client:create_stream(Client, "stream1", 2, ?DAY, 5),
 
     %% uncached shards
     ok = test_choose_shard(Client, 0),
@@ -50,11 +35,9 @@ t_choose_shard(Config) ->
 
 test_choose_shard(Client, UpdateInterval) ->
     KeyMgr0 = hstreamdb_key_mgr:start(
-        [
-            {client, Client},
-            {stream, "stream1"},
-            {shard_update_interval, UpdateInterval}
-        ]
+        Client,
+        "stream1",
+        [{shard_update_interval, UpdateInterval}]
     ),
 
     RandomKeys = [integer_to_binary(rand:uniform(999999)) || _ <- lists:seq(1, 100)],

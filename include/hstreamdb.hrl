@@ -14,7 +14,7 @@
 %% limitations under the License.
 %%--------------------------------------------------------------------
 
--define(HSTREAMDB_CLIENT, hstream_server_h_stream_api_client).
+-define(HSTREAMDB_GEN_CLIENT, hstream_server_h_stream_api_client).
 
 -type append_record() :: map().
 

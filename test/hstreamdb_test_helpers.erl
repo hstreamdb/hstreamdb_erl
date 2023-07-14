@@ -34,9 +34,9 @@ client(Name) ->
 client(_Name, N) when N =< 0 -> error(cannot_connect);
 client(Name, N) ->
     try
-        _ = hstreamdb:stop_client(Name),
-        {ok, Client} = hstreamdb:start_client(Name, ?CLIENT_OPTIONS),
-        {ok, echo} = hstreamdb:echo(Client),
+        _ = hstreamdb_client:stop(Name),
+        {ok, Client} = hstreamdb_client:start(Name, ?CLIENT_OPTIONS),
+        ok = hstreamdb_client:echo(Client),
         Client
     catch
         Class:Error:Stack ->

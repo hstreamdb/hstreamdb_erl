@@ -28,13 +28,13 @@ start() ->
             <<"10.5.0.5">> => <<"127.0.0.1">>
         }}
     ],
-    {ok, Client} = hstreamdb:start_client(test_c, ClientOptions),
+    {ok, Client} = hstreamdb_client:start(test_c, ClientOptions),
     io:format("start client  ~p~n", [Client]),
 
-    Echo = hstreamdb:echo(Client),
+    Echo = hstreamdb_client:echo(Client),
     io:format("echo: ~p~n", [Echo]),
 
-    CreateStream = hstreamdb:create_stream(Client, "demo2", 2, 24 * 60 * 60, 2),
+    CreateStream = hstreamdb_client:create_stream(Client, "demo2", 2, 24 * 60 * 60, 2),
     io:format("create_stream: ~p~n", [CreateStream]),
 
     ProducerOptions = [
@@ -44,7 +44,8 @@ start() ->
         {max_records, 1000},
         {interval, 1000}
     ],
-    {ok, Producer} = hstreamdb:start_producer(Client, test_producer, ProducerOptions),
+    Producer = test_producer,
+    ok = hstreamdb:start_producer(Client, Producer, ProducerOptions),
     io:format("start producer  ~p~n", [Producer]),
 
     PartitioningKey = "ok1",
@@ -79,7 +80,7 @@ start() ->
     RestartProducer = hstreamdb:start_producer(Client, test_producer, ProducerOptions),
     io:format("restart producer  ~p~n", [RestartProducer]),
 
-    StopClient = hstreamdb:stop_client(Client),
+    StopClient = hstreamdb_client:stop(Client),
     io:format("stop client ~p~n", [StopClient]),
 
     % AppendAfterStop = hstreamdb:append(Producer, Record1),
