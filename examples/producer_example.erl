@@ -10,7 +10,6 @@
 ]).
 
 start() ->
-    %% producer_example:start().
     _ = application:ensure_all_started(hstreamdb_erl),
     RPCOptions = #{
         pool_size => 3
@@ -20,7 +19,6 @@ start() ->
         % }
     },
     ClientOptions = [
-        % {url,  "http://119.3.80.172:6570"},
         {url, "http://127.0.0.1:6570"},
         {rpc_options, RPCOptions},
         {host_mapping, #{
@@ -73,8 +71,6 @@ start() ->
     timer:sleep(1000),
     Stop = hstreamdb:stop_producer(Producer),
     io:format("stop producer  ~p~n", [Stop]),
-    % Stop2 = hstreamdb:stop_producer(Producer),
-    % io:format("stop2 producer  ~p~n", [Stop2]),
 
     timer:sleep(200),
     RestartProducer = hstreamdb:start_producer(Client, test_producer, ProducerOptions),
@@ -83,8 +79,6 @@ start() ->
     StopClient = hstreamdb_client:stop(Client),
     io:format("stop client ~p~n", [StopClient]),
 
-    % AppendAfterStop = hstreamdb:append(Producer, Record1),
-    % io:format("append after stop ~p~n", [AppendAfterStop]),
     ok.
 
 callback(A) ->
