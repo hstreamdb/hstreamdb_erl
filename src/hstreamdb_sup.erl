@@ -29,5 +29,6 @@ start_link() ->
 init([]) ->
     {ok,
         {#{strategy => one_for_one, intensity => 5, period => 30}, [
+            hstreamdb_channel_reaper:spec(),
             hstreamdb_producers_sup:spec()
         ]}}.

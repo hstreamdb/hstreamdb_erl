@@ -13,12 +13,17 @@ all() ->
 
 init_per_suite(Config) ->
     _ = application:ensure_all_started(hstreamdb_erl),
+    Config.
+end_per_suite(_Config) ->
+    _ = application:stop(hstreamdb_erl),
+    ok.
+
+init_per_testcase(_Case, Config) ->
     Client = hstreamdb_test_helpers:client(test_c),
     [{client, Client} | Config].
-end_per_suite(Config) ->
+end_per_testcase(_Case, Config) ->
     Client = ?config(client, Config),
     _ = hstreamdb_client:stop(Client),
-    _ = application:stop(hstreamdb_erl),
     ok.
 
 t_stop_client_by_name(_Config) ->
@@ -106,3 +111,43 @@ t_start_stop_consumer(Config) ->
         ok,
         hstreamdb:stop_consumer(Consumer)
     ).
+
+t_client_with_reaped_channel(_Config) ->
+    Self = self(),
+    _ = spawn_link(fun() ->
+        Self ! {client, hstreamdb_test_helpers:client(reaped_client)}
+    end),
+    Client =
+        receive
+            {client, C} -> C
+        end,
+    _ = timer:sleep(100),
+    ?assertError(
+        badarg,
+        hstreamdb_client:echo(Client)
+    ).
+
+t_client_with_not_reaped_channel(_Config) ->
+    Self = self(),
+    _ = spawn_link(fun() ->
+        Self ! {client, hstreamdb_test_helpers:client(reaped_client, [{reap_channel, false}])}
+    end),
+    Client =
+        receive
+            {client, C} -> C
+        end,
+    _ = timer:sleep(100),
+    ?assertEqual(
+        ok,
+        hstreamdb_client:echo(Client)
+    ),
+    ok = hstreamdb_client:stop(Client).
+
+t_double_reap(_Config) ->
+    Self = self(),
+    _ = spawn_link(fun() ->
+        C = hstreamdb_test_helpers:client(reaped_client, [{reap_channel, false}]),
+        ok = grpc_client_sup:stop_channel_pool("reaped_client"),
+        Self ! {client, C}
+    end),
+    _ = timer:sleep(100).

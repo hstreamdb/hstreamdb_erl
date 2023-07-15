@@ -16,8 +16,6 @@
     }}
 ]).
 
--define(CONN_ATTEMPTS, 60).
-
 test_cases(Mod) ->
     [
         F
@@ -29,18 +27,8 @@ default_options() ->
     ?CLIENT_OPTIONS.
 
 client(Name) ->
-    client(Name, ?CONN_ATTEMPTS).
+    client(Name, []).
 
-client(_Name, N) when N =< 0 -> error(cannot_connect);
-client(Name, N) ->
-    try
-        _ = hstreamdb_client:stop(Name),
-        {ok, Client} = hstreamdb_client:start(Name, ?CLIENT_OPTIONS),
-        ok = hstreamdb_client:echo(Client),
-        Client
-    catch
-        Class:Error:Stack ->
-            ct:print("Error connecting: ~p~n~p", [{Class, Error}, Stack]),
-            ct:sleep(timer:seconds(1)),
-            client(Name, N - 1)
-    end.
+client(Name, Opts) ->
+    {ok, Client} = hstreamdb_client:start(Name, Opts ++ ?CLIENT_OPTIONS),
+    Client.

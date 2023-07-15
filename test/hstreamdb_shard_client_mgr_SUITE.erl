@@ -13,12 +13,17 @@ all() ->
 
 init_per_suite(Config) ->
     _ = application:ensure_all_started(hstreamdb_erl),
+    Config.
+end_per_suite(_Config) ->
+    _ = application:stop(hstreamdb_erl),
+    ok.
+
+init_per_testcase(_Case, Config) ->
     Client = hstreamdb_test_helpers:client(test_c),
     [{client, Client} | Config].
-end_per_suite(Config) ->
+end_per_testcase(_Case, Config) ->
     Client = ?config(client, Config),
     _ = hstreamdb_client:stop(Client),
-    _ = application:stop(hstreamdb_erl),
     ok.
 
 t_lookup_channel(Config) ->

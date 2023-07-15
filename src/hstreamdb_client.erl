@@ -51,6 +51,7 @@ start(Name, Options) ->
     HostMapping = maps:get(host_mapping, Options, #{}),
     ChannelName = to_channel_name(Name),
     GRPCTimeout = maps:get(grpc_timeout, Options, ?GRPC_TIMEOUT),
+    ReapChannel = maps:get(reap_channel, Options, true),
     case validate_url_and_opts(ServerURL, maps:get(gun_opts, RPCOptions, #{})) of
         {ok, ServerURLMap, GunOpts} ->
             Client =
@@ -59,9 +60,10 @@ start(Name, Options) ->
                     url_map => ServerURLMap,
                     rpc_options => RPCOptions#{gun_opts => GunOpts},
                     host_mapping => HostMapping,
-                    grpc_timeout => GRPCTimeout
+                    grpc_timeout => GRPCTimeout,
+                    reap_channel => ReapChannel
                 },
-            case start_channel(ChannelName, ServerURLMap, RPCOptions) of
+            case start_channel(ChannelName, ServerURLMap, RPCOptions, ReapChannel) of
                 ok ->
                     {ok, Client};
                 {error, Reason} ->
@@ -75,7 +77,10 @@ connect(Client, Host, Port) ->
     connect(Client, Host, Port, #{}).
 
 connect(
-    #{url_map := ServerURLMap, rpc_options := RPCOptions} = Client, Host0, Port, RPCOptionsOverrides
+    #{url_map := ServerURLMap, rpc_options := RPCOptions, reap_channel := ReapChannel} = Client,
+    Host0,
+    Port,
+    RPCOptionsOverrides
 ) ->
     Host1 = map_host(Client, Host0),
     NewChannelName = new_channel_name(Client, Host1, Port),
@@ -84,7 +89,7 @@ connect(
         port => Port
     }),
     NewRPCOptions = maps:merge(RPCOptions, RPCOptionsOverrides),
-    case start_channel(NewChannelName, NewUrlMap, NewRPCOptions) of
+    case start_channel(NewChannelName, NewUrlMap, NewRPCOptions, ReapChannel) of
         ok ->
             {ok, Client#{
                 channel := NewChannelName, url_map := NewUrlMap, rpc_options := NewRPCOptions
@@ -94,10 +99,12 @@ connect(
     end.
 
 stop(#{channel := Channel}) ->
-    grpc_client_sup:stop_channel_pool(Channel);
+    grpc_client_sup:stop_channel_pool(Channel),
+    ok = unregister_channel(Channel);
 stop(Name) ->
     Channel = to_channel_name(Name),
-    grpc_client_sup:stop_channel_pool(Channel).
+    grpc_client_sup:stop_channel_pool(Channel),
+    ok = unregister_channel(Channel).
 
 echo(Client) ->
     do_echo(Client).
@@ -138,13 +145,13 @@ new_channel_name(#{channel := ChannelName}, Host, Port) ->
         to_channel_name(erlang:unique_integer([positive]))
     ]).
 
-start_channel(ChannelName, URLMap, RPCOptions) ->
+start_channel(ChannelName, URLMap, RPCOptions, ReapChannel) ->
     URL = uri_string:recompose(URLMap),
     case grpc_client_sup:create_channel_pool(ChannelName, URL, RPCOptions) of
         {ok, _, _} ->
-            ok;
+            ok = register_channel(ChannelName, ReapChannel);
         {ok, _} ->
-            ok;
+            ok = register_channel(ChannelName, ReapChannel);
         {error, Reason} ->
             {error, Reason}
     end.
@@ -287,6 +294,14 @@ do_append(
         {error, R} ->
             {error, R}
     end.
+
+register_channel(ChannelName, true) ->
+    hstreamdb_channel_reaper:register_channel(ChannelName);
+register_channel(_ChannelName, false) ->
+    ok.
+
+unregister_channel(ChannelName) ->
+    hstreamdb_channel_reaper:unregister_channel(ChannelName).
 
 host_to_string(Host) when is_list(Host) ->
     Host;
