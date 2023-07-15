@@ -31,11 +31,16 @@
 
 -define(POOL_TIMEOUT, 5000).
 
+%%------------------------------------------------------------------------------------------------
+%% API
+%%------------------------------------------------------------------------------------------------
+
 start_link(Opts) ->
     gen_server:start_link(?MODULE, [Opts], []).
 
-%% -------------------------------------------------------------------------------------------------
-%% gen_server part
+%%-------------------------------------------------------------------------------------------------
+%% gen_server callbacks
+%%-------------------------------------------------------------------------------------------------
 
 init([#{producer := _, timeout := _} = Opts]) ->
     _ = process_flag(trap_exit, true),
@@ -56,8 +61,9 @@ terminate(_Reason, State) ->
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
-%% -------------------------------------------------------------------------------------------------
-%% internal functions
+%%-------------------------------------------------------------------------------------------------
+%% Internal functions
+%%-------------------------------------------------------------------------------------------------
 
 do_terminate(#{producer := Producer, timeout := Timeout}) ->
     Self = alias(),
@@ -81,14 +87,14 @@ notify_stop(Self, Workers) ->
         Workers
     ).
 
+%% This process is about to terminate
+%% we don't care about unalias/cleaning the process queue in this function
 wait_for_terminate(_Self, 0, _Deadline) ->
     ok;
 wait_for_terminate(Self, NWorkers, Deadline) when NWorkers > 0 ->
     TimeLeft = to_nonegative(Deadline - erlang:monotonic_time(millisecond) + 1),
     receive
         {empty, Self} ->
-            %% This process is about to terminate
-            %% we don't care about unalias/cleaning the process queue
             wait_for_terminate(Self, NWorkers - 1, Deadline)
     after TimeLeft ->
         logger:error("[hstreamdb] producer terminator timeout, still have ~p workers", [NWorkers]),

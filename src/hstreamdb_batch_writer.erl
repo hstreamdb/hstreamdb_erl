@@ -70,7 +70,7 @@ init([Opts]) ->
     {ok, #state{
         stream = StreamName,
         grpc_timeout = GRPCTimeout,
-        channel_manager = hstreamdb_channel_mgr:start(Client)
+        channel_manager = hstreamdb_shard_client_mgr:start(Client)
     }}.
 
 handle_cast({write, #batch{shard_id = ShardId, id = BatchId} = Batch, Caller}, State) ->
@@ -85,7 +85,7 @@ handle_info(_Msg, State) ->
     {noreply, State}.
 
 terminate(_Reason, #state{channel_manager = ChannelM}) ->
-    ok = hstreamdb_channel_mgr:stop(ChannelM),
+    ok = hstreamdb_shard_client_mgr:stop(ChannelM),
     ok.
 
 code_change(_OldVsn, State, _Extra) ->
@@ -130,7 +130,7 @@ do_write(
         grpc_timeout = GRPCTimeout
     }
 ) ->
-    case hstreamdb_channel_mgr:lookup_client(ChannelM0, ShardId) of
+    case hstreamdb_shard_client_mgr:lookup_client(ChannelM0, ShardId) of
         {ok, Client, ChannelM1} ->
             Req = #{
                 stream_name => Stream,
@@ -145,7 +145,7 @@ do_write(
                 {ok, _} = _Res ->
                     {{ok, length(Records)}, State#state{channel_manager = ChannelM1}};
                 {error, _} = Error ->
-                    ChannelM2 = hstreamdb_channel_mgr:bad_client(ChannelM1, ShardId),
+                    ChannelM2 = hstreamdb_shard_client_mgr:bad_client(ChannelM1, ShardId),
                     {Error, State#state{channel_manager = ChannelM2}}
             end;
         {error, _} = Error ->

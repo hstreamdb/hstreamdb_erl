@@ -1,4 +1,4 @@
--module(hstreamdb_channel_mgr_SUITE).
+-module(hstreamdb_shard_client_mgr_SUITE).
 
 -compile(export_all).
 -compile(nowarn_export_all).
@@ -29,21 +29,21 @@ t_lookup_channel(Config) ->
 
     KeyMgr0 = hstreamdb_key_mgr:start(Client, "stream1"),
 
-    ChanMgr0 = hstreamdb_channel_mgr:start(Client),
+    ChanMgr0 = hstreamdb_shard_client_mgr:start(Client),
 
     Key = <<"key">>,
 
     {ShardId, KeyMgr1} = hstreamdb_key_mgr:choose_shard(Key, KeyMgr0),
 
-    {ok, Channel0, ChanMgr1} = hstreamdb_channel_mgr:lookup_client(ChanMgr0, ShardId),
-    {ok, Channel1, ChanMgr2} = hstreamdb_channel_mgr:lookup_client(ChanMgr1, ShardId),
+    {ok, Channel0, ChanMgr1} = hstreamdb_shard_client_mgr:lookup_client(ChanMgr0, ShardId),
+    {ok, Channel1, ChanMgr2} = hstreamdb_shard_client_mgr:lookup_client(ChanMgr1, ShardId),
 
     ?assertEqual(Channel0, Channel1),
 
-    ChanMgr3 = hstreamdb_channel_mgr:bad_client(ChanMgr2, ShardId),
-    {ok, Channel2, ChanMgr4} = hstreamdb_channel_mgr:lookup_client(ChanMgr3, ShardId),
+    ChanMgr3 = hstreamdb_shard_client_mgr:bad_client(ChanMgr2, ShardId),
+    {ok, Channel2, ChanMgr4} = hstreamdb_shard_client_mgr:lookup_client(ChanMgr3, ShardId),
 
     ?assertNotEqual(Channel1, Channel2),
 
     ok = hstreamdb_key_mgr:stop(KeyMgr1),
-    ok = hstreamdb_channel_mgr:stop(ChanMgr4).
+    ok = hstreamdb_shard_client_mgr:stop(ChanMgr4).

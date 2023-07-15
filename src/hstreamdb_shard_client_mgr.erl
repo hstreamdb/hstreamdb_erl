@@ -13,7 +13,7 @@
 %% See the License for the specific language governing permissions and
 %% limitations under the License.
 %%--------------------------------------------------------------------
--module(hstreamdb_channel_mgr).
+-module(hstreamdb_shard_client_mgr).
 
 -export([
     start/1,
@@ -21,6 +21,10 @@
     lookup_client/2,
     bad_client/2
 ]).
+
+%%--------------------------------------------------------------------
+%% API
+%%--------------------------------------------------------------------
 
 start(Client) ->
     #{
@@ -35,7 +39,7 @@ stop(#{clients_by_shard := Clients}) ->
     ).
 
 lookup_client(
-    ChannelM = #{
+    ShardClientMgr = #{
         clients_by_shard := Clients,
         client := Client
     },
@@ -43,14 +47,14 @@ lookup_client(
 ) ->
     case Clients of
         #{ShardId := ShardClient} ->
-            {ok, ShardClient, ChannelM};
+            {ok, ShardClient, ShardClientMgr};
         _ ->
             case hstreamdb_client:lookup_shard(Client, ShardId) of
                 {ok, {Host, Port}} ->
                     %% Producer need only one channel. Because it is a sync call.
                     case hstreamdb_client:connect(Client, Host, Port, #{pool_size => 1}) of
-                        {ok, Channel} ->
-                            ping_new_client(Channel, ShardId, ChannelM);
+                        {ok, NewClient} ->
+                            ping_new_client(NewClient, ShardId, ShardClientMgr);
                         {error, _} = Error ->
                             Error
                     end;
@@ -59,25 +63,25 @@ lookup_client(
             end
     end.
 
-bad_client(ChannelM = #{clients_by_shard := Clients}, ShardId) ->
+bad_client(ShardClientMgr = #{clients_by_shard := Clients}, ShardId) ->
     case Clients of
         #{ShardId := Client} ->
             ok = hstreamdb_client:stop(Client),
-            ChannelM#{
+            ShardClientMgr#{
                 clients_by_shard => maps:remove(ShardId, Clients)
             };
         _ ->
-            ChannelM
+            ShardClientMgr
     end.
 
 %%--------------------------------------------------------------------
 %% Internal functions
 %%--------------------------------------------------------------------
 
-ping_new_client(Client, ShardId, ChannelM = #{clients_by_shard := Clients}) ->
+ping_new_client(Client, ShardId, ShardClientMgr = #{clients_by_shard := Clients}) ->
     case hstreamdb_client:echo(Client) of
         ok ->
-            {ok, Client, ChannelM#{
+            {ok, Client, ShardClientMgr#{
                 clients_by_shard => Clients#{ShardId => Client}
             }};
         {error, Reason} ->
