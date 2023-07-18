@@ -32,10 +32,11 @@ service HStreamApi {
       returns (ListStreamsResponse) {}
   rpc LookupShard(LookupShardRequest) returns (LookupShardResponse) {}
   rpc Append(AppendRequest) returns (AppendResponse) {}
+  rpc GetTailRecordId(GetTailRecordIdRequest)
+      returns (GetTailRecordIdResponse) {}
 
   // Shard APIs
   rpc ListShards(ListShardsRequest) returns (ListShardsResponse) {}
-
   rpc CreateShardReader(CreateShardReaderRequest)
       returns (CreateShardReaderResponse) {}
   rpc LookupShardReader(LookupShardReaderRequest)
@@ -47,6 +48,9 @@ service HStreamApi {
       returns (ListShardReadersResponse) {}
   rpc DeleteShardReader(DeleteShardReaderRequest)
       returns (google.protobuf.Empty) {}
+  rpc ReadStream(ReadStreamRequest) returns (stream ReadStreamResponse) {}
+  rpc ReadSingleShardStream(ReadSingleShardStreamRequest)
+      returns (stream ReadSingleShardStreamResponse) {}
 
   // Subscribe APIs
   rpc CreateSubscription(Subscription) returns (Subscription) {}
@@ -357,10 +361,44 @@ message ListShardReadersResponse { repeated string readerId = 1; }
 message ReadShardStreamRequest {
   string readerId = 1;
   uint64 shardId = 2;
-  ShardOffset shardOffset = 3;
+  ShardOffset from = 3;
+  // Total number of batches reader read at most
+  uint64 maxReadBatches = 4;
+  ShardOffset until = 5;
 }
 
 message ReadShardStreamResponse { repeated ReceivedRecord receivedRecords = 1; }
+
+message StreamOffset {
+  oneof offset {
+    SpecialOffset specialOffset = 1;
+    TimestampOffset timestampOffset = 2;
+  }
+}
+
+message ReadStreamRequest {
+  string readerId = 1;
+  string streamName = 2;
+  StreamOffset from = 3;
+  StreamOffset until = 4;
+  // Total number of batches reader read at most
+  uint64 maxReadBatches = 5;
+}
+
+message ReadStreamResponse { repeated ReceivedRecord receivedRecords = 1; }
+
+message ReadSingleShardStreamRequest {
+  string readerId = 1;
+  string streamName = 2;
+  ShardOffset from = 3;
+  ShardOffset until = 4;
+  // Total number of batches reader read at most
+  uint64 maxReadBatches = 5;
+}
+
+message ReadSingleShardStreamResponse {
+  repeated ReceivedRecord receivedRecords = 1;
+}
 
 message TerminateQueryRequest { string queryId = 1; }
 
@@ -606,6 +644,13 @@ message LookupResourceRequest {
   string resId = 2;
 }
 
+message GetTailRecordIdRequest {
+  string streamName = 1;
+  uint64 shardId = 2;
+}
+
+message GetTailRecordIdResponse { RecordId tailRecordId = 1; }
+
 enum StreamStats {
   AppendInBytes = 0;
   AppendInRecords = 1;
@@ -723,4 +768,6 @@ enum ErrorCode {
 
   // 9xx -> ShardReader
   ShardReaderInvalidObjectIdentifier = 900;
+  ShardReaderConflictOffset = 901;
+  ShardReaderTooManyShards = 902;
 }

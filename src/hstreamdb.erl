@@ -16,20 +16,37 @@
 
 -module(hstreamdb).
 
+-include("hstreamdb.hrl").
+
 -export([
     start_producer/3,
     stop_producer/1,
-    start_consumer/3,
-    stop_consumer/1
-]).
-
--export([
     to_record/3,
     append/2,
     append/4,
     flush/1,
     append_flush/2
 ]).
+
+-export([
+    start_client_manager/1,
+    start_client_manager/2,
+    stop_client_manager/1,
+    read_single_shard_stream/2,
+    read_single_shard_stream/3
+]).
+
+-define(DEFAULT_READ_SINGLE_SHARD_STREAM_OPTS, #{
+    limits => #{
+        from => #{offset => {specialOffset, 0}},
+        until => #{offset => {specialOffset, 1}},
+        max_read_batches => 0
+    }
+}).
+
+%%--------------------------------------------------------------------
+%% Producer facade
+%%--------------------------------------------------------------------
 
 start_producer(Client, Producer, ProducerOptions) ->
     case hstreamdb_producers_sup:start(Producer, [{client, Client} | ProducerOptions]) of
@@ -41,12 +58,6 @@ start_producer(Client, Producer, ProducerOptions) ->
 
 stop_producer(Producer) ->
     hstreamdb_producers_sup:stop(Producer).
-
-start_consumer(_Client, Consumer, _ConsumerOptions) ->
-    {ok, Consumer}.
-
-stop_consumer(_) ->
-    ok.
 
 to_record(PartitioningKey, PayloadType, Payload) ->
     {PartitioningKey, #{
@@ -73,3 +84,42 @@ flush(Producer) ->
 
 append_flush(Producer, Data) ->
     hstreamdb_producer:append_flush(Producer, Data).
+
+%%--------------------------------------------------------------------
+%% Stream reader facade
+%%--------------------------------------------------------------------
+
+start_client_manager(Client) ->
+    start_client_manager(Client, #{}).
+
+start_client_manager(Client, Options) ->
+    hstreamdb_shard_client_mgr:start(Client, Options).
+
+stop_client_manager(ClientManager) ->
+    hstreamdb_shard_client_mgr:stop(ClientManager).
+
+read_single_shard_stream(ClientManager, StreamName) ->
+    read_single_shard_stream(ClientManager, StreamName, ?DEFAULT_READ_SINGLE_SHARD_STREAM_OPTS).
+
+read_single_shard_stream(ClientManager, StreamName, Limits) ->
+    Client = hstreamdb_shard_client_mgr:client(ClientManager),
+    case hstreamdb_client:list_shards(Client, StreamName) of
+        {ok, [#{shardId := ShardId}]} ->
+            case hstreamdb_shard_client_mgr:lookup_client(ClientManager, ShardId) of
+                {ok, ShardClient, NewClientManager} ->
+                    case
+                        hstreamdb_client:read_single_shard_stream(ShardClient, StreamName, Limits)
+                    of
+                        {ok, Result} ->
+                            {ok, Result, NewClientManager};
+                        {error, Reason} ->
+                            {error, Reason, NewClientManager}
+                    end;
+                {error, _} = Error ->
+                    Error
+            end;
+        {ok, L} when is_list(L) andalso length(L) > 1 ->
+            {error, {multiple_shards, L}};
+        {error, _} = Error ->
+            Error
+    end.

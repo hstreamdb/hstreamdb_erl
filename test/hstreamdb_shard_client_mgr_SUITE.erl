@@ -26,7 +26,7 @@ end_per_testcase(_Case, Config) ->
     _ = hstreamdb_client:stop(Client),
     ok.
 
-t_lookup_channel(Config) ->
+t_lookup_client(Config) ->
     Client = ?config(client, Config),
 
     _ = hstreamdb_client:delete_stream(Client, "stream1"),
@@ -34,21 +34,27 @@ t_lookup_channel(Config) ->
 
     KeyMgr0 = hstreamdb_key_mgr:start(Client, "stream1"),
 
-    ChanMgr0 = hstreamdb_shard_client_mgr:start(Client),
+    ShardClientMgr0 = hstreamdb_shard_client_mgr:start(Client),
 
     Key = <<"key">>,
 
     {ShardId, KeyMgr1} = hstreamdb_key_mgr:choose_shard(Key, KeyMgr0),
 
-    {ok, Channel0, ChanMgr1} = hstreamdb_shard_client_mgr:lookup_client(ChanMgr0, ShardId),
-    {ok, Channel1, ChanMgr2} = hstreamdb_shard_client_mgr:lookup_client(ChanMgr1, ShardId),
+    {ok, ShardClient0, ShardClientMgr1} = hstreamdb_shard_client_mgr:lookup_client(
+        ShardClientMgr0, ShardId
+    ),
+    {ok, ShardClient1, ShardClientMgr2} = hstreamdb_shard_client_mgr:lookup_client(
+        ShardClientMgr1, ShardId
+    ),
 
-    ?assertEqual(Channel0, Channel1),
+    ?assertEqual(ShardClient0, ShardClient1),
 
-    ChanMgr3 = hstreamdb_shard_client_mgr:bad_client(ChanMgr2, ShardId),
-    {ok, Channel2, ChanMgr4} = hstreamdb_shard_client_mgr:lookup_client(ChanMgr3, ShardId),
+    ShardClientMgr3 = hstreamdb_shard_client_mgr:bad_shart_client(ShardClientMgr2, ShardClient1),
+    {ok, ShardClient2, ShardClientMgr4} = hstreamdb_shard_client_mgr:lookup_client(
+        ShardClientMgr3, ShardId
+    ),
 
-    ?assertNotEqual(Channel1, Channel2),
+    ?assertNotEqual(ShardClient1, ShardClient2),
 
     ok = hstreamdb_key_mgr:stop(KeyMgr1),
-    ok = hstreamdb_shard_client_mgr:stop(ChanMgr4).
+    ok = hstreamdb_shard_client_mgr:stop(ShardClientMgr4).

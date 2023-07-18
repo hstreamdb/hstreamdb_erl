@@ -36,7 +36,13 @@
     append/3,
 
     connect/3,
-    connect/4
+    connect/4,
+
+    lookup_resource/3,
+
+    read_single_shard_stream/3,
+
+    name/1
 ]).
 
 %%--------------------------------------------------------------------
@@ -106,6 +112,9 @@ stop(Name) ->
     grpc_client_sup:stop_channel_pool(Channel),
     ok = unregister_channel(Channel).
 
+name(#{channel := Channel}) ->
+    Channel.
+
 echo(Client) ->
     do_echo(Client).
 
@@ -130,20 +139,17 @@ append(Client, Req) ->
 append(Client, Req, Options) ->
     do_append(Client, Req, Options).
 
+lookup_resource(Client, ResourceType, ResourceId) ->
+    do_lookup_resource(Client, ResourceType, ResourceId).
+
+read_single_shard_stream(Client, StreamName, Limits) ->
+    do_read_single_shard_stream(Client, StreamName, Limits).
+
 %%--------------------------------------------------------------------
 %% Internal functions
 %%--------------------------------------------------------------------
 
-new_channel_name(#{channel := ChannelName}, Host, Port) ->
-    lists:concat([
-        ChannelName,
-        "_",
-        to_channel_name(Host),
-        "_",
-        to_channel_name(Port),
-        "_",
-        to_channel_name(erlang:unique_integer([positive]))
-    ]).
+%% Channel creation
 
 start_channel(ChannelName, URLMap, RPCOptions, ReapChannel) ->
     URL = uri_string:recompose(URLMap),
@@ -156,38 +162,7 @@ start_channel(ChannelName, URLMap, RPCOptions, ReapChannel) ->
             {error, Reason}
     end.
 
-validate_url_and_opts(URL, GunOpts) when is_binary(URL) ->
-    validate_url_and_opts(list_to_binary(URL), GunOpts);
-validate_url_and_opts(URL, GunOpts) when is_list(URL) ->
-    case uri_string:parse(URL) of
-        {error, What, Term} ->
-            {error, {invalid_url, What, Term}};
-        URIMap when is_map(URIMap) ->
-            validate_scheme_and_opts(set_default_port(URIMap), GunOpts)
-    end.
-
-set_default_port(#{port := _Port} = URIMap) ->
-    URIMap;
-set_default_port(URIMap) ->
-    URIMap#{port => ?DEFAULT_HSTREAMDB_PORT}.
-
-validate_scheme_and_opts(#{scheme := "hstreams"} = URIMap, GunOpts) ->
-    validate_scheme_and_opts(URIMap#{scheme := "https"}, GunOpts);
-validate_scheme_and_opts(#{scheme := "hstream"} = URIMap, GunOpts) ->
-    validate_scheme_and_opts(URIMap#{scheme := "http"}, GunOpts);
-validate_scheme_and_opts(#{scheme := "https"}, #{transport := tcp}) ->
-    {error, {https_invalid_transport, tcp}};
-validate_scheme_and_opts(#{scheme := "https"} = URIMap, GunOpts) ->
-    {ok, URIMap, GunOpts#{transport => tls}};
-validate_scheme_and_opts(#{scheme := "http"}, #{transport := tls}) ->
-    {error, {http_invalid_transport, tls}};
-validate_scheme_and_opts(#{scheme := "http"} = URIMap, GunOpts) ->
-    {ok, URIMap, GunOpts#{transport => tcp}};
-validate_scheme_and_opts(_URIMap, _GunOpts) ->
-    {error, unknown_scheme}.
-
-map_host(#{host_mapping := HostMapping} = _Client, Host) ->
-    host_to_string(maps:get(Host, HostMapping, Host)).
+%% GRPC methods
 
 do_echo(#{channel := Channel, grpc_timeout := Timeout}) ->
     case ?HSTREAMDB_GEN_CLIENT:echo(#{}, #{channel => Channel, timeout => Timeout}) of
@@ -295,6 +270,100 @@ do_append(
             {error, R}
     end.
 
+do_lookup_resource(
+    #{channel := Channel, grpc_timeout := Timeout},
+    ResourceType,
+    ResourceId
+) ->
+    Req = #{resType => ResourceType, resId => ResourceId},
+    Options = #{channel => Channel, timeout => Timeout},
+    case ?HSTREAMDB_GEN_CLIENT:lookup_resource(Req, Options) of
+        {ok, #{host := Host, port := Port}, _} ->
+            {ok, {Host, Port}};
+        {error, Error} ->
+            {error, Error}
+    end.
+
+do_read_single_shard_stream(
+    #{channel := Channel, grpc_timeout := Timeout},
+    StreamName,
+    Opts
+) ->
+    Req0 = #{
+        streamName => StreamName,
+        readerId => integer_to_binary(erlang:unique_integer([positive]))
+    },
+    Limits = maps:get(limits, Opts, #{}),
+    Req = maps:merge(Req0, map_keys([{max_read_batches, maxReadBatches}], Limits)),
+    Options = #{channel => Channel, timeout => Timeout},
+    io:format("read_single_shard: Req: ~p~nOptions: ~p~n", [Req, Options]),
+    case ?HSTREAMDB_GEN_CLIENT:read_single_shard_stream(Options) of
+        {ok, GStream} ->
+            ok = grpc_client:send(GStream, Req, fin),
+            {FoldFun, Acc} = maps:get(fold, Opts, {fun append_rec/2, []}),
+            fold_response_stream(GStream, FoldFun, Acc);
+        {error, _} = Error ->
+            Error
+    end.
+
+%% Helper functions
+
+append_rec(Rec, Acc) -> [Rec | Acc].
+
+map_keys([], Map) ->
+    Map;
+map_keys([{KeyOld, KeyNew} | Rest], Map) ->
+    case Map of
+        #{KeyOld := Value} ->
+            map_keys(Rest, maps:put(KeyNew, Value, maps:remove(KeyOld, Map)));
+        _ ->
+            map_keys(Rest, Map)
+    end.
+
+validate_url_and_opts(URL, GunOpts) when is_binary(URL) ->
+    validate_url_and_opts(list_to_binary(URL), GunOpts);
+validate_url_and_opts(URL, GunOpts) when is_list(URL) ->
+    case uri_string:parse(URL) of
+        {error, What, Term} ->
+            {error, {invalid_url, What, Term}};
+        URIMap when is_map(URIMap) ->
+            validate_scheme_and_opts(set_default_port(URIMap), GunOpts)
+    end.
+
+set_default_port(#{port := _Port} = URIMap) ->
+    URIMap;
+set_default_port(URIMap) ->
+    URIMap#{port => ?DEFAULT_HSTREAMDB_PORT}.
+
+validate_scheme_and_opts(#{scheme := "hstreams"} = URIMap, GunOpts) ->
+    validate_scheme_and_opts(URIMap#{scheme := "https"}, GunOpts);
+validate_scheme_and_opts(#{scheme := "hstream"} = URIMap, GunOpts) ->
+    validate_scheme_and_opts(URIMap#{scheme := "http"}, GunOpts);
+validate_scheme_and_opts(#{scheme := "https"}, #{transport := tcp}) ->
+    {error, {https_invalid_transport, tcp}};
+validate_scheme_and_opts(#{scheme := "https"} = URIMap, GunOpts) ->
+    {ok, URIMap, GunOpts#{transport => tls}};
+validate_scheme_and_opts(#{scheme := "http"}, #{transport := tls}) ->
+    {error, {http_invalid_transport, tls}};
+validate_scheme_and_opts(#{scheme := "http"} = URIMap, GunOpts) ->
+    {ok, URIMap, GunOpts#{transport => tcp}};
+validate_scheme_and_opts(_URIMap, _GunOpts) ->
+    {error, unknown_scheme}.
+
+map_host(#{host_mapping := HostMapping} = _Client, Host) ->
+    host_to_string(maps:get(Host, HostMapping, Host)).
+
+new_channel_name(#{channel := ChannelName}, Host, Port) ->
+    lists:concat([
+        ChannelName,
+        "_",
+        to_channel_name(Host),
+        "_",
+        to_channel_name(Port),
+        "_",
+        to_channel_name(erlang:unique_integer([positive]))
+    ]).
+
 register_channel(ChannelName, true) ->
     hstreamdb_channel_reaper:register_channel(ChannelName);
 register_channel(_ChannelName, false) ->
@@ -359,4 +428,72 @@ zstd(Payload) ->
     case ezstd:compress(Payload) of
         {error, R} -> {error, {zstd, R}};
         R -> {ok, R}
+    end.
+
+fold_response_stream(GStream, Fun, Acc) ->
+    case grpc_client:recv(GStream) of
+        {ok, Results} ->
+            io:format("Ok recv~n"),
+            case fold_results(Results, Fun, Acc) of
+                {ok, NewAcc} ->
+                    fold_response_stream(GStream, Fun, NewAcc);
+                {stop, NewAcc} ->
+                    {ok, NewAcc};
+                {error, _} = Error ->
+                    Error
+            end;
+        {error, _} = Error ->
+            Error
+    end.
+
+fold_results([], _Fun, Acc) ->
+    {ok, Acc};
+fold_results([Result | Rest], Fun, Acc) ->
+    case fold_result(Result, Fun, Acc) of
+        {ok, NewAcc} ->
+            fold_results(Rest, Fun, NewAcc);
+        {stop, NewAcc} ->
+            {stop, NewAcc};
+        {error, _} = Error ->
+            Error
+    end.
+
+fold_result(#{receivedRecords := Records}, Fun, Acc) ->
+    fold_batch_records(Records, Fun, Acc);
+fold_result({eos, _}, _Fun, Acc) ->
+    {stop, Acc}.
+
+fold_batch_records([], _Fun, Acc) ->
+    {ok, Acc};
+fold_batch_records([Record | Rest], Fun, Acc) ->
+    NewAcc = fold_batch_record(Record, Fun, Acc),
+    fold_batch_records(Rest, Fun, NewAcc).
+
+fold_batch_record(#{record := _} = BatchRecord, Fun, Acc) ->
+    Records = decode_batch(BatchRecord),
+    io:format("Records: ~p~n", [length(Records)]),
+    lists:foldl(Fun, Acc, Records).
+
+decode_batch(#{
+    record := #{payload := Payload0, compressionType := CompressionType} = _BatchRecord,
+    recordIds := RecordIds
+}) ->
+    Payload1 = decode_payload(Payload0, CompressionType),
+    #{records := Records} = hstreamdb_api:decode_msg(Payload1, batch_h_stream_records, []),
+    lists:zipwith(
+        fun(RecordId, Record) ->
+            Record#{recordId => RecordId}
+        end,
+        RecordIds,
+        Records
+    ).
+
+decode_payload(Payload, 'None') ->
+    Payload;
+decode_payload(Payload, 'Gzip') ->
+    zlib:gunzip(Payload);
+decode_payload(Payload, 'Zstd') ->
+    case ezstd:decompress(Payload) of
+        {error, Error} -> error({zstd, Error});
+        Bin when is_binary(Bin) -> Bin
     end.

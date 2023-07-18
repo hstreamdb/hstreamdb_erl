@@ -34,6 +34,16 @@
     code_change/3
 ]).
 
+%% Writer need only one channel. Because it is a sync call.
+-define(CLIENT_OPTS, #{
+    pool_size => 1
+}).
+
+-define(CLIENT_MGR_OPTS, #{
+    cache_by_shard_id => true,
+    client_override_opts => ?CLIENT_OPTS
+}).
+
 -define(DEFAULT_GRPC_TIMEOUT, 30000).
 
 -include("hstreamdb.hrl").
@@ -41,7 +51,7 @@
 -record(state, {
     stream,
     grpc_timeout,
-    channel_manager
+    client_manager
 }).
 
 start_link(Opts) ->
@@ -70,7 +80,7 @@ init([Opts]) ->
     {ok, #state{
         stream = StreamName,
         grpc_timeout = GRPCTimeout,
-        channel_manager = hstreamdb_shard_client_mgr:start(Client)
+        client_manager = hstreamdb_shard_client_mgr:start(Client, ?CLIENT_MGR_OPTS)
     }}.
 
 handle_cast({write, #batch{shard_id = ShardId, id = BatchId} = Batch, Caller}, State) ->
@@ -84,8 +94,8 @@ handle_call(stop, _From, State) ->
 handle_info(_Msg, State) ->
     {noreply, State}.
 
-terminate(_Reason, #state{channel_manager = ChannelM}) ->
-    ok = hstreamdb_shard_client_mgr:stop(ChannelM),
+terminate(_Reason, #state{client_manager = ClientMgr}) ->
+    ok = hstreamdb_shard_client_mgr:stop(ClientMgr),
     ok.
 
 code_change(_OldVsn, State, _Extra) ->
@@ -97,41 +107,44 @@ code_change(_OldVsn, State, _Extra) ->
 records(#batch{id = BatchId, tab = Tab}) ->
     case ets:lookup(Tab, BatchId) of
         [{_, Records}] ->
-            drop_timepout(Records);
+            prepare_known_resps(Records);
         [] ->
-            []
+            {[], []}
     end.
 
-drop_timepout(Records) ->
+prepare_known_resps(Records) ->
     Now = erlang:monotonic_time(millisecond),
-    lists:flatmap(
-        fun(#{deadline := Deadline, data := Data}) ->
-            case Deadline of
-                T when T >= Now ->
-                    [Data];
-                infinity ->
-                    [Data];
-                _ ->
-                    []
-            end
-        end,
-        Records
-    ).
+    {Resps, Reqs} = lists:unzip(
+        lists:map(
+            fun(#{deadline := Deadline, data := Data}) ->
+                case Deadline of
+                    T when T >= Now ->
+                        {undefined, Data};
+                    infinity ->
+                        {undefined, Data};
+                    _ ->
+                        {{error, timeout}, undefined}
+                end
+            end,
+            Records
+        )
+    ),
+    {Resps, lists:filter(fun(X) -> X =/= undefined end, Reqs)}.
 
-do_write(_ShardId, [], _Batch, State) ->
-    {{ok, 0}, State};
+do_write(_ShardId, {Resps, []}, _Batch, State) ->
+    {{ok, Resps}, State};
 do_write(
     ShardId,
-    Records,
+    {Resps, Records},
     #batch{compression_type = CompressionType},
     State = #state{
-        channel_manager = ChannelM0,
+        client_manager = ClientMgr0,
         stream = Stream,
         grpc_timeout = GRPCTimeout
     }
 ) ->
-    case hstreamdb_shard_client_mgr:lookup_client(ChannelM0, ShardId) of
-        {ok, Client, ChannelM1} ->
+    case hstreamdb_shard_client_mgr:lookup_client(ClientMgr0, ShardId) of
+        {ok, Client, ClientMgr1} ->
             Req = #{
                 stream_name => Stream,
                 records => Records,
@@ -142,12 +155,23 @@ do_write(
                 timeout => GRPCTimeout
             },
             case hstreamdb_client:append(Client, Req, Options) of
-                {ok, _} = _Res ->
-                    {{ok, length(Records)}, State#state{channel_manager = ChannelM1}};
+                {ok, #{recordIds := RecordsIds}} ->
+                    Res = fill_responses(Resps, RecordsIds),
+                    {{ok, Res}, State#state{client_manager = ClientMgr1}};
                 {error, _} = Error ->
-                    ChannelM2 = hstreamdb_shard_client_mgr:bad_client(ChannelM1, ShardId),
-                    {Error, State#state{channel_manager = ChannelM2}}
+                    ClientMgr2 = hstreamdb_shard_client_mgr:bad_shart_client(ClientMgr1, Client),
+                    {Error, State#state{client_manager = ClientMgr2}}
             end;
         {error, _} = Error ->
             {Error, State}
     end.
+
+fill_responses(KnownResps, Ids) ->
+    fill_responses(KnownResps, Ids, []).
+
+fill_responses([], [], Acc) ->
+    lists:reverse(Acc);
+fill_responses([undefined | Rest], [Id | Ids], Acc) ->
+    fill_responses(Rest, Ids, [{ok, Id} | Acc]);
+fill_responses([Resp | Rest], Ids, Acc) ->
+    fill_responses(Rest, Ids, [Resp | Acc]).

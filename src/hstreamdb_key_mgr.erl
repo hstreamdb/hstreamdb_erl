@@ -73,9 +73,9 @@ list_shards(Client, StreamName) ->
             erlang:error({cannot_list_shards, {StreamName, Error}})
     end.
 
-choose_shard(PartitioningKey, ChannelM0) ->
-    ChannelM1 = update_shards(ChannelM0),
-    #{shards := Shards} = ChannelM1,
+choose_shard(PartitioningKey, KeyMgr0) ->
+    KeyMgr1 = update_shards(KeyMgr0),
+    #{shards := Shards} = KeyMgr1,
     <<IntHash:128/big-unsigned-integer>> = crypto:hash(md5, PartitioningKey),
     [#{shardId := ShardId}] =
         lists:filter(
@@ -90,4 +90,4 @@ choose_shard(PartitioningKey, ChannelM0) ->
             end,
             Shards
         ),
-    {ShardId, ChannelM1}.
+    {ShardId, KeyMgr1}.

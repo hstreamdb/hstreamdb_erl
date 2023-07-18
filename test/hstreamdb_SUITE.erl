@@ -101,17 +101,6 @@ t_start_stop_producer(Config) ->
 
     ok = hstreamdb_client:delete_stream(Client, "stream2").
 
-%% no op
-t_start_stop_consumer(Config) ->
-    Client = ?config(client, Config),
-
-    {ok, Consumer} = hstreamdb:start_consumer(Client, test_consumer, []),
-
-    ?assertEqual(
-        ok,
-        hstreamdb:stop_consumer(Consumer)
-    ).
-
 t_client_with_reaped_channel(_Config) ->
     Self = self(),
     _ = spawn_link(fun() ->

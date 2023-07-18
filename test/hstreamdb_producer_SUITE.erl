@@ -19,7 +19,7 @@
     end
 end).
 
--define(assertOkResult(), ?assertResult(ok)).
+-define(assertOkResult(), ?assertResult({ok, #{}})).
 
 all() ->
     hstreamdb_test_helpers:test_cases(?MODULE).
@@ -115,8 +115,8 @@ t_append_flush_no_callback(Config) ->
 
     ok = start_producer(Config, ProducerOptions),
 
-    ?assertEqual(
-        ok,
+    ?assertMatch(
+        {ok, #{}},
         hstreamdb:append_flush(producer(Config), sample_record())
     ).
 
@@ -227,7 +227,7 @@ t_append_flush(Config) ->
     ),
 
     {PKey, Record} = sample_record(),
-    ok = hstreamdb:append_flush(producer(Config), {PKey, Record}),
+    {ok, #{}} = hstreamdb:append_flush(producer(Config), {PKey, Record}),
 
     lists:foreach(
         fun(_) ->
@@ -253,7 +253,7 @@ t_append_sync(Config) ->
             hstreamdb_producer:append_sync(producer(Config), sample_record(), 1000)
         end
     ),
-    ?assertEqual(ok, Res),
+    ?assertMatch({ok, #{}}, Res),
     ?assert(Time > 500),
 
     ?assertEqual(
@@ -298,7 +298,7 @@ t_append_gzip(Config) ->
 
     {PKey0, Record0} = sample_record(),
     ?assertMatch(
-        ok,
+        {ok, #{}},
         hstreamdb:append_flush(producer(Config), {PKey0, Record0})
     ),
 
@@ -320,7 +320,7 @@ t_append_zstd(Config) ->
 
     {PKey0, Record0} = sample_record(),
     ?assertMatch(
-        ok,
+        {ok, #{}},
         hstreamdb:append_flush(producer(Config), {PKey0, Record0})
     ),
 

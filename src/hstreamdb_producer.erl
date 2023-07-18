@@ -253,18 +253,14 @@ new_buffer(
     hstreamdb_buffer:new(maps:merge(BufferOpts, Opts)).
 
 send_reply(From, Response, Callback, Stream) ->
-    FormattedResponse = format_response(Response),
     case From of
         undefined ->
-            apply_callback(Callback, {{flush, Stream, 1}, FormattedResponse});
+            apply_callback(Callback, {{flush, Stream, 1}, Response});
         AliasRef when is_reference(AliasRef) ->
-            erlang:send(AliasRef, {reply, AliasRef, FormattedResponse});
+            erlang:send(AliasRef, {reply, AliasRef, Response});
         _ ->
             logger:warning("[hstreamdb_producer] Unexpected From: ~p", [From])
     end.
-
-format_response({ok, _}) -> ok;
-format_response({error, _} = Error) -> Error.
 
 with_shart_buffer(
     {PartitioningKey, Record},

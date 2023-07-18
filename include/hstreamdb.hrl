@@ -31,6 +31,16 @@
 
 -define(DEFAULT_STOP_TIMEOUT, 5000).
 
+%% ResourseType enum
+
+-define(RES_STREAM, 0).
+-define(RES_SUBSCRIPTION, 1).
+-define(RES_SHARD, 2).
+-define(RES_SHARD_READER, 3).
+-define(RES_CONNECTOR, 4).
+-define(RES_QUERY, 5).
+-define(RES_VIEW, 6).
+
 -record(batch, {
     id :: reference(),
     shard_id :: integer(),

@@ -145,7 +145,9 @@ t_batches_with_responses(Config) ->
         fun(_, Buffer) ->
             receive
                 {send_batch, #{batch_ref := Ref, tab := _Tab}} ->
-                    NewBuffer = hstreamdb_buffer:handle_batch_response(Buffer, Ref, ok),
+                    NewBuffer = hstreamdb_buffer:handle_batch_response(
+                        Buffer, Ref, ok_replies_for_batch(Config, Ref)
+                    ),
                     lists:foreach(
                         fun(_) ->
                             ?assertReceive({send_reply, from, ok})
@@ -201,7 +203,9 @@ t_reply_callback_exception(Config) ->
 
     receive
         {send_batch, #{batch_ref := Ref, tab := _Tab}} ->
-            _ = hstreamdb_buffer:handle_batch_response(Buffer4, Ref, ok),
+            _ = hstreamdb_buffer:handle_batch_response(
+                Buffer4, Ref, ok_replies_for_batch(Config, Ref)
+            ),
             ?assertReceive({send_reply, from0, ok}),
             ?assertReceive({send_reply, from1, ok})
     after 100 ->
@@ -217,7 +221,9 @@ t_response_after_deadline(Config) ->
     ok = timer:sleep(2),
     receive
         {send_batch, #{batch_ref := Ref, tab := _Tab}} ->
-            _ = hstreamdb_buffer:handle_batch_response(Buffer3, Ref, ok),
+            _ = hstreamdb_buffer:handle_batch_response(
+                Buffer3, Ref, ok_replies_for_batch(Config, Ref)
+            ),
             ?refuteReceive({send_reply, from1, _}),
             ?assertReceive({send_reply, from2, ok})
     after 100 ->
@@ -303,3 +309,12 @@ assert_receive_all_responses(0) ->
 assert_receive_all_responses(N) when N > 0 ->
     ?assertReceived({N, _}),
     assert_receive_all_responses(N - 1).
+
+batch(Config, Ref) ->
+    Tab = ?config(batch_tab, Config),
+    [{_, Batch}] = ets:lookup(Tab, Ref),
+    Batch.
+
+ok_replies_for_batch(Config, Ref) ->
+    Batch = batch(Config, Ref),
+    {ok, [ok || _ <- Batch]}.

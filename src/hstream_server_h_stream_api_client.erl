@@ -183,6 +183,26 @@ append(Req, Metadata, Options) ->
                            append_request, append_response, <<"hstream.server.AppendRequest">>),
                       Req, Metadata, Options).
 
+-spec get_tail_record_id(hstreamdb_api:get_tail_record_id_request())
+    -> {ok, hstreamdb_api:get_tail_record_id_response(), grpc:metadata()}
+     | {error, term()}.
+get_tail_record_id(Req) ->
+    get_tail_record_id(Req, #{}, #{}).
+
+-spec get_tail_record_id(hstreamdb_api:get_tail_record_id_request(), grpc:options())
+    -> {ok, hstreamdb_api:get_tail_record_id_response(), grpc:metadata()}
+     | {error, term()}.
+get_tail_record_id(Req, Options) ->
+    get_tail_record_id(Req, #{}, Options).
+
+-spec get_tail_record_id(hstreamdb_api:get_tail_record_id_request(), grpc:metadata(), grpc_client:options())
+    -> {ok, hstreamdb_api:get_tail_record_id_response(), grpc:metadata()}
+     | {error, term()}.
+get_tail_record_id(Req, Metadata, Options) ->
+    grpc_client:unary(?DEF(<<"/hstream.server.HStreamApi/GetTailRecordId">>,
+                           get_tail_record_id_request, get_tail_record_id_response, <<"hstream.server.GetTailRecordIdRequest">>),
+                      Req, Metadata, Options).
+
 -spec list_shards(hstreamdb_api:list_shards_request())
     -> {ok, hstreamdb_api:list_shards_response(), grpc:metadata()}
      | {error, term()}.
@@ -316,6 +336,34 @@ delete_shard_reader(Req, Metadata, Options) ->
     grpc_client:unary(?DEF(<<"/hstream.server.HStreamApi/DeleteShardReader">>,
                            delete_shard_reader_request, empty, <<"hstream.server.DeleteShardReaderRequest">>),
                       Req, Metadata, Options).
+
+-spec read_stream(grpc_client:options())
+    -> {ok, grpc_client:grpcstream()}
+     | {error, term()}.
+read_stream(Options) ->
+    read_stream(#{}, Options).
+
+-spec read_stream(grpc:metadata(), grpc_client:options())
+    -> {ok, grpc_client:grpcstream()}
+     | {error, term()}.
+read_stream(Metadata, Options) ->
+    grpc_client:open(?DEF(<<"/hstream.server.HStreamApi/ReadStream">>,
+                          read_stream_request, read_stream_response, <<"hstream.server.ReadStreamRequest">>),
+                     Metadata, Options).
+
+-spec read_single_shard_stream(grpc_client:options())
+    -> {ok, grpc_client:grpcstream()}
+     | {error, term()}.
+read_single_shard_stream(Options) ->
+    read_single_shard_stream(#{}, Options).
+
+-spec read_single_shard_stream(grpc:metadata(), grpc_client:options())
+    -> {ok, grpc_client:grpcstream()}
+     | {error, term()}.
+read_single_shard_stream(Metadata, Options) ->
+    grpc_client:open(?DEF(<<"/hstream.server.HStreamApi/ReadSingleShardStream">>,
+                          read_single_shard_stream_request, read_single_shard_stream_response, <<"hstream.server.ReadSingleShardStreamRequest">>),
+                     Metadata, Options).
 
 -spec create_subscription(hstreamdb_api:subscription())
     -> {ok, hstreamdb_api:subscription(), grpc:metadata()}

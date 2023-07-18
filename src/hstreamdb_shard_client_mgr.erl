@@ -17,72 +17,114 @@
 
 -export([
     start/1,
+    start/2,
     stop/1,
     lookup_client/2,
-    bad_client/2
+    bad_shart_client/2,
+    client/1
 ]).
+
+-define(DEFAULT_OPTS, #{
+    cache_by_shard_id => false,
+    client_override_opts => #{}
+}).
 
 %%--------------------------------------------------------------------
 %% API
 %%--------------------------------------------------------------------
 
 start(Client) ->
-    #{
-        client => Client,
-        clients_by_shard => #{}
-    }.
+    start(Client, ?DEFAULT_OPTS).
 
-stop(#{clients_by_shard := Clients}) ->
+start(Client, Opts0) ->
+    Opts1 = maps:merge(?DEFAULT_OPTS, maps:with(maps:keys(?DEFAULT_OPTS), Opts0)),
+    maps:merge(
+        #{
+            client => Client,
+            addr_by_shard => #{},
+            client_by_addr => #{}
+        },
+        Opts1
+    ).
+
+stop(#{client_by_addr := Clients}) ->
     lists:foreach(
         fun hstreamdb_client:stop/1,
         maps:values(Clients)
     ).
 
 lookup_client(
-    ShardClientMgr = #{
-        clients_by_shard := Clients,
+    ShardClientMgr0 = #{
+        addr_by_shard := Addrs,
         client := Client
     },
     ShardId
 ) ->
-    case Clients of
-        #{ShardId := ShardClient} ->
-            {ok, ShardClient, ShardClientMgr};
+    case Addrs of
+        #{ShardId := Addr} ->
+            client_by_addr(ShardClientMgr0, Addr);
         _ ->
             case hstreamdb_client:lookup_shard(Client, ShardId) of
-                {ok, {Host, Port}} ->
-                    %% Producer need only one channel. Because it is a sync call.
-                    case hstreamdb_client:connect(Client, Host, Port, #{pool_size => 1}) of
-                        {ok, NewClient} ->
-                            ping_new_client(NewClient, ShardId, ShardClientMgr);
-                        {error, _} = Error ->
-                            Error
-                    end;
+                {ok, {_Host, _Port} = Addr} ->
+                    ShardClientMgr1 = cache_shard_addr(ShardClientMgr0, ShardId, Addr),
+                    client_by_addr(ShardClientMgr1, Addr);
                 {error, _} = Error ->
                     Error
             end
     end.
 
-bad_client(ShardClientMgr = #{clients_by_shard := Clients}, ShardId) ->
+cache_shard_addr(#{cache_by_shard_id := false} = ShardClientMgr, _ShardId, _Addr) ->
+    ShardClientMgr;
+cache_shard_addr(#{addr_by_shard := Addrs} = ShardClientMgr, ShardId, Addr) ->
+    ShardClientMgr#{
+        addr_by_shard => maps:put(ShardId, Addr, Addrs)
+    }.
+
+client_by_addr(
+    #{
+        client_by_addr := Clients,
+        client_override_opts := OverrideOpts,
+        client := Client
+    } = ShardClientMgr,
+    Addr
+) ->
     case Clients of
-        #{ShardId := Client} ->
-            ok = hstreamdb_client:stop(Client),
-            ShardClientMgr#{
-                clients_by_shard => maps:remove(ShardId, Clients)
-            };
+        #{Addr := AddrClient} ->
+            {ok, AddrClient, ShardClientMgr};
         _ ->
-            ShardClientMgr
+            {Host, Port} = Addr,
+            case hstreamdb_client:connect(Client, Host, Port, OverrideOpts) of
+                {ok, NewClient} ->
+                    ping_new_client(NewClient, Addr, ShardClientMgr);
+                {error, _} = Error ->
+                    Error
+            end
     end.
+
+bad_shart_client(ShardClientMgr = #{client_by_addr := Clients}, ShardClient) ->
+    NewClents = maps:filter(
+        fun(_Addr, Client) ->
+            hstreamdb_client:name(Client) =/= hstreamdb_client:name(ShardClient)
+        end,
+        Clients
+    ),
+    ok = hstreamdb_client:stop(ShardClient),
+    ShardClientMgr#{
+        client_by_addr := NewClents
+    }.
+
+client(#{client := Client}) ->
+    Client.
 
 %%--------------------------------------------------------------------
 %% Internal functions
 %%--------------------------------------------------------------------
 
-ping_new_client(Client, ShardId, ShardClientMgr = #{clients_by_shard := Clients}) ->
+ping_new_client(Client, Addr, ShardClientMgr = #{client_by_addr := Clients}) ->
     case hstreamdb_client:echo(Client) of
         ok ->
             {ok, Client, ShardClientMgr#{
-                clients_by_shard => Clients#{ShardId => Client}
+                client_by_addr := Clients#{Addr => Client}
             }};
         {error, Reason} ->
             ok = hstreamdb_client:stop(Client),

@@ -185,20 +185,39 @@ send_responses(#{batch_tab := BatchTab} = Buffer, BatchRef, Response) ->
 send_responses_to_records(_Buffer, [], _Response, _Now) ->
     ok;
 %% nobody waits for this response
-send_responses_to_records(Buffer, [#{deadline := Deadline} | Records], Response, Now) when
+send_responses_to_records(Buffer, [#{deadline := Deadline} | Records], {ok, [_ | Rest]}, Now) when
     Deadline < Now
 ->
-    send_responses_to_records(Buffer, Records, Response, Now);
-send_responses_to_records(Buffer, [#{from := From} | Records], Response, Now) when
+    send_responses_to_records(Buffer, Records, {ok, Rest}, Now);
+send_responses_to_records(Buffer, [#{deadline := Deadline} | Records], {error, _} = Error, Now) when
+    Deadline < Now
+->
+    send_responses_to_records(Buffer, Records, Error, Now);
+%% response to waiting clients: callback
+send_responses_to_records(Buffer, [#{from := From} | Records], {ok, [RecordResp | Rest]}, Now) when
     is_function(From)
 ->
-    _ = apply_reply_fun(From, [Response]),
-    send_responses_to_records(Buffer, Records, Response, Now);
+    _ = apply_reply_fun(From, [RecordResp]),
+    send_responses_to_records(Buffer, Records, {ok, Rest}, Now);
+send_responses_to_records(Buffer, [#{from := From} | Records], {error, _} = Error, Now) when
+    is_function(From)
+->
+    _ = apply_reply_fun(From, [Error]),
+    send_responses_to_records(Buffer, Records, Error, Now);
+%% response to waiting clients: common callback
 send_responses_to_records(
-    #{send_reply := SendReplyFun} = Buffer, [#{from := From} | Records], Response, Now
+    #{send_reply := SendReplyFun} = Buffer,
+    [#{from := From} | Records],
+    {ok, [RecordResp | Rest]},
+    Now
 ) ->
-    _ = apply_reply_fun(SendReplyFun, [From, Response]),
-    send_responses_to_records(Buffer, Records, Response, Now).
+    _ = apply_reply_fun(SendReplyFun, [From, RecordResp]),
+    send_responses_to_records(Buffer, Records, {ok, Rest}, Now);
+send_responses_to_records(
+    #{send_reply := SendReplyFun} = Buffer, [#{from := From} | Records], {error, _} = Error, Now
+) ->
+    _ = apply_reply_fun(SendReplyFun, [From, Error]),
+    send_responses_to_records(Buffer, Records, Error, Now).
 
 estimate_batch_count(
     #{batch_size := BatchSize, batch_count := BatchCount, current_batch := CurrentBatch}, Records

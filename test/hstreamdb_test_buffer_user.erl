@@ -35,7 +35,8 @@
 ]).
 
 -record(st, {
-    buffer :: hstreamdb_buffer:hstreamdb_buffer()
+    buffer :: hstreamdb_buffer:hstreamdb_buffer(),
+    tab :: ets:tab()
 }).
 
 -define(DEFAULT_FLUSH_INTERVAL, 10).
@@ -53,7 +54,7 @@ start_link(Tab) ->
     gen_server:start_link(?MODULE, [Tab], []).
 
 init([Tab]) ->
-    {ok, #st{buffer = new_buffer(Tab)}}.
+    {ok, #st{buffer = new_buffer(Tab), tab = Tab}}.
 
 append(Pid, N, Rec) ->
     gen_server:cast(Pid, {append, {self(), N}, Rec}).
@@ -92,12 +93,14 @@ handle_cast(flush, #st{buffer = Buffer} = St) ->
 handle_info({buffer_event, Event}, #st{buffer = Buffer} = St) ->
     NewBuffer = hstreamdb_buffer:handle_event(Buffer, Event),
     {noreply, St#st{buffer = NewBuffer}};
-handle_info({send_batch, #{batch_ref := Ref}}, #st{buffer = Buffer} = St) ->
+handle_info({send_batch, #{batch_ref := Ref}}, #st{buffer = Buffer, tab = Tab} = St) ->
     case need_lose_batch() of
         true ->
             {noreply, St};
         false ->
-            NewBuffer = hstreamdb_buffer:handle_batch_response(Buffer, Ref, ok),
+            [{_, Batch}] = ets:lookup(Tab, Ref),
+            Responses = lists:map(fun(_) -> ok end, Batch),
+            NewBuffer = hstreamdb_buffer:handle_batch_response(Buffer, Ref, {ok, Responses}),
             {noreply, St#st{buffer = NewBuffer}}
     end.
 

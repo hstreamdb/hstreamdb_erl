@@ -9,7 +9,7 @@ ct: $(REBAR)
 
 .PHONY: ct-suite
 ct-suite: $(REBAR)
-	$(REBAR) ct --name 'test@127.0.0.1' --readable true -v -c --suite $(SUITE)
+	$(REBAR) ct --name 'test@127.0.0.1' --readable true -v --suite $(SUITE)
 
 .PHONY: cover
 cover: ct
