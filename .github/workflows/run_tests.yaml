@@ -19,6 +19,9 @@ jobs:
     - uses: erlef/setup-beam@v1
       with:
         otp-version: ${{ matrix.otp_release }}
+    - name: check formatting
+      run: |
+        make fmt-check
     - name: stop containers
       run: |
         docker rm -f $(docker ps -qa) || true
@@ -32,9 +35,6 @@ jobs:
     - name: run xref
       run: |
         make xref
-    - name: check formatting
-      run: |
-        make fmt-check
     - name: docker compose down
       run: |
         make -C ./.ci down
