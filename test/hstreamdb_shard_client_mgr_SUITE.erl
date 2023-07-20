@@ -38,7 +38,7 @@ t_lookup_client(Config) ->
 
     Key = <<"key">>,
 
-    {ShardId, KeyMgr1} = hstreamdb_key_mgr:choose_shard(Key, KeyMgr0),
+    {ShardId, KeyMgr1} = hstreamdb_key_mgr:choose_shard(KeyMgr0, Key),
 
     {ok, ShardClient0, ShardClientMgr1} = hstreamdb_shard_client_mgr:lookup_client(
         ShardClientMgr0, ShardId

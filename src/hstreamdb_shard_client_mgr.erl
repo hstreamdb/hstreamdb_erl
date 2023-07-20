@@ -128,7 +128,7 @@ ping_new_client(Client, Addr, ShardClientMgr = #{client_by_addr := Clients}) ->
             }};
         {error, Reason} ->
             ok = hstreamdb_client:stop(Client),
-            logger:info("Echo failed for new client=~p: ~p~n", [
+            logger:info("[hstreamdb] Echo failed for new client=~p: ~p~n", [
                 Client, Reason
             ]),
             {error, Reason}

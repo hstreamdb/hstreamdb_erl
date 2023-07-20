@@ -67,13 +67,13 @@ update_shards(
 list_shards(Client, StreamName) ->
     case hstreamdb_client:list_shards(Client, StreamName) of
         {ok, Shards} ->
-            logger:info("fetched shards for stream ~p: ~p~n", [StreamName, Shards]),
+            logger:info("[hstreamdb] fetched shards for stream ~p: ~p~n", [StreamName, Shards]),
             Shards;
         {error, Error} ->
             erlang:error({cannot_list_shards, {StreamName, Error}})
     end.
 
-choose_shard(PartitioningKey, KeyMgr0) ->
+choose_shard(KeyMgr0, PartitioningKey) ->
     KeyMgr1 = update_shards(KeyMgr0),
     #{shards := Shards} = KeyMgr1,
     <<IntHash:128/big-unsigned-integer>> = crypto:hash(md5, PartitioningKey),

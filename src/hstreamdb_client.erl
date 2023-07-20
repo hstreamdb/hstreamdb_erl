@@ -42,6 +42,8 @@
 
     read_single_shard_stream/3,
 
+    read_shard_stream/3,
+
     name/1
 ]).
 
@@ -145,6 +147,9 @@ lookup_resource(Client, ResourceType, ResourceId) ->
 read_single_shard_stream(Client, StreamName, Limits) ->
     do_read_single_shard_stream(Client, StreamName, Limits).
 
+read_shard_stream(Client, ShardId, Limits) ->
+    do_read_shard_stream(Client, ShardId, Limits).
+
 %%--------------------------------------------------------------------
 %% Internal functions
 %%--------------------------------------------------------------------
@@ -227,7 +232,7 @@ do_list_shards(#{channel := Channel, grpc_timeout := Timeout}, StreamName) ->
     Options = #{channel => Channel, timeout => Timeout},
     case ?HSTREAMDB_GEN_CLIENT:list_shards(Req, Options) of
         {ok, #{shards := Shards}, _} ->
-            logger:info("fetched shards for stream ~p: ~p~n", [StreamName, Shards]),
+            logger:info("[hstreamdb] fetched shards for stream ~p: ~p~n", [StreamName, Shards]),
             {ok, Shards};
         {error, _} = Error ->
             Error
@@ -254,9 +259,12 @@ do_append(
             Options = maps:merge(#{channel => Channel, timeout => Timeout}, OptionOverrides),
             case timer:tc(fun() -> ?HSTREAMDB_GEN_CLIENT:append(NReq, Options) end) of
                 {Time, {ok, Resp, _MetaData}} ->
-                    logger:info("flush_request[~p, ~p], pid=~p, SUCCESS, ~p records in ~p ms~n", [
-                        Channel, ShardId, self(), length(Records), Time div 1000
-                    ]),
+                    logger:info(
+                        "[hstreamdb] flush_request[~p, ~p], pid=~p, SUCCESS, ~p records in ~p ms~n",
+                        [
+                            Channel, ShardId, self(), length(Records), Time div 1000
+                        ]
+                    ),
                     {ok, Resp};
                 {Time, {error, R}} ->
                     logger:error(
@@ -296,8 +304,30 @@ do_read_single_shard_stream(
     Limits = maps:get(limits, Opts, #{}),
     Req = maps:merge(Req0, map_keys([{max_read_batches, maxReadBatches}], Limits)),
     Options = #{channel => Channel, timeout => Timeout},
-    io:format("read_single_shard: Req: ~p~nOptions: ~p~n", [Req, Options]),
+    logger:debug("[hstreamdb] read_single_shard: Req: ~p~nOptions: ~p~n", [Req, Options]),
     case ?HSTREAMDB_GEN_CLIENT:read_single_shard_stream(Options) of
+        {ok, GStream} ->
+            ok = grpc_client:send(GStream, Req, fin),
+            {FoldFun, Acc} = maps:get(fold, Opts, {fun append_rec/2, []}),
+            fold_response_stream(GStream, FoldFun, Acc);
+        {error, _} = Error ->
+            Error
+    end.
+
+do_read_shard_stream(
+    #{channel := Channel, grpc_timeout := Timeout},
+    ShardId,
+    Opts
+) ->
+    Req0 = #{
+        shardId => ShardId,
+        readerId => integer_to_binary(erlang:unique_integer([positive]))
+    },
+    Limits = maps:get(limits, Opts, #{}),
+    Req = maps:merge(Req0, map_keys([{max_read_batches, maxReadBatches}], Limits)),
+    Options = #{channel => Channel, timeout => Timeout},
+    ct:print("read_single_shard: Req: ~p~nOptions: ~p~n", [Req, Options]),
+    case ?HSTREAMDB_GEN_CLIENT:read_shard_stream(Options) of
         {ok, GStream} ->
             ok = grpc_client:send(GStream, Req, fin),
             {FoldFun, Acc} = maps:get(fold, Opts, {fun append_rec/2, []}),
@@ -433,7 +463,7 @@ zstd(Payload) ->
 fold_response_stream(GStream, Fun, Acc) ->
     case grpc_client:recv(GStream) of
         {ok, Results} ->
-            io:format("Ok recv~n"),
+            logger:debug("[hstreamdb] Ok recv~n"),
             case fold_results(Results, Fun, Acc) of
                 {ok, NewAcc} ->
                     fold_response_stream(GStream, Fun, NewAcc);
@@ -443,6 +473,7 @@ fold_response_stream(GStream, Fun, Acc) ->
                     Error
             end;
         {error, _} = Error ->
+            logger:debug("[hstreamdb] Error recv~n"),
             Error
     end.
 
@@ -469,9 +500,9 @@ fold_batch_records([Record | Rest], Fun, Acc) ->
     NewAcc = fold_batch_record(Record, Fun, Acc),
     fold_batch_records(Rest, Fun, NewAcc).
 
-fold_batch_record(#{record := _} = BatchRecord, Fun, Acc) ->
+fold_batch_record(#{record := _, recordIds := [#{batchId := BatchId} | _]} = BatchRecord, Fun, Acc) ->
     Records = decode_batch(BatchRecord),
-    io:format("Records: ~p~n", [length(Records)]),
+    logger:debug("[hstreamdb] BatchRecord, id: ~p, records: ~p~n", [BatchId, length(Records)]),
     lists:foldl(Fun, Acc, Records).
 
 decode_batch(#{

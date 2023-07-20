@@ -49,7 +49,7 @@ test_choose_shard(Client, UpdateInterval) ->
 
     {ShardIds, KeyMgr1} = lists:mapfoldl(
         fun(Key, KeyMgr) ->
-            hstreamdb_key_mgr:choose_shard(Key, KeyMgr)
+            hstreamdb_key_mgr:choose_shard(KeyMgr, Key)
         end,
         KeyMgr0,
         RandomKeys

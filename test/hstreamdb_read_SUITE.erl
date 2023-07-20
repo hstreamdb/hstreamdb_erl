@@ -48,7 +48,7 @@ end_per_testcase(_Case, Config) ->
     _ = hstreamdb_client:stop(Client),
     ok.
 
-t_read_all(Config) ->
+t_read_single_shard_stream(Config) ->
     Client = ?config(client, Config),
 
     Producer = ?FUNCTION_NAME,
@@ -62,19 +62,18 @@ t_read_all(Config) ->
     ok = hstreamdb:start_producer(Client, Producer, ProducerOptions),
 
     PartitioningKey = "PK",
-    PayloadType = raw,
 
     ok = lists:foreach(
         fun(N) ->
             Payload = term_to_binary({item, N}),
-            Record = hstreamdb:to_record(PartitioningKey, PayloadType, Payload),
+            Record = hstreamdb:to_record(PartitioningKey, raw, Payload),
             ok = hstreamdb:append(Producer, Record)
         end,
         lists:seq(1, 10000)
     ),
 
     Payload = term_to_binary({item, 10001}),
-    Record = hstreamdb:to_record(PartitioningKey, PayloadType, Payload),
+    Record = hstreamdb:to_record(PartitioningKey, raw, Payload),
     {ok, _} = hstreamdb:append_flush(Producer, Record),
 
     CM0 = hstreamdb:start_client_manager(Client),
@@ -107,6 +106,8 @@ t_read_all(Config) ->
         #{},
         Recs
     ),
+
+    % ct:print("CountsByBatchId: ~p~n", [CountsByBatchId]),
 
     ?assertEqual(
         [1 | [100 || _ <- lists:seq(1, 100)]],
@@ -153,4 +154,55 @@ t_read_all(Config) ->
     ?assertEqual(10101, length(Recs1) + length(Recs2)),
 
     ok = hstreamdb:stop_client_manager(CM1),
+    ok = hstreamdb:stop_producer(Producer).
+
+t_read_stream_key(Config) ->
+    Client = ?config(client, Config),
+
+    Producer = ?FUNCTION_NAME,
+    ProducerOptions = [
+        {pool_size, 1},
+        {writer_pool_size, 1},
+        {stream, ?config(stream_name, Config)},
+        {max_records, 10},
+        {interval, 10000}
+    ],
+    ok = hstreamdb:start_producer(Client, Producer, ProducerOptions),
+
+    ok = lists:foreach(
+        fun(PartitioningKey) ->
+            ok = lists:foreach(
+                fun(N) ->
+                    Payload = term_to_binary({item, N}),
+                    Record = hstreamdb:to_record(PartitioningKey, raw, Payload),
+                    ok = hstreamdb:append(Producer, Record)
+                end,
+                lists:seq(1, 100)
+            )
+        end,
+        ["PK0", "PK1", "PK2", "PK3"]
+    ),
+
+    Record = hstreamdb:to_record("PK", raw, <<>>),
+    {ok, _} = hstreamdb:append_flush(Producer, Record),
+
+    CM0 = hstreamdb:start_client_manager(Client),
+    KM0 = hstreamdb:start_key_manager(Client, ?config(stream_name, Config)),
+    Res0 = hstreamdb:read_stream_key(CM0, KM0, "PK1", #{
+        from => #{offset => {specialOffset, 0}},
+        until => #{offset => {specialOffset, 1}},
+        max_read_batches => 100000
+    }),
+
+    ?assertMatch(
+        {ok, _, _, _},
+        Res0
+    ),
+
+    {ok, Recs, CM1, KM1} = Res0,
+
+    ?assertEqual(100, length(Recs)),
+
+    ok = hstreamdb:stop_client_manager(CM1),
+    ok = hstreamdb:stop_key_manager(KM1),
     ok = hstreamdb:stop_producer(Producer).

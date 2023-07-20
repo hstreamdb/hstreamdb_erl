@@ -269,7 +269,7 @@ with_shart_buffer(
         key_manager = KeyManager0
     }
 ) ->
-    {ShardId, KeyManager1} = hstreamdb_key_mgr:choose_shard(PartitioningKey, KeyManager0),
+    {ShardId, KeyManager1} = hstreamdb_key_mgr:choose_shard(KeyManager0, PartitioningKey),
     {Buffer, State1} = get_shard_buffer(ShardId, State0),
     case Fun(Buffer, Record) of
         {ok, Buffer1} ->
@@ -362,8 +362,10 @@ apply_callback({M, F}, R) ->
     erlang:apply(M, F, [R]);
 apply_callback({M, F, A}, R) ->
     erlang:apply(M, F, [R | A]);
-apply_callback(F, R) ->
-    F(R).
+apply_callback(F, R) when is_function(F) ->
+    F(R);
+apply_callback(undefined, _) ->
+    ok.
 
 writer_name(ProducerName) ->
     {ProducerName, writer}.

@@ -155,7 +155,8 @@ do_write(
                 timeout => GRPCTimeout
             },
             case hstreamdb_client:append(Client, Req, Options) of
-                {ok, #{recordIds := RecordsIds}} ->
+                {ok, #{recordIds := RecordsIds} = Resp} ->
+                    ct:print("Resp: ~p~n", [Resp]),
                     Res = fill_responses(Resps, RecordsIds),
                     {{ok, Res}, State#state{client_manager = ClientMgr1}};
                 {error, _} = Error ->

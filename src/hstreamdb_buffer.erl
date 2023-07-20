@@ -367,5 +367,5 @@ apply_reply_fun(Fun, Args) ->
         apply(Fun, Args)
     catch
         Error:Reason ->
-            logger:warning("[hstreamdb]: Error in reply function: ~p:~p~n", [Error, Reason])
+            logger:warning("[hstreamdb]: Error in reply function: ~p:~p, ~p", [Error, Reason])
     end.
