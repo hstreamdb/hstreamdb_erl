@@ -34,7 +34,7 @@ start() ->
              {cacertfile, ?WS_PATH ++ "root_ca.crt"},
              {certfile, ?WS_PATH ++ "client.crt"},
              {keyfile, ?WS_PATH ++ "client.key"}]}},
-  Opts = [{url, ?SERVER_URL}, {rpc_options, GrpcOpts}],
+  Opts = #{url => ?SERVER_URL, rpc_options => GrpcOpts},
   {ok, Client} = hstreamdb_client:start(test_client, Opts),
   hstreamdb_client:echo(Client).
 ```

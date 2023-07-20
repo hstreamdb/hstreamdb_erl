@@ -19,20 +19,20 @@
 
 client() ->
     Name = "c-" ++ integer_to_list(erlang:unique_integer([positive])),
-    {ok, Client} = hstreamdb_client:start(Name, [
-        {url, "http://127.0.0.1:6570"},
-        {rpc_options, #{
+    {ok, Client} = hstreamdb_client:start(Name, #{
+        url => "http://127.0.0.1:6570",
+        rpc_options => #{
             pool_size => 3
             % gun_opts => #{
             %     transport => tls,
             %     transport_opts => [{cacertfile, CA}]
             % }
-        }},
-        {host_mapping, #{
+        },
+        host_mapping => #{
             <<"10.5.0.4">> => <<"127.0.0.1">>,
             <<"10.5.0.5">> => <<"127.0.0.1">>
-        }}
-    ]),
+        }
+    }),
     logger:debug("[hstreamdb] start client  ~p~n", [Client]),
     Client.
 

@@ -107,8 +107,6 @@ t_read_single_shard_stream(Config) ->
         Recs
     ),
 
-    % ct:print("CountsByBatchId: ~p~n", [CountsByBatchId]),
-
     ?assertEqual(
         [1 | [100 || _ <- lists:seq(1, 100)]],
         lists:sort(maps:values(CountsByBatchId))
@@ -157,6 +155,8 @@ t_read_single_shard_stream(Config) ->
     ok = hstreamdb:stop_producer(Producer).
 
 t_read_stream_key(Config) ->
+    %% Prepare records
+
     Client = ?config(client, Config),
 
     Producer = ?FUNCTION_NAME,
@@ -186,23 +186,31 @@ t_read_stream_key(Config) ->
     Record = hstreamdb:to_record("PK", raw, <<>>),
     {ok, _} = hstreamdb:append_flush(Producer, Record),
 
-    CM0 = hstreamdb:start_client_manager(Client),
-    KM0 = hstreamdb:start_key_manager(Client, ?config(stream_name, Config)),
-    Res0 = hstreamdb:read_stream_key(CM0, KM0, "PK1", #{
+    %% Read records
+
+    ReaderOptions = #{
+        mgr_client_options => hstreamdb_test_helpers:default_options(),
+        stream => ?config(stream_name, Config)
+    },
+
+    Reader = "reader_" ++ atom_to_list(?FUNCTION_NAME),
+    ok = hstreamdb:start_reader(Reader, [{pool_size, 5}, {reader_options, ReaderOptions}]),
+
+    Limits = #{
         from => #{offset => {specialOffset, 0}},
         until => #{offset => {specialOffset, 1}},
         max_read_batches => 100000
-    }),
+    },
+
+    Res0 = hstreamdb:read_stream_key(Reader, "PK1", Limits),
 
     ?assertMatch(
-        {ok, _, _, _},
+        {ok, _},
         Res0
     ),
 
-    {ok, Recs, CM1, KM1} = Res0,
+    {ok, Recs} = Res0,
 
     ?assertEqual(100, length(Recs)),
 
-    ok = hstreamdb:stop_client_manager(CM1),
-    ok = hstreamdb:stop_key_manager(KM1),
-    ok = hstreamdb:stop_producer(Producer).
+    ok = hstreamdb:stop_reader(Reader).

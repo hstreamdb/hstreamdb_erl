@@ -24,18 +24,35 @@
     client/1
 ]).
 
+-export_type([t/0, options/0]).
+
 -define(DEFAULT_OPTS, #{
     cache_by_shard_id => false,
     client_override_opts => #{}
 }).
 
+-type options() :: #{
+    cache_by_shard_id => boolean(),
+    client_override_opts => grpc_client_sup:options()
+}.
+
+-opaque t() :: #{
+    client_by_addr := #{},
+    addr_by_shard := #{},
+    client_override_opts := grpc_client_sup:options(),
+    cache_by_shard_id := boolean(),
+    client := hstreamdb:client()
+}.
+
 %%--------------------------------------------------------------------
 %% API
 %%--------------------------------------------------------------------
 
+-spec start(hstreamdb:client()) -> t().
 start(Client) ->
     start(Client, ?DEFAULT_OPTS).
 
+-spec start(hstreamdb:client(), options()) -> t().
 start(Client, Opts0) ->
     Opts1 = maps:merge(?DEFAULT_OPTS, maps:with(maps:keys(?DEFAULT_OPTS), Opts0)),
     maps:merge(
@@ -47,12 +64,14 @@ start(Client, Opts0) ->
         Opts1
     ).
 
+-spec stop(t()) -> ok.
 stop(#{client_by_addr := Clients}) ->
     lists:foreach(
         fun hstreamdb_client:stop/1,
         maps:values(Clients)
     ).
 
+-spec lookup_client(t(), hstreamdb:shard_id()) -> {ok, hstreamdb:client()} | {error, term()}.
 lookup_client(
     ShardClientMgr0 = #{
         addr_by_shard := Addrs,
@@ -72,6 +91,27 @@ lookup_client(
                     Error
             end
     end.
+
+-spec bad_shart_client(t(), hstreamdb:client()) -> t().
+bad_shart_client(ShardClientMgr = #{client_by_addr := Clients}, ShardClient) ->
+    NewClents = maps:filter(
+        fun(_Addr, Client) ->
+            hstreamdb_client:name(Client) =/= hstreamdb_client:name(ShardClient)
+        end,
+        Clients
+    ),
+    ok = hstreamdb_client:stop(ShardClient),
+    ShardClientMgr#{
+        client_by_addr := NewClents
+    }.
+
+-spec client(t()) -> hstreamdb:client().
+client(#{client := Client}) ->
+    Client.
+
+%%--------------------------------------------------------------------
+%% Internal functions
+%%--------------------------------------------------------------------
 
 cache_shard_addr(#{cache_by_shard_id := false} = ShardClientMgr, _ShardId, _Addr) ->
     ShardClientMgr;
@@ -100,21 +140,6 @@ client_by_addr(
                     Error
             end
     end.
-
-bad_shart_client(ShardClientMgr = #{client_by_addr := Clients}, ShardClient) ->
-    NewClents = maps:filter(
-        fun(_Addr, Client) ->
-            hstreamdb_client:name(Client) =/= hstreamdb_client:name(ShardClient)
-        end,
-        Clients
-    ),
-    ok = hstreamdb_client:stop(ShardClient),
-    ShardClientMgr#{
-        client_by_addr := NewClents
-    }.
-
-client(#{client := Client}) ->
-    Client.
 
 %%--------------------------------------------------------------------
 %% Internal functions

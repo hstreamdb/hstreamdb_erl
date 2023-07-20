@@ -42,7 +42,7 @@ test_choose_shard(Client, UpdateInterval) ->
     KeyMgr0 = hstreamdb_key_mgr:start(
         Client,
         "stream1",
-        [{shard_update_interval, UpdateInterval}]
+        #{shard_update_interval => UpdateInterval}
     ),
 
     RandomKeys = [integer_to_binary(rand:uniform(999999)) || _ <- lists:seq(1, 100)],

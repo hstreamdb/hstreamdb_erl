@@ -7,14 +7,14 @@
     pool_size => 3
 }).
 
--define(CLIENT_OPTIONS, [
-    {url, "http://127.0.0.1:6570"},
-    {rpc_options, ?RPC_OPTIONS},
-    {host_mapping, #{
+-define(CLIENT_OPTIONS, #{
+    url => "http://127.0.0.1:6570",
+    rpc_options => ?RPC_OPTIONS,
+    host_mapping => #{
         <<"10.5.0.4">> => <<"127.0.0.1">>,
         <<"10.5.0.5">> => <<"127.0.0.1">>
-    }}
-]).
+    }
+}).
 
 test_cases(Mod) ->
     [
@@ -27,8 +27,8 @@ default_options() ->
     ?CLIENT_OPTIONS.
 
 client(Name) ->
-    client(Name, []).
+    client(Name, #{}).
 
 client(Name, Opts) ->
-    {ok, Client} = hstreamdb_client:start(Name, Opts ++ ?CLIENT_OPTIONS),
+    {ok, Client} = hstreamdb_client:start(Name, maps:merge(?CLIENT_OPTIONS, Opts)),
     Client.

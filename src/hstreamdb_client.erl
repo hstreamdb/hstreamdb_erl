@@ -21,6 +21,7 @@
 -include("hstreamdb.hrl").
 
 -export([
+    start/1,
     start/2,
     stop/1,
 
@@ -43,16 +44,38 @@
     read_single_shard_stream/3,
 
     read_shard_stream/3,
+    fold_shard_read_gstream/3,
 
     name/1
 ]).
+
+-export_type([
+    t/0,
+    name/0,
+    options/0
+]).
+
+-opaque t() :: #{}.
+
+-type name() :: atom() | string() | binary().
+
+-type options() :: #{
+    url := binary() | string(),
+    rpc_options := grpc_client_sup:options(),
+    host_mapping => #{binary() => binary()},
+    grpc_timeout => pos_integer(),
+    reap_channel => boolean()
+}.
 
 %%--------------------------------------------------------------------
 %% API functions
 %%--------------------------------------------------------------------
 
-start(Name, Options) when is_list(Options) ->
-    start(Name, maps:from_list(Options));
+-spec start(options()) -> {ok, t()} | {error, term()}.
+start(Options) ->
+    start(random_name(), Options).
+
+-spec start(name(), options()) -> {ok, t()} | {error, term()}.
 start(Name, Options) ->
     ServerURL = maps:get(url, Options),
     RPCOptions = maps:get(rpc_options, Options),
@@ -81,9 +104,14 @@ start(Name, Options) ->
             Error
     end.
 
+-spec connect(t(), inet:hostname() | inet:ip_address(), inet:port_number()) ->
+    {ok, t()} | {error, term()}.
 connect(Client, Host, Port) ->
     connect(Client, Host, Port, #{}).
 
+-spec connect(
+    t(), inet:hostname() | inet:ip_address(), inet:port_number(), grpc_client_sup:options()
+) -> {ok, t()} | {error, term()}.
 connect(
     #{url_map := ServerURLMap, rpc_options := RPCOptions, reap_channel := ReapChannel} = Client,
     Host0,
@@ -106,6 +134,7 @@ connect(
             {error, Reason}
     end.
 
+-spec stop(t()) -> ok.
 stop(#{channel := Channel}) ->
     grpc_client_sup:stop_channel_pool(Channel),
     ok = unregister_channel(Channel);
@@ -114,6 +143,7 @@ stop(Name) ->
     grpc_client_sup:stop_channel_pool(Channel),
     ok = unregister_channel(Channel).
 
+-spec name(t()) -> name().
 name(#{channel := Channel}) ->
     Channel.
 
@@ -309,7 +339,7 @@ do_read_single_shard_stream(
         {ok, GStream} ->
             ok = grpc_client:send(GStream, Req, fin),
             {FoldFun, Acc} = maps:get(fold, Opts, {fun append_rec/2, []}),
-            fold_response_stream(GStream, FoldFun, Acc);
+            fold_shard_read_gstream(GStream, FoldFun, Acc);
         {error, _} = Error ->
             Error
     end.
@@ -317,21 +347,18 @@ do_read_single_shard_stream(
 do_read_shard_stream(
     #{channel := Channel, grpc_timeout := Timeout},
     ShardId,
-    Opts
+    Limits
 ) ->
     Req0 = #{
         shardId => ShardId,
         readerId => integer_to_binary(erlang:unique_integer([positive]))
     },
-    Limits = maps:get(limits, Opts, #{}),
     Req = maps:merge(Req0, map_keys([{max_read_batches, maxReadBatches}], Limits)),
     Options = #{channel => Channel, timeout => Timeout},
-    ct:print("read_single_shard: Req: ~p~nOptions: ~p~n", [Req, Options]),
     case ?HSTREAMDB_GEN_CLIENT:read_shard_stream(Options) of
         {ok, GStream} ->
             ok = grpc_client:send(GStream, Req, fin),
-            {FoldFun, Acc} = maps:get(fold, Opts, {fun append_rec/2, []}),
-            fold_response_stream(GStream, FoldFun, Acc);
+            {ok, GStream};
         {error, _} = Error ->
             Error
     end.
@@ -460,13 +487,13 @@ zstd(Payload) ->
         R -> {ok, R}
     end.
 
-fold_response_stream(GStream, Fun, Acc) ->
+fold_shard_read_gstream(GStream, Fun, Acc) ->
     case grpc_client:recv(GStream) of
         {ok, Results} ->
             logger:debug("[hstreamdb] Ok recv~n"),
             case fold_results(Results, Fun, Acc) of
                 {ok, NewAcc} ->
-                    fold_response_stream(GStream, Fun, NewAcc);
+                    fold_shard_read_gstream(GStream, Fun, NewAcc);
                 {stop, NewAcc} ->
                     {ok, NewAcc};
                 {error, _} = Error ->
@@ -528,3 +555,7 @@ decode_payload(Payload, 'Zstd') ->
         {error, Error} -> error({zstd, Error});
         Bin when is_binary(Bin) -> Bin
     end.
+
+random_name() ->
+    "hstreandb-client-" ++ integer_to_list(erlang:system_time()) ++ "-" ++
+        integer_to_list(erlang:unique_integer([positive])).

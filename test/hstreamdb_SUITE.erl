@@ -39,13 +39,13 @@ t_start_client_error(_Config) ->
 
     ?assertMatch(
         {error, _},
-        hstreamdb_client:start(test_c2, lists:keyreplace(url, 1, ClientOptions, {url, "#badurl#"}))
+        hstreamdb_client:start(test_c2, ClientOptions#{url => "#badurl#"})
     ),
 
     ?assertMatch(
         {error, _},
         hstreamdb_client:start(
-            test_c2, lists:keyreplace(url, 1, ClientOptions, {url, "http://#badurl#"})
+            test_c2, ClientOptions#{url => "http://#badurl#"}
         )
     ).
 
@@ -119,7 +119,7 @@ t_client_with_reaped_channel(_Config) ->
 t_client_with_not_reaped_channel(_Config) ->
     Self = self(),
     _ = spawn_link(fun() ->
-        Self ! {client, hstreamdb_test_helpers:client(reaped_client, [{reap_channel, false}])}
+        Self ! {client, hstreamdb_test_helpers:client(reaped_client, #{reap_channel => false})}
     end),
     Client =
         receive
@@ -135,7 +135,7 @@ t_client_with_not_reaped_channel(_Config) ->
 t_double_reap(_Config) ->
     Self = self(),
     _ = spawn_link(fun() ->
-        C = hstreamdb_test_helpers:client(reaped_client, [{reap_channel, false}]),
+        C = hstreamdb_test_helpers:client(reaped_client, #{reap_channel => false}),
         ok = grpc_client_sup:stop_channel_pool("reaped_client"),
         Self ! {client, C}
     end),

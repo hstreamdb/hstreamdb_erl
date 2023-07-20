@@ -24,17 +24,31 @@
 
 -export([choose_shard/2]).
 
+-export_type([t/0]).
+
 -define(DEFAULT_SHARD_UPDATE_INTERVAL, 3000000).
 
-start(Client, StreamName) ->
-    start(Client, StreamName, []).
+-opaque t() :: #{}.
 
+-type options() :: #{
+    shard_update_interval => pos_integer()
+}.
+
+%%--------------------------------------------------------------------
+%% API
+%%--------------------------------------------------------------------
+
+-spec start(hstreamdb:client(), hstreamdb:stream()) -> t().
+start(Client, StreamName) ->
+    start(Client, StreamName, #{}).
+
+-spec start(hstreamdb:client(), hstreamdb:stream(), options()) -> t().
 start(Client, StreamName, Options) ->
     #{
         client => Client,
         stream => StreamName,
         shards => undefined,
-        shard_update_interval => proplists:get_value(
+        shard_update_interval => maps:get(
             shard_update_interval,
             Options,
             ?DEFAULT_SHARD_UPDATE_INTERVAL
@@ -42,8 +56,32 @@ start(Client, StreamName, Options) ->
         shard_update_deadline => erlang:monotonic_time(millisecond)
     }.
 
+-spec stop(t()) -> ok.
 stop(#{}) ->
     ok.
+
+choose_shard(KeyMgr0, PartitioningKey) ->
+    KeyMgr1 = update_shards(KeyMgr0),
+    #{shards := Shards} = KeyMgr1,
+    <<IntHash:128/big-unsigned-integer>> = crypto:hash(md5, PartitioningKey),
+    [#{shardId := ShardId}] =
+        lists:filter(
+            fun(
+                #{
+                    startHashRangeKey := SHRK,
+                    endHashRangeKey := EHRK
+                }
+            ) ->
+                IntHash >= binary_to_integer(SHRK) andalso
+                    IntHash =< binary_to_integer(EHRK)
+            end,
+            Shards
+        ),
+    {ShardId, KeyMgr1}.
+
+%%--------------------------------------------------------------------
+%% Internal functions
+%%--------------------------------------------------------------------
 
 update_shards(
     #{
@@ -72,22 +110,3 @@ list_shards(Client, StreamName) ->
         {error, Error} ->
             erlang:error({cannot_list_shards, {StreamName, Error}})
     end.
-
-choose_shard(KeyMgr0, PartitioningKey) ->
-    KeyMgr1 = update_shards(KeyMgr0),
-    #{shards := Shards} = KeyMgr1,
-    <<IntHash:128/big-unsigned-integer>> = crypto:hash(md5, PartitioningKey),
-    [#{shardId := ShardId}] =
-        lists:filter(
-            fun(
-                #{
-                    startHashRangeKey := SHRK,
-                    endHashRangeKey := EHRK
-                }
-            ) ->
-                IntHash >= binary_to_integer(SHRK) andalso
-                    IntHash =< binary_to_integer(EHRK)
-            end,
-            Shards
-        ),
-    {ShardId, KeyMgr1}.

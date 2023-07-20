@@ -14,10 +14,10 @@
 %% limitations under the License.
 %%
 %% @doc
-%% Supervisor for all producers
+%% Supervisor for reader
 %%--------------------------------------------------------------------
 
--module(hstreamdb_producer_sup).
+-module(hstreamdb_reader_sup).
 
 -include("hstreamdb.hrl").
 
@@ -26,39 +26,29 @@
 -export([start_link/2, spec/2, child_id/1]).
 -export([init/1]).
 
-start_link(Producer, Opts) ->
-    supervisor:start_link(?MODULE, [Producer, Opts]).
+start_link(Reader, Opts) ->
+    supervisor:start_link(?MODULE, [Reader, Opts]).
 
-init([Producer, Opts]) ->
+init([Reader, Opts]) ->
     ChildSpecs = [
-        buffer_pool_spec(Producer, Opts),
-        writer_pool_spec(Producer, Opts),
-        terminator_spec(Producer, Opts)
+        pool_spec(Reader, Opts)
     ],
     {ok, {#{strategy => one_for_one, intensity => 5, period => 30}, ChildSpecs}}.
 
-buffer_pool_spec(Producer, Opts) ->
-    BufferOpts = [{producer_name, Producer} | Opts],
-    ecpool_spec(Producer, hstreamdb_producer, BufferOpts).
+pool_spec(Reader, Opts) ->
+    ecpool_spec(Reader, hstreamdb_reader, Opts).
 
-writer_pool_spec(Producer, Opts) ->
-    WriterPoolSise = proplists:get_value(
-        writer_pool_size, Opts, ?DEFAULT_WRITER_POOL_SIZE
-    ),
-    WriterOptions = [{pool_size, WriterPoolSise} | proplists:delete(pool_size, Opts)],
-    ecpool_spec(hstreamdb_producer:writer_name(Producer), hstreamdb_batch_writer, WriterOptions).
-
-spec(Producer, Opts) ->
+spec(Reader, Opts) ->
     #{
-        id => child_id(Producer),
-        start => {?MODULE, start_link, [Producer, Opts]},
+        id => child_id(Reader),
+        start => {?MODULE, start_link, [Reader, Opts]},
         restart => permanent,
         shutdown => infinity,
         type => supervisor
     }.
 
-child_id(Producer) ->
-    {?MODULE, Producer}.
+child_id(Reader) ->
+    {?MODULE, Reader}.
 
 ecpool_spec(Pool, Mod, Opts) ->
     #{
@@ -67,17 +57,4 @@ ecpool_spec(Pool, Mod, Opts) ->
         restart => transient,
         shutdown => infinity,
         type => supervisor
-    }.
-
-terminator_spec(Producer, Opts) ->
-    StopTimeout = proplists:get_value(stop_timeout, Opts, ?DEFAULT_STOP_TIMEOUT),
-    #{
-        id => terminator,
-        start =>
-            {hstreamdb_producer_terminator, start_link, [
-                #{producer => Producer, timeout => StopTimeout}
-            ]},
-        restart => permanent,
-        shutdown => StopTimeout + 1000,
-        type => worker
     }.
