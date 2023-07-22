@@ -85,14 +85,18 @@ t_start_stop_producer(Config) ->
 
     _ = hstreamdb_client:create_stream(Client, "stream2", 2, ?DAY, 5),
 
-    ProducerOptions = [
-        {pool_size, 4},
-        {stream, "stream2"},
-        {callback, fun(_) -> ok end},
-        {max_records, 1000},
-        {interval, 1000}
-    ],
-    ok = hstreamdb:start_producer(Client, test_producer, ProducerOptions),
+    ProducerOptions = #{
+        mgr_client_options => hstreamdb_test_helpers:default_options(),
+        stream => "stream2",
+        buffer_pool_size => 4,
+        buffer_options => #{
+            stream => "stream2",
+            max_records => 1000,
+            interval => 1000
+        }
+    },
+
+    ok = hstreamdb:start_producer(test_producer, ProducerOptions),
 
     ?assertEqual(
         ok,

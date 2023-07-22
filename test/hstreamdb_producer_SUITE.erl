@@ -15,6 +15,7 @@
         {producer_result, {{flush, ?STREAM, 1}, Result}} ->
             ok
     after 300 ->
+        ct:print("producer result not received~n"),
         ct:fail("producer result not received")
     end
 end).
@@ -37,20 +38,19 @@ init_per_testcase(_TestCase, Config) ->
     ok = hstreamdb_client:create_stream(Client, ?STREAM, 2, ?DAY, 5),
     [{producer_name, test_producer}, {client, Client} | Config].
 end_per_testcase(_TestCase, Config) ->
-    catch hstreamdb:stop_producer(?config(producer_name, Config)),
+    try
+         hstreamdb:stop_producer(?config(producer_name, Config))
+    catch
+        Error:Reason ->
+            ct:print("stop producer error: ~p:~p~n", [Error, Reason])
+    end,
     Client = ?config(client, Config),
     _ = hstreamdb_client:delete_stream(Client, ?STREAM),
     _ = hstreamdb_client:stop(Client),
     ok.
 
 t_start_stop(Config) ->
-    ProducerOptions = [
-        {pool_size, 4},
-        {stream, "stream1"},
-        {callback, callback()},
-        {max_records, 1000},
-        {interval, 1000}
-    ],
+    ProducerOptions = #{},
 
     ?assertEqual(
         ok,
@@ -68,12 +68,12 @@ t_start_stop(Config) ->
     ).
 
 t_flush_by_timeout(Config) ->
-    ProducerOptions = [
-        {stream, ?STREAM},
-        {callback, callback()},
-        {max_records, 10000},
-        {interval, 100}
-    ],
+    ProducerOptions = #{
+        buffer_options => #{
+            max_records => 10000,
+            interval => 100
+        }
+    },
 
     ok = start_producer(Config, ProducerOptions),
 
@@ -85,12 +85,12 @@ t_flush_by_timeout(Config) ->
     ?assertOkResult().
 
 t_flush_explicit(Config) ->
-    ProducerOptions = [
-        {stream, ?STREAM},
-        {callback, callback()},
-        {max_records, 10000},
-        {interval, 10000}
-    ],
+    ProducerOptions = #{
+        buffer_options => #{
+            max_records => 10000,
+            interval => 10000
+        }
+    },
 
     ok = start_producer(Config, ProducerOptions),
 
@@ -104,14 +104,15 @@ t_flush_explicit(Config) ->
     ?assertOkResult().
 
 t_append_flush_no_callback(Config) ->
-    ProducerOptions = [
-        {stream, ?STREAM},
-        {callback, fun(_Result) ->
-            ct:fail("callback should not be called for append_flush")
-        end},
-        {max_records, 10000},
-        {interval, 10000}
-    ],
+    ProducerOptions = #{
+        buffer_options => #{
+            max_records => 10000,
+            interval => 10000,
+            callback => fun(_Result) ->
+                ct:fail("callback should not be called for append_flush")
+            end
+        }
+    },
 
     ok = start_producer(Config, ProducerOptions),
 
@@ -121,13 +122,13 @@ t_append_flush_no_callback(Config) ->
     ).
 
 t_flush_by_limit(Config) ->
-    ProducerOptions = [
-        {pool_size, 1},
-        {stream, ?STREAM},
-        {callback, callback()},
-        {max_records, 20},
-        {interval, 10000}
-    ],
+    ProducerOptions = #{
+        buffer_pool_size => 1,
+        buffer_options => #{
+            max_records => 20,
+            interval => 10000
+        }
+    },
 
     ok = start_producer(Config, ProducerOptions),
 
@@ -143,13 +144,13 @@ t_flush_by_limit(Config) ->
     ok = assert_ok_flush_result(20).
 
 t_append(Config) ->
-    ProducerOptions = [
-        {pool_size, 1},
-        {stream, ?STREAM},
-        {callback, callback()},
-        {max_records, 10000},
-        {interval, 10000}
-    ],
+    ProducerOptions = #{
+        buffer_pool_size => 1,
+        buffer_options => #{
+            max_records => 10000,
+            interval => 10000
+        }
+    },
 
     ok = start_producer(Config, ProducerOptions),
 
@@ -165,14 +166,14 @@ t_append(Config) ->
     ok = assert_ok_flush_result(100).
 
 t_overflooded(Config) ->
-    ProducerOptions = [
-        {pool_size, 1},
-        {stream, ?STREAM},
-        {callback, callback()},
-        {max_records, 1},
-        {max_batches, 1},
-        {interval, 10000}
-    ],
+    ProducerOptions = #{
+        buffer_pool_size => 1,
+        buffer_options => #{
+            max_records => 1,
+            max_batches => 1,
+            interval => 10000
+        }
+    },
 
     ok = start_producer(Config, ProducerOptions),
 
@@ -189,15 +190,15 @@ t_overflooded(Config) ->
     ).
 
 t_batch_reap(Config) ->
-    ProducerOptions = [
-        {pool_size, 1},
-        {stream, ?STREAM},
-        {callback, callback()},
-        {max_records, 100},
-        {max_batches, 100},
-        {batch_reap_timeout, 0},
-        {interval, 10000}
-    ],
+    ProducerOptions = #{
+        buffer_pool_size => 1,
+        buffer_options => #{
+            max_records => 100,
+            max_batches => 100,
+            interval => 10000,
+            batch_reap_timeout => 0
+        }
+    },
 
     ok = start_producer(Config, ProducerOptions),
 
@@ -208,14 +209,15 @@ t_batch_reap(Config) ->
     ?assertResult({error, timeout}).
 
 t_append_flush(Config) ->
-    ProducerOptions = [
-        {pool_size, 1},
-        {stream, ?STREAM},
-        {callback, callback()},
-        {max_records, 1},
-        {max_batches, 10},
-        {interval, 10000}
-    ],
+    ProducerOptions = #{
+        buffer_pool_size => 1,
+        buffer_options => #{
+            pool_size => 1,
+            max_records => 1,
+            max_batches => 10,
+            interval => 10000
+        }
+    },
 
     ok = start_producer(Config, ProducerOptions),
 
@@ -237,14 +239,14 @@ t_append_flush(Config) ->
     ).
 
 t_append_sync(Config) ->
-    ProducerOptions = [
-        {pool_size, 1},
-        {stream, ?STREAM},
-        {callback, callback()},
-        {max_records, 10},
-        {max_batches, 10},
-        {interval, 500}
-    ],
+    ProducerOptions = #{
+        buffer_pool_size => 1,
+        buffer_options => #{
+            max_records => 10,
+            max_batches => 10,
+            interval => 500
+        }
+    },
 
     ok = start_producer(Config, ProducerOptions),
 
@@ -262,14 +264,14 @@ t_append_sync(Config) ->
     ).
 
 t_graceful_stop(Config) ->
-    ProducerOptions = [
-        {pool_size, 5},
-        {stream, ?STREAM},
-        {callback, callback()},
-        {max_records, 1000},
-        {max_batches, 10},
-        {interval, 1000}
-    ],
+    ProducerOptions = #{
+        buffer_pool_size => 5,
+        buffer_options => #{
+            max_records => 1000,
+            max_batches => 10,
+            interval => 1000
+        }
+    },
 
     ok = start_producer(Config, ProducerOptions),
 
@@ -287,12 +289,12 @@ t_graceful_stop(Config) ->
     assert_ok_flush_result(N).
 
 t_append_gzip(Config) ->
-    ProducerOptions = [
-        {pool_size, 1},
-        {stream, ?STREAM},
-        {callback, callback()},
-        {compression_type, gzip}
-    ],
+    ProducerOptions = #{
+        buffer_pool_size => 1,
+        buffer_options => #{
+            compression_type => gzip
+        }
+    },
 
     ok = start_producer(Config, ProducerOptions),
 
@@ -309,12 +311,12 @@ t_append_gzip(Config) ->
     ).
 
 t_append_zstd(Config) ->
-    ProducerOptions = [
-        {pool_size, 1},
-        {stream, ?STREAM},
-        {callback, callback()},
-        {compression_type, zstd}
-    ],
+    ProducerOptions = #{
+        buffer_pool_size => 1,
+        buffer_options => #{
+            compression_type => zstd
+        }
+    },
 
     ok = start_producer(Config, ProducerOptions),
 
@@ -335,8 +337,16 @@ t_append_zstd(Config) ->
 %%--------------------------------------------------------------------
 
 start_producer(Config, Options) ->
-    Client = ?config(client, Config),
-    hstreamdb:start_producer(Client, ?config(producer_name, Config), Options).
+    BufferOptions0 = maps:get(buffer_options, Options, #{}),
+    BufferOptions = maps:merge(#{callback => callback()}, BufferOptions0),
+    Options0 = #{
+        mgr_client_options => hstreamdb_test_helpers:default_options(),
+        stream => ?STREAM
+    },
+    Options1 = maps:merge(Options0, Options),
+    Options2 = Options1#{buffer_options => BufferOptions},
+
+    hstreamdb:start_producer(?config(producer_name, Config), Options2).
 
 sample_record() ->
     PartitioningKey = "PK",

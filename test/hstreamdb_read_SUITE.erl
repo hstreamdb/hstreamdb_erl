@@ -52,14 +52,17 @@ t_read_single_shard_stream(Config) ->
     Client = ?config(client, Config),
 
     Producer = ?FUNCTION_NAME,
-    ProducerOptions = [
-        {pool_size, 1},
-        {writer_pool_size, 1},
-        {stream, ?config(stream_name, Config)},
-        {max_records, 100},
-        {interval, 10000}
-    ],
-    ok = hstreamdb:start_producer(Client, Producer, ProducerOptions),
+    ProducerOptions = #{
+        buffer_pool_size => 1,
+        writer_pool_size => 1,
+        stream => ?config(stream_name, Config),
+        mgr_client_options => hstreamdb_test_helpers:default_options(),
+        buffer_options => #{
+            max_records => 100,
+            max_time => 10000
+        }
+    },
+    ok = hstreamdb:start_producer(Producer, ProducerOptions),
 
     PartitioningKey = "PK",
 
@@ -157,17 +160,19 @@ t_read_single_shard_stream(Config) ->
 t_read_stream_key(Config) ->
     %% Prepare records
 
-    Client = ?config(client, Config),
-
     Producer = ?FUNCTION_NAME,
-    ProducerOptions = [
-        {pool_size, 1},
-        {writer_pool_size, 1},
-        {stream, ?config(stream_name, Config)},
-        {max_records, 10},
-        {interval, 10000}
-    ],
-    ok = hstreamdb:start_producer(Client, Producer, ProducerOptions),
+    ProducerOptions = #{
+        buffer_pool_size => 1,
+        writer_pool_size => 1,
+        stream => ?config(stream_name, Config),
+        mgr_client_options => hstreamdb_test_helpers:default_options(),
+        buffer_options => #{
+            max_records => 10,
+            max_time => 10000
+        }
+    },
+
+    ok = hstreamdb:start_producer(Producer, ProducerOptions),
 
     ok = lists:foreach(
         fun(PartitioningKey) ->

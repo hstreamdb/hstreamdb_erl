@@ -26,27 +26,69 @@
 -export([start_link/2, spec/2, child_id/1]).
 -export([init/1]).
 
+-type options() :: #{
+    stream := hstreamdb:stream(),
+    mgr_client_options := hstreamdb_client:options(),
+    buffer_pool_size => non_neg_integer(),
+    buffer_options => hstreamdb_producer:options(),
+    writer_options => hstreamdb_batch_writer:options(),
+    writer_pool_size => non_neg_integer(),
+    stop_timeout => non_neg_integer()
+}.
+
+-spec start_link(ecpool:pool_name(), options()) -> {ok, pid()}.
 start_link(Producer, Opts) ->
     supervisor:start_link(?MODULE, [Producer, Opts]).
 
-init([Producer, Opts]) ->
+init([
+    Producer,
+    #{
+        stream := Stream,
+        mgr_client_options := MgrClientOptions
+    } = Opts
+]) ->
+    BufferPoolSize = maps:get(buffer_pool_size, Opts, ?DEFAULT_BUFFER_POOL_SIZE),
+    BufferOptions0 = maps:get(buffer_options, Opts, #{}),
+    BufferOptions = BufferOptions0#{
+        stream => Stream,
+        producer_name => Producer,
+        mgr_client_options => MgrClientOptions
+    },
+
+    WriterPoolSize = maps:get(writer_pool_size, Opts, ?DEFAULT_WRITER_POOL_SIZE),
+    WriterOptions0 = maps:get(writer_options, Opts, #{}),
+    WriterOptions = WriterOptions0#{
+        stream => Stream,
+        mgr_client_options => MgrClientOptions
+    },
+    StopTimeout = maps:get(stop_timeout, Opts, ?DEFAULT_STOP_TIMEOUT),
+
     ChildSpecs = [
-        buffer_pool_spec(Producer, Opts),
-        writer_pool_spec(Producer, Opts),
-        terminator_spec(Producer, Opts)
+        buffer_pool_spec(Producer, BufferPoolSize, BufferOptions),
+        writer_pool_spec(Producer, WriterPoolSize, WriterOptions),
+        terminator_spec(Producer, StopTimeout)
     ],
     {ok, {#{strategy => one_for_one, intensity => 5, period => 30}, ChildSpecs}}.
 
-buffer_pool_spec(Producer, Opts) ->
-    BufferOpts = [{producer_name, Producer} | Opts],
-    ecpool_spec(Producer, hstreamdb_producer, BufferOpts).
+buffer_pool_spec(Producer, PoolSize, Opts) ->
+    PoolOpts = [{pool_size, PoolSize}, {opts, Opts}],
+    ecpool_spec(Producer, hstreamdb_producer, PoolOpts).
 
-writer_pool_spec(Producer, Opts) ->
-    WriterPoolSise = proplists:get_value(
-        writer_pool_size, Opts, ?DEFAULT_WRITER_POOL_SIZE
-    ),
-    WriterOptions = [{pool_size, WriterPoolSise} | proplists:delete(pool_size, Opts)],
+writer_pool_spec(Producer, PoolSize, Opts) ->
+    WriterOptions = [{pool_size, PoolSize}, {opts, Opts}],
     ecpool_spec(hstreamdb_producer:writer_name(Producer), hstreamdb_batch_writer, WriterOptions).
+
+terminator_spec(Producer, StopTimeout) ->
+    #{
+        id => terminator,
+        start =>
+            {hstreamdb_producer_terminator, start_link, [
+                #{producer => Producer, timeout => StopTimeout}
+            ]},
+        restart => permanent,
+        shutdown => StopTimeout + 1000,
+        type => worker
+    }.
 
 spec(Producer, Opts) ->
     #{
@@ -67,17 +109,4 @@ ecpool_spec(Pool, Mod, Opts) ->
         restart => transient,
         shutdown => infinity,
         type => supervisor
-    }.
-
-terminator_spec(Producer, Opts) ->
-    StopTimeout = proplists:get_value(stop_timeout, Opts, ?DEFAULT_STOP_TIMEOUT),
-    #{
-        id => terminator,
-        start =>
-            {hstreamdb_producer_terminator, start_link, [
-                #{producer => Producer, timeout => StopTimeout}
-            ]},
-        restart => permanent,
-        shutdown => StopTimeout + 1000,
-        type => worker
     }.

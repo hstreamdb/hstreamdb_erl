@@ -43,6 +43,8 @@
     code_change/3
 ]).
 
+-export_type([options/0]).
+
 -record(state, {
     name,
     writer_name,
@@ -86,42 +88,65 @@ append_flush(Producer, {_PartitioningKey, _Record} = PKeyRecord, Timeout) ->
 %%-------------------------------------------------------------------------------------------------
 %% ecpool part
 
-connect(Options) ->
-    gen_server:start_link(?MODULE, Options, []).
+-type callback() :: {module(), atom(), [term()]} | {module(), atom()} | fun((term()) -> any()) | undefined.
+
+-type options() :: #{
+    stream := hstreamdb:stream(),
+    callback := callback(),
+    mgr_client_options := hstreamdb_client:options(),
+    producer_name := ecpool:pool_name(),
+    interval => pos_integer(),
+    batch_reap_timeout => pos_integer(),
+    max_records => pos_integer(),
+    max_batches => pos_integer(),
+    compression_type => none | gzip | zstd
+}.
+
+-spec connect(options()) -> get_server:start_ret().
+connect(PoolOptions) ->
+    Options = proplists:get_value(opts, PoolOptions),
+    gen_server:start_link(?MODULE, [Options], []).
 
 %% -------------------------------------------------------------------------------------------------
 %% gen_server part
 
-init(Options) ->
+init([Options]) ->
     _ = process_flag(trap_exit, true),
 
-    StreamName = proplists:get_value(stream, Options),
-    Callback = proplists:get_value(callback, Options),
-    Client = proplists:get_value(client, Options),
+    StreamName = maps:get(stream, Options),
+    MgrClientOptions = maps:get(mgr_client_options, Options),
+    ProducerName = maps:get(producer_name, Options),
+
+    Callback = maps:get(callback, Options, undefined),
 
     BatchTab = ets:new(?MODULE, [public]),
 
     BufferOpts = #{
-        flush_interval => proplists:get_value(interval, Options, ?DEFAULT_INTERVAL),
-        batch_timeout => proplists:get_value(
+        flush_interval => maps:get(interval, Options, ?DEFAULT_INTERVAL),
+        batch_timeout => maps:get(
             batch_reap_timeout, Options, ?DEFAULT_BATCH_REAP_TIMEOUT
         ),
-        batch_size => proplists:get_value(max_records, Options, ?DEFAULT_MAX_RECORDS),
-        batch_max_count => proplists:get_value(max_batches, Options, ?DEFAULT_MAX_BATCHES)
+        batch_size => maps:get(max_records, Options, ?DEFAULT_MAX_RECORDS),
+        batch_max_count => maps:get(max_batches, Options, ?DEFAULT_MAX_BATCHES)
     },
-    ProducerName = proplists:get_value(producer_name, Options),
-    CompressionType = proplists:get_value(compression_type, Options, none),
-    {ok, #state{
-        name = ProducerName,
-        writer_name = writer_name(ProducerName),
-        stream = StreamName,
-        compression_type = CompressionType,
-        callback = Callback,
-        batch_tab = BatchTab,
-        buffer_opts = BufferOpts,
-        buffers = #{},
-        key_manager = hstreamdb_key_mgr:start(Client, StreamName)
-    }}.
+    CompressionType = maps:get(compression_type, Options, ?DEFAULT_COMPRESSION),
+
+    case hstreamdb_client:start(MgrClientOptions) of
+        {ok, Client} ->
+            {ok, #state{
+                name = ProducerName,
+                writer_name = writer_name(ProducerName),
+                stream = StreamName,
+                compression_type = CompressionType,
+                callback = Callback,
+                batch_tab = BatchTab,
+                buffer_opts = BufferOpts,
+                buffers = #{},
+                key_manager = hstreamdb_key_mgr:start(Client, StreamName)
+            }};
+        {error, _} = Error ->
+            Error
+    end.
 
 handle_call(_Req, _From, #state{terminator = Terminator} = State) when Terminator =/= undefined ->
     {reply, {error, terminating}, State};

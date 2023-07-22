@@ -19,7 +19,7 @@
 -include("hstreamdb.hrl").
 
 -export([
-    start_producer/3,
+    start_producer/2,
     stop_producer/1,
     to_record/3,
     append/2,
@@ -102,8 +102,8 @@
 %% Producer facade
 %%--------------------------------------------------------------------
 
-start_producer(Client, Producer, ProducerOptions) ->
-    case hstreamdb_producers_sup:start(Producer, [{client, Client} | ProducerOptions]) of
+start_producer(Producer, ProducerOptions) ->
+    case hstreamdb_producers_sup:start(Producer, ProducerOptions) of
         {ok, _Pid} ->
             ok;
         {error, _} = Error ->
