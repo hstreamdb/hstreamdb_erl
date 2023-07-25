@@ -25,7 +25,8 @@
     append/2,
     append/4,
     flush/1,
-    append_flush/2
+    append_flush/2,
+    append_sync/2
 ]).
 
 -export([
@@ -136,8 +137,11 @@ append(Producer, Record) ->
 flush(Producer) ->
     hstreamdb_producer:flush(Producer).
 
-append_flush(Producer, Data) ->
-    hstreamdb_producer:append_flush(Producer, Data).
+append_flush(Producer, Record) ->
+    hstreamdb_producer:append_flush(Producer, Record).
+
+append_sync(Producer, Record) ->
+    hstreamdb_producer:append_sync(Producer, Record).
 
 %%--------------------------------------------------------------------
 %% Client Manager facade
