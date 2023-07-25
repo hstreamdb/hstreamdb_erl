@@ -43,7 +43,7 @@
     code_change/3
 ]).
 
--export_type([options/0]).
+-export_type([options/0, callback/0]).
 
 -record(state, {
     name,

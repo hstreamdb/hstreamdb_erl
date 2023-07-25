@@ -30,8 +30,10 @@ start_link(Reader, Opts) ->
     supervisor:start_link(?MODULE, [Reader, Opts]).
 
 init([Reader, Opts]) ->
+    PoolSize = maps:get(pool_size, Opts, ?DEFAULT_READER_POOL_SIZE),
+    EcpoolOpts = [{pool_size, PoolSize}, {reader_options, Opts}],
     ChildSpecs = [
-        pool_spec(Reader, Opts)
+        pool_spec(Reader, EcpoolOpts)
     ],
     {ok, {#{strategy => one_for_one, intensity => 5, period => 30}, ChildSpecs}}.
 

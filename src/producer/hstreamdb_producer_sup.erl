@@ -26,12 +26,26 @@
 -export([start_link/2, spec/2, child_id/1]).
 -export([init/1]).
 
+-type writer_options() :: #{
+    grpc_timeout => non_neg_integer()
+}.
+
+-type buffer_options() :: #{
+    callback := hstreamdb_producer:callback(),
+    producer_name := ecpool:pool_name(),
+    interval => pos_integer(),
+    batch_reap_timeout => pos_integer(),
+    max_records => pos_integer(),
+    max_batches => pos_integer(),
+    compression_type => none | gzip | zstd
+}.
+
 -type options() :: #{
     stream := hstreamdb:stream(),
     mgr_client_options := hstreamdb_client:options(),
     buffer_pool_size => non_neg_integer(),
-    buffer_options => hstreamdb_producer:options(),
-    writer_options => hstreamdb_batch_writer:options(),
+    buffer_options => buffer_options(),
+    writer_options => writer_options(),
     writer_pool_size => non_neg_integer(),
     stop_timeout => non_neg_integer()
 }.

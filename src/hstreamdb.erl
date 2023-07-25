@@ -199,9 +199,7 @@ read_single_shard_stream(ClientManager, StreamName, Limits) ->
 %% Read multiple shard stream key facade
 %%--------------------------------------------------------------------
 
--spec start_reader(ecpool:pool_name(), [
-    ecpool:option() | {reader_options, hstreamdb_reader:options()}
-]) -> ok | {error, term()}.
+-spec start_reader(ecpool:pool_name(), hstreamdb_reader:options()) -> ok | {error, term()}.
 start_reader(Name, ReaderOptions) ->
     case hstreamdb_readers_sup:start(Name, ReaderOptions) of
         {ok, _Pid} ->

@@ -195,11 +195,12 @@ t_read_stream_key(Config) ->
 
     ReaderOptions = #{
         mgr_client_options => hstreamdb_test_helpers:default_options(),
-        stream => ?config(stream_name, Config)
+        stream => ?config(stream_name, Config),
+        pool_size => 5
     },
 
     Reader = "reader_" ++ atom_to_list(?FUNCTION_NAME),
-    ok = hstreamdb:start_reader(Reader, [{pool_size, 5}, {reader_options, ReaderOptions}]),
+    ok = hstreamdb:start_reader(Reader, ReaderOptions),
 
     Limits = #{
         from => #{offset => {specialOffset, 0}},

@@ -66,7 +66,7 @@ stop(Pid) ->
     gen_server:call(Pid, stop).
 
 %% -------------------------------------------------------------------------------------------------
-%% ecpool partwsa   %%--------------------------------------------------------------------a
+%% ecpool part
 
 -type options() :: #{
     mgr_client_options := hstreamdb_client:options(),

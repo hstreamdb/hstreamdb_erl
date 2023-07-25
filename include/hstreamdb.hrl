@@ -31,6 +31,8 @@
 -define(DEFAULT_BATCH_REAP_TIMEOUT, 120000).
 -define(DEFAULT_COMPRESSION, none).
 
+-define(DEFAULT_READER_POOL_SIZE, 16).
+
 -define(DEFAULT_STOP_TIMEOUT, 5000).
 
 %% ResourseType enum
