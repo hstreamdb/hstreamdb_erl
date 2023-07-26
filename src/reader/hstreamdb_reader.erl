@@ -21,7 +21,8 @@
 -behaviour(gen_server).
 
 -export([
-    read/3
+    read/3,
+    read/4
 ]).
 
 -export([
@@ -53,6 +54,13 @@
 -spec read(ecpool:pool_name(), hstreamdb:partitioning_key(), hstreamdb:limits()) ->
     {ok, [hstreamdb:hrecord()]} | {error, term()}.
 read(Reader, Key, Limits) ->
+    read(Reader, Key, Limits, {fold_stream_key_fun(Key), []}).
+
+-spec read(ecpool:pool_name(), hstreamdb:partitioning_key(), hstreamdb:limits(), {
+    hsteamdb:reader_fold_fun(), hsteamdb:reader_fold_acc()
+}) ->
+    {ok, [hstreamdb:hrecord()]} | {error, term()}.
+read(Reader, Key, Limits, {FoldFun, InitAcc}) ->
     case
         ecpool:with_client(
             Reader,
@@ -62,7 +70,7 @@ read(Reader, Key, Limits) ->
         )
     of
         {ok, GStream} ->
-            hstreamdb_client:fold_shard_read_gstream(GStream, fold_stream_key_fun(Key), []);
+            hstreamdb_client:fold_shard_read_gstream(GStream, FoldFun, InitAcc);
         {error, _} = Error ->
             Error
     end.
@@ -159,6 +167,7 @@ do_get_gstream(
 fold_stream_key_fun(Key) ->
     BinKey = iolist_to_binary(Key),
     fun
-        (#{header := #{key := PK}} = Record, Acc) when BinKey =:= PK -> [Record | Acc];
-        (_, Acc) -> Acc
+        (#{header := #{key := PK}} = Record, Acc) when BinKey =:= PK -> {ok, [Record | Acc]};
+        (#{header := #{key := _OtherPK}}, Acc) -> {ok, Acc};
+        (eos, Acc) -> lists:reverse(Acc)
     end.

@@ -180,6 +180,9 @@ read_single_shard_stream(Client, StreamName, Limits) ->
 read_shard_stream(Client, ShardId, Limits) ->
     do_read_shard_stream(Client, ShardId, Limits).
 
+fold_shard_read_gstream(GStream, Fun, Acc) ->
+    do_fold_shard_read_gstream(GStream, Fun, Acc).
+
 %%--------------------------------------------------------------------
 %% Internal functions
 %%--------------------------------------------------------------------
@@ -339,7 +342,7 @@ do_read_single_shard_stream(
         {ok, GStream} ->
             ok = grpc_client:send(GStream, Req, fin),
             {FoldFun, Acc} = maps:get(fold, Opts, {fun append_rec/2, []}),
-            fold_shard_read_gstream(GStream, FoldFun, Acc);
+            do_fold_shard_read_gstream(GStream, FoldFun, Acc);
         {error, _} = Error ->
             Error
     end.
@@ -365,7 +368,8 @@ do_read_shard_stream(
 
 %% Helper functions
 
-append_rec(Rec, Acc) -> [Rec | Acc].
+append_rec(eos, Acc) -> lists:reverse(Acc);
+append_rec(Rec, Acc) -> {ok, [Rec | Acc]}.
 
 map_keys([], Map) ->
     Map;
@@ -487,7 +491,7 @@ zstd(Payload) ->
         R -> {ok, R}
     end.
 
-fold_shard_read_gstream(GStream, Fun, Acc) ->
+do_fold_shard_read_gstream(GStream, Fun, Acc) ->
     case grpc_client:recv(GStream) of
         {ok, Results} ->
             logger:debug("[hstreamdb] Ok recv~n"),
@@ -518,19 +522,33 @@ fold_results([Result | Rest], Fun, Acc) ->
 
 fold_result(#{receivedRecords := Records}, Fun, Acc) ->
     fold_batch_records(Records, Fun, Acc);
-fold_result({eos, _}, _Fun, Acc) ->
-    {stop, Acc}.
+fold_result({eos, _}, Fun, Acc) ->
+    {stop, Fun(eos, Acc)}.
 
 fold_batch_records([], _Fun, Acc) ->
     {ok, Acc};
 fold_batch_records([Record | Rest], Fun, Acc) ->
-    NewAcc = fold_batch_record(Record, Fun, Acc),
-    fold_batch_records(Rest, Fun, NewAcc).
+    case fold_batch_record(Record, Fun, Acc) of
+        {ok, NewAcc} ->
+            fold_batch_records(Rest, Fun, NewAcc);
+        {stop, NewAcc} ->
+            {stop, NewAcc}
+    end.
 
 fold_batch_record(#{record := _, recordIds := [#{batchId := BatchId} | _]} = BatchRecord, Fun, Acc) ->
     Records = decode_batch(BatchRecord),
     logger:debug("[hstreamdb] BatchRecord, id: ~p, records: ~p~n", [BatchId, length(Records)]),
-    lists:foldl(Fun, Acc, Records).
+    fold_hstream_records(Records, Fun, Acc).
+
+fold_hstream_records([Record | Records], Fun, Acc) ->
+    case Fun(Record, Acc) of
+        {ok, NewAcc} ->
+            fold_hstream_records(Records, Fun, NewAcc);
+        {stop, NewAcc} ->
+            {stop, NewAcc}
+    end;
+fold_hstream_records([], _Fun, Acc) ->
+    {ok, Acc}.
 
 decode_batch(#{
     record := #{payload := Payload0, compressionType := CompressionType} = _BatchRecord,

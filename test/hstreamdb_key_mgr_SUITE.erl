@@ -77,5 +77,3 @@ t_choose_shard_error(Config) ->
         {error, {cannot_list_shards, _}},
         hstreamdb_key_mgr:choose_shard(KeyMgr, <<"key">>)
     ).
-
-

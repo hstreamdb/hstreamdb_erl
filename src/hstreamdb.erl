@@ -49,7 +49,8 @@
 -export([
     start_reader/2,
     stop_reader/1,
-    read_stream_key/3
+    read_stream_key/3,
+    read_stream_key/4
 ]).
 
 -export_type([
@@ -90,6 +91,11 @@
 -type offset() :: #{offset => special_offset() | timestamp_offset() | record_offset()}.
 
 -type limits() :: #{from => offset(), until => offset(), max_read_batches => non_neg_integer()}.
+
+-type reader_fold_acc() :: term().
+-type reader_fold_fun() :: fun(
+    (hrecord() | eos, reader_fold_acc()) -> {ok, reader_fold_acc()} | {stop, reader_fold_acc()}
+).
 
 -define(DEFAULT_READ_SINGLE_SHARD_STREAM_OPTS, #{
     limits => #{
@@ -220,3 +226,10 @@ stop_reader(Name) ->
     {ok, [hstreamdb:hrecord()]} | {error, term()}.
 read_stream_key(Name, Key, Limits) ->
     hstreamdb_reader:read(Name, Key, Limits).
+
+-spec read_stream_key(ecpool:pool_name(), partitioning_key(), limits(), {
+    reader_fold_fun(), reader_fold_acc()
+}) ->
+    {ok, [hstreamdb:hrecord()]} | {error, term()}.
+read_stream_key(Name, Key, Limits, Fold) ->
+    hstreamdb_reader:read(Name, Key, Limits, Fold).
