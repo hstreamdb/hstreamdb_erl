@@ -53,12 +53,14 @@
 -spec read(ecpool:pool_name(), hstreamdb:partitioning_key(), hstreamdb:limits()) ->
     {ok, [hstreamdb:hrecord()]} | {error, term()}.
 read(Reader, Key, Limits) ->
-    case ecpool:with_client(
-        Reader,
-        fun(Pid) ->
-            gen_server:call(Pid, {get_gstream, Key, Limits})
-        end
-    ) of
+    case
+        ecpool:with_client(
+            Reader,
+            fun(Pid) ->
+                gen_server:call(Pid, {get_gstream, Key, Limits})
+            end
+        )
+    of
         {ok, GStream} ->
             hstreamdb_client:fold_shard_read_gstream(GStream, fold_stream_key_fun(Key), []);
         {error, _} = Error ->
@@ -131,21 +133,27 @@ code_change(_OldVsn, State, _Extra) ->
 do_get_gstream(
     #{key_manager := KeyManager, shard_client_manager := ShardClientManager} = State, Key, Limits
 ) ->
-    {ShardId, NewKeyManager} = hstreamdb_key_mgr:choose_shard(KeyManager, Key),
-    case hstreamdb_shard_client_mgr:lookup_client(ShardClientManager, ShardId) of
-        {ok, ShardClient, NewClientManager} ->
-            case hstreamdb_client:read_shard_stream(ShardClient, ShardId, Limits) of
-                {ok, GStream} ->
-                    {ok, GStream, State#{
-                        key_manager => NewKeyManager, shard_client_manager => NewClientManager
-                    }};
-                {error, Reason} ->
-                    {error, Reason, State#{
-                        key_manager => NewKeyManager, shard_client_manager => NewClientManager
-                    }}
+    case hstreamdb_key_mgr:choose_shard(KeyManager, Key) of
+        {ok, ShardId, NewKeyManager} ->
+            case hstreamdb_shard_client_mgr:lookup_client(ShardClientManager, ShardId) of
+                {ok, ShardClient, NewClientManager} ->
+                    case hstreamdb_client:read_shard_stream(ShardClient, ShardId, Limits) of
+                        {ok, GStream} ->
+                            {ok, GStream, State#{
+                                key_manager => NewKeyManager,
+                                shard_client_manager => NewClientManager
+                            }};
+                        {error, Reason} ->
+                            {error, Reason, State#{
+                                key_manager => NewKeyManager,
+                                shard_client_manager => NewClientManager
+                            }}
+                    end;
+                {error, _} = Error ->
+                    {error, Error, State#{key_manager => NewKeyManager}}
             end;
-        {error, _} = Error ->
-            {error, Error, State#{key_manager => NewKeyManager}}
+        {error, Reason} ->
+            {error, Reason, State}
     end.
 
 fold_stream_key_fun(Key) ->

@@ -49,7 +49,8 @@ test_choose_shard(Client, UpdateInterval) ->
 
     {ShardIds, KeyMgr1} = lists:mapfoldl(
         fun(Key, KeyMgr) ->
-            hstreamdb_key_mgr:choose_shard(KeyMgr, Key)
+            {ok, ShardId, NewKeyMgr} = hstreamdb_key_mgr:choose_shard(KeyMgr, Key),
+            {ShardId, NewKeyMgr}
         end,
         KeyMgr0,
         RandomKeys
@@ -63,3 +64,18 @@ test_choose_shard(Client, UpdateInterval) ->
     ),
 
     ok = hstreamdb_key_mgr:stop(KeyMgr1).
+
+t_choose_shard_error(Config) ->
+    Client = ?config(client, Config),
+    KeyMgr = hstreamdb_key_mgr:start(
+        Client,
+        "non-existant-stream1",
+        #{shard_update_interval => 0}
+    ),
+
+    ?assertMatch(
+        {error, {cannot_list_shards, _}},
+        hstreamdb_key_mgr:choose_shard(KeyMgr, <<"key">>)
+    ).
+
+

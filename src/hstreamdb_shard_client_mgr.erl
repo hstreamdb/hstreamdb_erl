@@ -15,6 +15,8 @@
 %%--------------------------------------------------------------------
 -module(hstreamdb_shard_client_mgr).
 
+-include("hstreamdb.hrl").
+
 -export([
     start/1,
     start/2,
@@ -83,7 +85,7 @@ lookup_client(
         #{ShardId := Addr} ->
             client_by_addr(ShardClientMgr0, Addr);
         _ ->
-            case hstreamdb_client:lookup_shard(Client, ShardId) of
+            case hstreamdb_client:lookup_resource(Client, ?RES_SHARD, integer_to_binary(ShardId)) of
                 {ok, {_Host, _Port} = Addr} ->
                     ShardClientMgr1 = cache_shard_addr(ShardClientMgr0, ShardId, Addr),
                     client_by_addr(ShardClientMgr1, Addr);

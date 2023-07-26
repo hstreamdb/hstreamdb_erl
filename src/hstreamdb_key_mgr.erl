@@ -60,24 +60,29 @@ start(Client, StreamName, Options) ->
 stop(#{}) ->
     ok.
 
+-spec choose_shard(t(), binary()) -> {ok, integer(), t()} | {error, term()}.
 choose_shard(KeyMgr0, PartitioningKey) ->
-    KeyMgr1 = update_shards(KeyMgr0),
-    #{shards := Shards} = KeyMgr1,
-    <<IntHash:128/big-unsigned-integer>> = crypto:hash(md5, PartitioningKey),
-    [#{shardId := ShardId}] =
-        lists:filter(
-            fun(
-                #{
-                    startHashRangeKey := SHRK,
-                    endHashRangeKey := EHRK
-                }
-            ) ->
-                IntHash >= binary_to_integer(SHRK) andalso
-                    IntHash =< binary_to_integer(EHRK)
-            end,
-            Shards
-        ),
-    {ShardId, KeyMgr1}.
+    case update_shards(KeyMgr0) of
+        {ok, KeyMgr1} ->
+            #{shards := Shards} = KeyMgr1,
+            <<IntHash:128/big-unsigned-integer>> = crypto:hash(md5, PartitioningKey),
+            [#{shardId := ShardId}] =
+                lists:filter(
+                    fun(
+                        #{
+                            startHashRangeKey := SHRK,
+                            endHashRangeKey := EHRK
+                        }
+                    ) ->
+                        IntHash >= binary_to_integer(SHRK) andalso
+                            IntHash =< binary_to_integer(EHRK)
+                    end,
+                    Shards
+                ),
+            {ok, ShardId, KeyMgr1};
+        {error, _} = Error ->
+            Error
+    end.
 
 %%--------------------------------------------------------------------
 %% Internal functions
@@ -94,19 +99,25 @@ update_shards(
     Now = erlang:monotonic_time(millisecond),
     case Deadline =< Now of
         true ->
-            KeyM#{
-                shards := list_shards(Client, StreamName),
-                shard_update_deadline := Now + ShardUpateInterval
-            };
+            case list_shards(Client, StreamName) of
+                {ok, Shards} ->
+                    NewKeyM = KeyM#{
+                        shards := Shards,
+                        shard_update_deadline := Now + ShardUpateInterval
+                    },
+                    {ok, NewKeyM};
+                {error, _} = Error ->
+                    Error
+            end;
         false ->
-            KeyM
+            {ok, KeyM}
     end.
 
 list_shards(Client, StreamName) ->
     case hstreamdb_client:list_shards(Client, StreamName) of
         {ok, Shards} ->
             logger:info("[hstreamdb] fetched shards for stream ~p: ~p~n", [StreamName, Shards]),
-            Shards;
+            {ok, Shards};
         {error, Error} ->
-            erlang:error({cannot_list_shards, {StreamName, Error}})
+            {error, {cannot_list_shards, {StreamName, Error}}}
     end.

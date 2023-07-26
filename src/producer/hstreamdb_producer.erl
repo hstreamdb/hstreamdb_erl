@@ -151,7 +151,7 @@ init([Options]) ->
 handle_call(_Req, _From, #state{terminator = Terminator} = State) when Terminator =/= undefined ->
     {reply, {error, terminating}, State};
 handle_call({append, PKeyRecord}, _From, State) ->
-    {Resp, NState} = with_shart_buffer(
+    {Resp, NState} = with_shard_buffer(
         PKeyRecord,
         fun(Buffer, Record) -> do_append(Buffer, Record) end,
         State
@@ -160,14 +160,14 @@ handle_call({append, PKeyRecord}, _From, State) ->
 handle_call(flush, _From, State) ->
     {reply, ok, do_flush(State)};
 handle_call({sync_req, From, {append_flush, PKeyRecord}, Timeout}, _From, State) ->
-    {Resp, NState} = with_shart_buffer(
+    {Resp, NState} = with_shard_buffer(
         PKeyRecord,
         fun(Buffer, Record) -> do_append_flush(Buffer, Record, From, Timeout) end,
         State
     ),
     {reply, Resp, NState};
 handle_call({sync_req, From, {append_sync, PKeyRecord}, Timeout}, _From, State) ->
-    {Resp, NState} = with_shart_buffer(
+    {Resp, NState} = with_shard_buffer(
         PKeyRecord,
         fun(Buffer, Record) -> do_append_sync(Buffer, Record, From, Timeout) end,
         State
@@ -287,21 +287,25 @@ send_reply(From, Response, Callback, Stream) ->
             logger:warning("[hstreamdb_producer] Unexpected From: ~p", [From])
     end.
 
-with_shart_buffer(
+with_shard_buffer(
     {PartitioningKey, Record},
     Fun,
     State0 = #state{
         key_manager = KeyManager0
     }
 ) ->
-    {ShardId, KeyManager1} = hstreamdb_key_mgr:choose_shard(KeyManager0, PartitioningKey),
-    {Buffer, State1} = get_shard_buffer(ShardId, State0),
-    case Fun(Buffer, Record) of
-        {ok, Buffer1} ->
-            State2 = set_shard_buffer(ShardId, Buffer1, State1),
-            {ok, State2#state{key_manager = KeyManager1}};
+    case hstreamdb_key_mgr:choose_shard(KeyManager0, PartitioningKey) of
+        {ok, ShardId, KeyManager1} ->
+            {Buffer, State1} = get_shard_buffer(ShardId, State0),
+            case Fun(Buffer, Record) of
+                {ok, Buffer1} ->
+                    State2 = set_shard_buffer(ShardId, Buffer1, State1),
+                    {ok, State2#state{key_manager = KeyManager1}};
+                {error, _} = Error ->
+                    {Error, State1#state{key_manager = KeyManager1}}
+            end;
         {error, _} = Error ->
-            {Error, State1#state{key_manager = KeyManager1}}
+            {Error, State0}
     end.
 
 do_append(Buffer, Record) ->

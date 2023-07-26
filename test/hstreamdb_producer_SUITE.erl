@@ -39,7 +39,7 @@ init_per_testcase(_TestCase, Config) ->
     [{producer_name, test_producer}, {client, Client} | Config].
 end_per_testcase(_TestCase, Config) ->
     try
-         hstreamdb:stop_producer(?config(producer_name, Config))
+        hstreamdb:stop_producer(?config(producer_name, Config))
     catch
         Error:Reason ->
             ct:print("stop producer error: ~p:~p~n", [Error, Reason])
@@ -330,6 +330,28 @@ t_append_zstd(Config) ->
     ?assertMatch(
         {error, _},
         hstreamdb:append_flush(producer(Config), {PKey1, Record1})
+    ).
+
+t_nonexistent_stream(Config) ->
+    ProducerOptions = #{
+        stream => "nonexistent_stream",
+        buffer_pool_size => 1,
+        buffer_options => #{
+            max_records => 10000,
+            interval => 10000
+        }
+    },
+
+    ok = start_producer(Config, ProducerOptions),
+
+    ?assertMatch(
+        {error, {cannot_list_shards, _}},
+        hstreamdb:append(producer(Config), sample_record())
+    ),
+
+    ?assertMatch(
+        {error, {cannot_list_shards, _}},
+        hstreamdb:append_sync(producer(Config), sample_record())
     ).
 
 %%--------------------------------------------------------------------
