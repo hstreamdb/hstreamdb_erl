@@ -21,8 +21,9 @@
     start/1,
     start/2,
     stop/1,
-    lookup_client/2,
-    bad_shart_client/2,
+    lookup_shard_client/2,
+    lookup_addr_client/2,
+    bad_shard_client/2,
     client/1
 ]).
 
@@ -73,8 +74,8 @@ stop(#{client_by_addr := Clients}) ->
         maps:values(Clients)
     ).
 
--spec lookup_client(t(), hstreamdb:shard_id()) -> {ok, hstreamdb:client()} | {error, term()}.
-lookup_client(
+-spec lookup_shard_client(t(), hstreamdb:shard_id()) -> {ok, hstreamdb:client(), t()} | {error, term()}.
+lookup_shard_client(
     ShardClientMgr0 = #{
         addr_by_shard := Addrs,
         client := Client
@@ -94,8 +95,12 @@ lookup_client(
             end
     end.
 
--spec bad_shart_client(t(), hstreamdb:client()) -> t().
-bad_shart_client(ShardClientMgr = #{client_by_addr := Clients}, ShardClient) ->
+-spec lookup_addr_client(t(), hstreamdb:stream()) -> {ok, hstreamdb:client(), t()} | {error, term()}.
+lookup_addr_client(ShardClientMgr, Addr) ->
+    client_by_addr(ShardClientMgr, Addr).
+
+-spec bad_shard_client(t(), hstreamdb:client()) -> t().
+bad_shard_client(ShardClientMgr = #{client_by_addr := Clients}, ShardClient) ->
     NewClents = maps:filter(
         fun(_Addr, Client) ->
             hstreamdb_client:name(Client) =/= hstreamdb_client:name(ShardClient)

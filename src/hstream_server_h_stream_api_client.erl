@@ -83,6 +83,26 @@ delete_stream(Req, Metadata, Options) ->
                            delete_stream_request, empty, <<"hstream.server.DeleteStreamRequest">>),
                       Req, Metadata, Options).
 
+-spec trim_stream(hstreamdb_api:trim_stream_request())
+    -> {ok, hstreamdb_api:empty(), grpc:metadata()}
+     | {error, term()}.
+trim_stream(Req) ->
+    trim_stream(Req, #{}, #{}).
+
+-spec trim_stream(hstreamdb_api:trim_stream_request(), grpc:options())
+    -> {ok, hstreamdb_api:empty(), grpc:metadata()}
+     | {error, term()}.
+trim_stream(Req, Options) ->
+    trim_stream(Req, #{}, Options).
+
+-spec trim_stream(hstreamdb_api:trim_stream_request(), grpc:metadata(), grpc_client:options())
+    -> {ok, hstreamdb_api:empty(), grpc:metadata()}
+     | {error, term()}.
+trim_stream(Req, Metadata, Options) ->
+    grpc_client:unary(?DEF(<<"/hstream.server.HStreamApi/TrimStream">>,
+                           trim_stream_request, empty, <<"hstream.server.TrimStreamRequest">>),
+                      Req, Metadata, Options).
+
 -spec get_stream(hstreamdb_api:get_stream_request())
     -> {ok, hstreamdb_api:get_stream_response(), grpc:metadata()}
      | {error, term()}.
@@ -221,6 +241,26 @@ list_shards(Req, Options) ->
 list_shards(Req, Metadata, Options) ->
     grpc_client:unary(?DEF(<<"/hstream.server.HStreamApi/ListShards">>,
                            list_shards_request, list_shards_response, <<"hstream.server.ListShardsRequest">>),
+                      Req, Metadata, Options).
+
+-spec trim_shard(hstreamdb_api:trim_shard_request())
+    -> {ok, hstreamdb_api:empty(), grpc:metadata()}
+     | {error, term()}.
+trim_shard(Req) ->
+    trim_shard(Req, #{}, #{}).
+
+-spec trim_shard(hstreamdb_api:trim_shard_request(), grpc:options())
+    -> {ok, hstreamdb_api:empty(), grpc:metadata()}
+     | {error, term()}.
+trim_shard(Req, Options) ->
+    trim_shard(Req, #{}, Options).
+
+-spec trim_shard(hstreamdb_api:trim_shard_request(), grpc:metadata(), grpc_client:options())
+    -> {ok, hstreamdb_api:empty(), grpc:metadata()}
+     | {error, term()}.
+trim_shard(Req, Metadata, Options) ->
+    grpc_client:unary(?DEF(<<"/hstream.server.HStreamApi/TrimShard">>,
+                           trim_shard_request, empty, <<"hstream.server.TrimShardRequest">>),
                       Req, Metadata, Options).
 
 -spec create_shard_reader(hstreamdb_api:create_shard_reader_request())
@@ -363,6 +403,20 @@ read_single_shard_stream(Options) ->
 read_single_shard_stream(Metadata, Options) ->
     grpc_client:open(?DEF(<<"/hstream.server.HStreamApi/ReadSingleShardStream">>,
                           read_single_shard_stream_request, read_single_shard_stream_response, <<"hstream.server.ReadSingleShardStreamRequest">>),
+                     Metadata, Options).
+
+-spec read_stream_by_key(grpc_client:options())
+    -> {ok, grpc_client:grpcstream()}
+     | {error, term()}.
+read_stream_by_key(Options) ->
+    read_stream_by_key(#{}, Options).
+
+-spec read_stream_by_key(grpc:metadata(), grpc_client:options())
+    -> {ok, grpc_client:grpcstream()}
+     | {error, term()}.
+read_stream_by_key(Metadata, Options) ->
+    grpc_client:open(?DEF(<<"/hstream.server.HStreamApi/ReadStreamByKey">>,
+                          read_stream_by_key_request, read_stream_by_key_response, <<"hstream.server.ReadStreamByKeyRequest">>),
                      Metadata, Options).
 
 -spec create_subscription(hstreamdb_api:subscription())

@@ -15,7 +15,6 @@
         {producer_result, {{flush, ?STREAM, 1}, Result}} ->
             ok
     after 300 ->
-        ct:print("producer result not received~n"),
         ct:fail("producer result not received")
     end
 end).

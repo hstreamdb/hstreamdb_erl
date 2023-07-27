@@ -19,6 +19,10 @@
     -> {ok, hstreamdb_api:empty(), grpc:metadata()}
      | {error, grpc_stream:error_response()}.
 
+-callback trim_stream(hstreamdb_api:trim_stream_request(), grpc:metadata())
+    -> {ok, hstreamdb_api:empty(), grpc:metadata()}
+     | {error, grpc_stream:error_response()}.
+
 -callback get_stream(hstreamdb_api:get_stream_request(), grpc:metadata())
     -> {ok, hstreamdb_api:get_stream_response(), grpc:metadata()}
      | {error, grpc_stream:error_response()}.
@@ -45,6 +49,10 @@
 
 -callback list_shards(hstreamdb_api:list_shards_request(), grpc:metadata())
     -> {ok, hstreamdb_api:list_shards_response(), grpc:metadata()}
+     | {error, grpc_stream:error_response()}.
+
+-callback trim_shard(hstreamdb_api:trim_shard_request(), grpc:metadata())
+    -> {ok, hstreamdb_api:empty(), grpc:metadata()}
      | {error, grpc_stream:error_response()}.
 
 -callback create_shard_reader(hstreamdb_api:create_shard_reader_request(), grpc:metadata())
@@ -74,6 +82,9 @@
     -> {ok, grpc_stream:stream()}.
 
 -callback read_single_shard_stream(grpc_stream:stream(), grpc:metadata())
+    -> {ok, grpc_stream:stream()}.
+
+-callback read_stream_by_key(grpc_stream:stream(), grpc:metadata())
     -> {ok, grpc_stream:stream()}.
 
 -callback create_subscription(hstreamdb_api:subscription(), grpc:metadata())

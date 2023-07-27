@@ -19,6 +19,7 @@
 -define(GRPC_TIMEOUT, 5000).
 
 -include("hstreamdb.hrl").
+-include_lib("kernel/include/logger.hrl").
 
 -export([
     start/1,
@@ -43,8 +44,11 @@
 
     read_single_shard_stream/3,
 
-    read_shard_stream/3,
+    read_shard_gstream/3,
     fold_shard_read_gstream/3,
+
+    read_key_gstream/1,
+    fold_key_read_gstream/6,
 
     name/1
 ]).
@@ -54,6 +58,8 @@
     name/0,
     options/0
 ]).
+
+-define(READ_KEY_STEP_COUNT, 200).
 
 -opaque t() :: #{}.
 
@@ -177,11 +183,17 @@ lookup_resource(Client, ResourceType, ResourceId) ->
 read_single_shard_stream(Client, StreamName, Limits) ->
     do_read_single_shard_stream(Client, StreamName, Limits).
 
-read_shard_stream(Client, ShardId, Limits) ->
-    do_read_shard_stream(Client, ShardId, Limits).
+read_shard_gstream(Client, ShardId, Limits) ->
+    do_read_shard_gstream(Client, ShardId, Limits).
+
+read_key_gstream(Client) ->
+    do_read_key_gstream(Client).
 
 fold_shard_read_gstream(GStream, Fun, Acc) ->
     do_fold_shard_read_gstream(GStream, Fun, Acc).
+
+fold_key_read_gstream(GStream, Stream, Key, Limits, Fun, Acc) ->
+    do_fold_key_read_gstream(GStream, Stream, Key, Limits, Fun, Acc).
 
 %%--------------------------------------------------------------------
 %% Internal functions
@@ -347,7 +359,7 @@ do_read_single_shard_stream(
             Error
     end.
 
-do_read_shard_stream(
+do_read_shard_gstream(
     #{channel := Channel, grpc_timeout := Timeout},
     ShardId,
     Limits
@@ -366,10 +378,37 @@ do_read_shard_stream(
             Error
     end.
 
+do_read_key_gstream(
+    #{channel := Channel, grpc_timeout := Timeout}
+) ->
+    Options = #{channel => Channel, timeout => Timeout},
+    case ?HSTREAMDB_GEN_CLIENT:read_stream_by_key(Options) of
+        {ok, GStream} ->
+            {ok, GStream};
+        {error, _} = Error ->
+            Error
+    end.
+
+do_fold_key_read_gstream(GStream, Stream, Key, Limits0, Fun, Acc) ->
+    {TotalLeft, Limits2} =
+        case maps:take(readRecordCount, Limits0) of
+            error ->
+                {infinity, Limits0};
+            {Value, Limits1} ->
+                {Value, Limits1}
+        end,
+    Req0 = #{
+        streamName => Stream,
+        readerId => integer_to_binary(erlang:unique_integer([positive])),
+        key => Key
+    },
+    Req1 = maps:merge(Req0, Limits2),
+    fold_key_read_gstream_rounds(GStream, Req1, TotalLeft, Fun, Acc).
+
 %% Helper functions
 
 append_rec(eos, Acc) -> lists:reverse(Acc);
-append_rec(Rec, Acc) -> {ok, [Rec | Acc]}.
+append_rec(Rec, Acc) -> [Rec | Acc].
 
 map_keys([], Map) ->
     Map;
@@ -521,34 +560,23 @@ fold_results([Result | Rest], Fun, Acc) ->
     end.
 
 fold_result(#{receivedRecords := Records}, Fun, Acc) ->
-    fold_batch_records(Records, Fun, Acc);
+    {ok, fold_batch_records(Records, Fun, Acc)};
 fold_result({eos, _}, Fun, Acc) ->
     {stop, Fun(eos, Acc)}.
 
 fold_batch_records([], _Fun, Acc) ->
-    {ok, Acc};
+    Acc;
 fold_batch_records([Record | Rest], Fun, Acc) ->
-    case fold_batch_record(Record, Fun, Acc) of
-        {ok, NewAcc} ->
-            fold_batch_records(Rest, Fun, NewAcc);
-        {stop, NewAcc} ->
-            {stop, NewAcc}
-    end.
+    NewAcc = fold_batch_record(Record, Fun, Acc),
+    fold_batch_records(Rest, Fun, NewAcc).
 
 fold_batch_record(#{record := _, recordIds := [#{batchId := BatchId} | _]} = BatchRecord, Fun, Acc) ->
     Records = decode_batch(BatchRecord),
     logger:debug("[hstreamdb] BatchRecord, id: ~p, records: ~p~n", [BatchId, length(Records)]),
     fold_hstream_records(Records, Fun, Acc).
 
-fold_hstream_records([Record | Records], Fun, Acc) ->
-    case Fun(Record, Acc) of
-        {ok, NewAcc} ->
-            fold_hstream_records(Records, Fun, NewAcc);
-        {stop, NewAcc} ->
-            {stop, NewAcc}
-    end;
-fold_hstream_records([], _Fun, Acc) ->
-    {ok, Acc}.
+fold_hstream_records(Records, Fun, Acc) ->
+    lists:foldl(Fun, Acc, Records).
 
 decode_batch(#{
     record := #{payload := Payload0, compressionType := CompressionType} = _BatchRecord,
@@ -577,3 +605,61 @@ decode_payload(Payload, 'Zstd') ->
 random_name() ->
     "hstreandb-client-" ++ integer_to_list(erlang:system_time()) ++ "-" ++
         integer_to_list(erlang:unique_integer([positive])).
+
+fold_key_read_gstream_rounds(GStream, Req, 0, Fun, Acc) ->
+    ?LOG_DEBUG("fold_key_read_gstream send: ~p~n", [Req]),
+    ok = grpc_client:send(GStream, Req#{readRecordCount => 0}, fin),
+    {ok, Fun(eos, Acc)};
+fold_key_read_gstream_rounds(GStream, Req, TotalLeft, Fun, Acc) ->
+    {NewTotalLeft, StepCount} = read_record_count(TotalLeft, ?READ_KEY_STEP_COUNT),
+    Req1 = Req#{readRecordCount => StepCount},
+    ?LOG_DEBUG("fold_key_read_gstream send: ~p~n", [Req1]),
+    ok = grpc_client:send(GStream, Req1),
+    case fold_key_read_gstream_round(GStream, StepCount, Fun, Acc) of
+        {ok, NewAcc} ->
+            fold_key_read_gstream_rounds(GStream, Req, NewTotalLeft, Fun, NewAcc);
+        {stop, NewAcc} ->
+            {ok, NewAcc};
+        {error, _} = Error ->
+            Error
+    end.
+
+fold_key_read_gstream_round(_GStream, Count, _Fun, Acc) when Count =< 0 ->
+    {ok, Acc};
+fold_key_read_gstream_round(GStream, Count, Fun, Acc) ->
+    case grpc_client:recv(GStream) of
+        {ok, RoundSubResults} ->
+            ?LOG_DEBUG("fold_key_read_gstream recv: ~p~n", [RoundSubResults]),
+            case fold_key_read_gstream_round_sub_results(0, RoundSubResults, Fun, Acc) of
+                {stop, NewAcc} ->
+                    {stop, NewAcc};
+                {N, NewAcc} ->
+                    fold_key_read_gstream_round(GStream, Count - N, Fun, NewAcc)
+            end;
+        {error, _} = Error ->
+            Error
+    end.
+
+fold_key_read_gstream_round_sub_results(N, [], _Fun, Acc) ->
+    {N, Acc};
+fold_key_read_gstream_round_sub_results(_N, [{eos, _} | _Rest], Fun, Acc) ->
+    {stop, Fun(eos, Acc)};
+fold_key_read_gstream_round_sub_results(N, [RoundSubResult | Rest], Fun, Acc) ->
+    Recs = merge_round_sub_res(RoundSubResult),
+    NewAcc = lists:foldl(Fun, Acc, Recs),
+    fold_key_read_gstream_round_sub_results(N + length(Recs), Rest, Fun, NewAcc).
+
+merge_round_sub_res(#{receivedRecords := Recs, recordIds := RecIds}) ->
+    lists:zipwith(
+        fun(Rec, RecId) ->
+            Rec#{recordId => RecId}
+        end,
+        Recs,
+        RecIds
+    ).
+
+read_record_count(infinity, StepCount) ->
+    {infinity, StepCount};
+read_record_count(TotalLeft, StepCount) ->
+    NewStepCount = min(TotalLeft, StepCount),
+    {TotalLeft - NewStepCount, NewStepCount}.

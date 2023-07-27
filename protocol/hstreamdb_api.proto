@@ -26,6 +26,7 @@ service HStreamApi {
   // Stream APIs
   rpc CreateStream(Stream) returns (Stream) {}
   rpc DeleteStream(DeleteStreamRequest) returns (google.protobuf.Empty) {}
+  rpc TrimStream(TrimStreamRequest) returns (google.protobuf.Empty) {}
   rpc GetStream(GetStreamRequest) returns (GetStreamResponse) {}
   rpc ListStreams(ListStreamsRequest) returns (ListStreamsResponse) {}
   rpc ListStreamsWithPrefix(ListStreamsWithPrefixRequest)
@@ -37,6 +38,7 @@ service HStreamApi {
 
   // Shard APIs
   rpc ListShards(ListShardsRequest) returns (ListShardsResponse) {}
+  rpc TrimShard(TrimShardRequest) returns (google.protobuf.Empty) {}
   rpc CreateShardReader(CreateShardReaderRequest)
       returns (CreateShardReaderResponse) {}
   rpc LookupShardReader(LookupShardReaderRequest)
@@ -51,6 +53,8 @@ service HStreamApi {
   rpc ReadStream(ReadStreamRequest) returns (stream ReadStreamResponse) {}
   rpc ReadSingleShardStream(ReadSingleShardStreamRequest)
       returns (stream ReadSingleShardStreamResponse) {}
+  rpc ReadStreamByKey(stream ReadStreamByKeyRequest)
+      returns (stream ReadStreamByKeyResponse) {}
 
   // Subscribe APIs
   rpc CreateSubscription(Subscription) returns (Subscription) {}
@@ -250,6 +254,12 @@ message ListSubscriptionsResponse { repeated Subscription subscription = 1; }
 message ListConsumersRequest { string subscriptionId = 1; }
 message ListConsumersResponse { repeated Consumer consumers = 1; }
 
+message TrimStreamRequest {
+  string streamName = 1;
+  // trim up to and including this offset
+  StreamOffset trimPoint = 2;
+}
+
 message Stream {
   string streamName = 1;
   uint32 replicationFactor = 2;
@@ -330,6 +340,13 @@ message ListShardsRequest { string streamName = 1; }
 
 message ListShardsResponse { repeated Shard shards = 1; }
 
+message TrimShardRequest {
+  string streamName = 1;
+  uint64 shardId = 2;
+  // trim up to and including this offset
+  ShardOffset trimPoint = 3;
+}
+
 message CreateShardReaderRequest {
   string streamName = 1;
   uint64 shardId = 2;
@@ -386,6 +403,21 @@ message ReadStreamRequest {
 }
 
 message ReadStreamResponse { repeated ReceivedRecord receivedRecords = 1; }
+
+message ReadStreamByKeyRequest {
+  string readerId = 1;
+  string streamName = 2;
+  string key = 3;
+  ShardOffset from = 4;
+  ShardOffset until = 5;
+  // total record return in next round read
+  uint64 readRecordCount = 6;
+}
+
+message ReadStreamByKeyResponse {
+  repeated RecordId recordIds = 1;
+  repeated HStreamRecord receivedRecords = 2;
+}
 
 message ReadSingleShardStreamRequest {
   string readerId = 1;
@@ -726,6 +758,7 @@ enum ErrorCode {
   StreamInvalidShardCount = 205;
   StreamEmptyBatchedRecord = 206;
   StreamInvalidRecordSize = 207;
+  StreamInvalidOffset = 208;
 
   // 3xx -> Subscription Errors
   SubscriptionNotFound = 300;

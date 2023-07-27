@@ -157,7 +157,7 @@ t_read_single_shard_stream(Config) ->
     ok = hstreamdb:stop_client_manager(CM1),
     ok = hstreamdb:stop_producer(Producer).
 
-t_read_stream_key(Config) ->
+t_read_stream_key_with_shard_reader(Config) ->
     %% Prepare records
 
     Producer = ?FUNCTION_NAME,
@@ -208,7 +208,7 @@ t_read_stream_key(Config) ->
         max_read_batches => 100000
     },
 
-    Res0 = hstreamdb:read_stream_key(Reader, "PK1", Limits),
+    Res0 = hstreamdb:read_stream_key_shard(Reader, "PK1", Limits),
 
     ?assertMatch(
         {ok, _},
@@ -218,5 +218,108 @@ t_read_stream_key(Config) ->
     {ok, Recs} = Res0,
 
     ?assertEqual(100, length(Recs)),
+
+    ok = hstreamdb:stop_reader(Reader).
+
+t_read_stream_key(Config) ->
+    %% Prepare records
+
+    Producer = ?FUNCTION_NAME,
+    ProducerOptions = #{
+        buffer_pool_size => 1,
+        writer_pool_size => 1,
+        stream => ?config(stream_name, Config),
+        mgr_client_options => hstreamdb_test_helpers:default_options(),
+        buffer_options => #{
+            max_records => 10,
+            max_time => 10000
+        }
+    },
+
+    ok = hstreamdb:start_producer(Producer, ProducerOptions),
+
+    ok = lists:foreach(
+        fun(PartitioningKey) ->
+            ok = lists:foreach(
+                fun(N) ->
+                    Payload = term_to_binary({item, N}),
+                    Record = hstreamdb:to_record(PartitioningKey, raw, Payload),
+                    ok = hstreamdb:append(Producer, Record)
+                end,
+                lists:seq(1, 999)
+            )
+        end,
+        ["PK0", "PK1", "PK2", "PK3"]
+    ),
+
+    Record = hstreamdb:to_record("PK", raw, <<>>),
+    {ok, _} = hstreamdb:append_flush(Producer, Record),
+
+    %% Read records
+
+    ReaderOptions = #{
+        mgr_client_options => hstreamdb_test_helpers:default_options(),
+        stream => ?config(stream_name, Config),
+        pool_size => 5
+    },
+
+    Reader = "reader_" ++ atom_to_list(?FUNCTION_NAME),
+    ok = hstreamdb:start_reader(Reader, ReaderOptions),
+
+    % Read all records
+
+    Limits0 = #{
+        from => #{offset => {specialOffset, 0}},
+        until => #{offset => {specialOffset, 1}}
+    },
+
+    Res0 = hstreamdb:read_stream_key(Reader, "PK1", Limits0),
+
+    ?assertMatch(
+        {ok, _},
+        Res0
+    ),
+
+    {ok, Recs0} = Res0,
+
+    ?assertEqual(999, length(Recs0)),
+
+    % Read less then total records, but more then one read round
+
+    Limits1 = #{
+        from => #{offset => {specialOffset, 0}},
+        until => #{offset => {specialOffset, 1}},
+        readRecordCount => 950
+    },
+
+    Res1 = hstreamdb:read_stream_key(Reader, "PK1", Limits1),
+
+    ?assertMatch(
+        {ok, _},
+        Res1
+    ),
+
+    {ok, Recs1} = Res1,
+
+    ?assertEqual(950, length(Recs1)),
+
+    % Read less then total records, and less then one read round
+
+    Limits2 = #{
+        from => #{offset => {specialOffset, 0}},
+        until => #{offset => {specialOffset, 1}},
+        readRecordCount => 121
+    },
+
+    Res2 = hstreamdb:read_stream_key(Reader, "PK1", Limits2),
+
+    ?assertMatch(
+        {ok, _},
+        Res2
+    ),
+
+    {ok, Recs2} = Res2,
+
+    ?assertEqual(121, length(Recs2)),
 
     ok = hstreamdb:stop_reader(Reader).

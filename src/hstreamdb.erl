@@ -49,6 +49,8 @@
 -export([
     start_reader/2,
     stop_reader/1,
+    read_stream_key_shard/3,
+    read_stream_key_shard/4,
     read_stream_key/3,
     read_stream_key/4
 ]).
@@ -93,9 +95,7 @@
 -type limits() :: #{from => offset(), until => offset(), max_read_batches => non_neg_integer()}.
 
 -type reader_fold_acc() :: term().
--type reader_fold_fun() :: fun(
-    (hrecord() | eos, reader_fold_acc()) -> {ok, reader_fold_acc()} | {stop, reader_fold_acc()}
-).
+-type reader_fold_fun() :: fun((hrecord() | eos, reader_fold_acc()) -> reader_fold_acc()).
 
 -define(DEFAULT_READ_SINGLE_SHARD_STREAM_OPTS, #{
     limits => #{
@@ -186,7 +186,7 @@ read_single_shard_stream(ClientManager, StreamName, Limits) ->
     Client = hstreamdb_shard_client_mgr:client(ClientManager),
     case hstreamdb_client:list_shards(Client, StreamName) of
         {ok, [#{shardId := ShardId}]} ->
-            case hstreamdb_shard_client_mgr:lookup_client(ClientManager, ShardId) of
+            case hstreamdb_shard_client_mgr:lookup_shard_client(ClientManager, ShardId) of
                 {ok, ShardClient, NewClientManager} ->
                     case
                         hstreamdb_client:read_single_shard_stream(ShardClient, StreamName, Limits)
@@ -222,14 +222,36 @@ start_reader(Name, ReaderOptions) ->
 stop_reader(Name) ->
     hstreamdb_readers_sup:stop(Name).
 
+
+%% @doc Identify the shard that a key belongs to and fold all read records.
+%% by default, the fold function will filter all records that have
+%% exactly the same key as the one provided.
+
+-spec read_stream_key_shard(ecpool:pool_name(), partitioning_key(), limits()) ->
+    {ok, [hstreamdb:hrecord()]} | {error, term()}.
+read_stream_key_shard(Name, Key, Limits) ->
+    hstreamdb_reader:read_key_shard(Name, Key, Limits).
+
+-spec read_stream_key_shard(ecpool:pool_name(), partitioning_key(), limits(), {
+    reader_fold_fun(), reader_fold_acc()
+}) ->
+    {ok, [hstreamdb:hrecord()]} | {error, term()}.
+read_stream_key_shard(Name, Key, Limits, Fold) ->
+    hstreamdb_reader:read_key_shard(Name, Key, Limits, Fold).
+
+%% @doc fetch only records that have the same key as the one provided, using
+%% server-side filtering.
+
 -spec read_stream_key(ecpool:pool_name(), partitioning_key(), limits()) ->
     {ok, [hstreamdb:hrecord()]} | {error, term()}.
 read_stream_key(Name, Key, Limits) ->
-    hstreamdb_reader:read(Name, Key, Limits).
+    hstreamdb_reader:read_key(Name, Key, Limits).
 
 -spec read_stream_key(ecpool:pool_name(), partitioning_key(), limits(), {
     reader_fold_fun(), reader_fold_acc()
 }) ->
     {ok, [hstreamdb:hrecord()]} | {error, term()}.
 read_stream_key(Name, Key, Limits, Fold) ->
-    hstreamdb_reader:read(Name, Key, Limits, Fold).
+    hstreamdb_reader:read_key(Name, Key, Limits, Fold).
+
+

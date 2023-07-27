@@ -158,7 +158,7 @@ do_write(
         grpc_timeout = GRPCTimeout
     }
 ) ->
-    case hstreamdb_shard_client_mgr:lookup_client(ClientMgr0, ShardId) of
+    case hstreamdb_shard_client_mgr:lookup_shard_client(ClientMgr0, ShardId) of
         {ok, Client, ClientMgr1} ->
             Req = #{
                 stream_name => Stream,
@@ -174,7 +174,7 @@ do_write(
                     Res = fill_responses(Resps, RecordsIds),
                     {{ok, Res}, State#state{client_manager = ClientMgr1}};
                 {error, _} = Error ->
-                    ClientMgr2 = hstreamdb_shard_client_mgr:bad_shart_client(ClientMgr1, Client),
+                    ClientMgr2 = hstreamdb_shard_client_mgr:bad_shard_client(ClientMgr1, Client),
                     {Error, State#state{client_manager = ClientMgr2}}
             end;
         {error, _} = Error ->

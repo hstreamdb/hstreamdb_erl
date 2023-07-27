@@ -40,17 +40,17 @@ t_lookup_client(Config) ->
 
     {ok, ShardId, KeyMgr1} = hstreamdb_key_mgr:choose_shard(KeyMgr0, Key),
 
-    {ok, ShardClient0, ShardClientMgr1} = hstreamdb_shard_client_mgr:lookup_client(
+    {ok, ShardClient0, ShardClientMgr1} = hstreamdb_shard_client_mgr:lookup_shard_client(
         ShardClientMgr0, ShardId
     ),
-    {ok, ShardClient1, ShardClientMgr2} = hstreamdb_shard_client_mgr:lookup_client(
+    {ok, ShardClient1, ShardClientMgr2} = hstreamdb_shard_client_mgr:lookup_shard_client(
         ShardClientMgr1, ShardId
     ),
 
     ?assertEqual(ShardClient0, ShardClient1),
 
-    ShardClientMgr3 = hstreamdb_shard_client_mgr:bad_shart_client(ShardClientMgr2, ShardClient1),
-    {ok, ShardClient2, ShardClientMgr4} = hstreamdb_shard_client_mgr:lookup_client(
+    ShardClientMgr3 = hstreamdb_shard_client_mgr:bad_shard_client(ShardClientMgr2, ShardClient1),
+    {ok, ShardClient2, ShardClientMgr4} = hstreamdb_shard_client_mgr:lookup_shard_client(
         ShardClientMgr3, ShardId
     ),
 

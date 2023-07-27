@@ -180,6 +180,9 @@ encode_msg(Msg, MsgName, Opts) ->
         list_consumers_response ->
             encode_msg_list_consumers_response(id(Msg, TrUserData),
                                                TrUserData);
+        trim_stream_request ->
+            encode_msg_trim_stream_request(id(Msg, TrUserData),
+                                           TrUserData);
         stream ->
             encode_msg_stream(id(Msg, TrUserData), TrUserData);
         batched_record ->
@@ -204,6 +207,9 @@ encode_msg(Msg, MsgName, Opts) ->
         list_shards_response ->
             encode_msg_list_shards_response(id(Msg, TrUserData),
                                             TrUserData);
+        trim_shard_request ->
+            encode_msg_trim_shard_request(id(Msg, TrUserData),
+                                          TrUserData);
         create_shard_reader_request ->
             encode_msg_create_shard_reader_request(id(Msg,
                                                       TrUserData),
@@ -247,6 +253,14 @@ encode_msg(Msg, MsgName, Opts) ->
         read_stream_response ->
             encode_msg_read_stream_response(id(Msg, TrUserData),
                                             TrUserData);
+        read_stream_by_key_request ->
+            encode_msg_read_stream_by_key_request(id(Msg,
+                                                     TrUserData),
+                                                  TrUserData);
+        read_stream_by_key_response ->
+            encode_msg_read_stream_by_key_response(id(Msg,
+                                                      TrUserData),
+                                                   TrUserData);
         read_single_shard_stream_request ->
             encode_msg_read_single_shard_stream_request(id(Msg,
                                                            TrUserData),
@@ -1312,6 +1326,38 @@ encode_msg_list_consumers_response(#{} = M, Bin,
         _ -> Bin
     end.
 
+encode_msg_trim_stream_request(Msg, TrUserData) ->
+    encode_msg_trim_stream_request(Msg, <<>>, TrUserData).
+
+
+encode_msg_trim_stream_request(#{} = M, Bin,
+                               TrUserData) ->
+    B1 = case M of
+             #{streamName := F1} ->
+                 begin
+                     TrF1 = id(F1, TrUserData),
+                     case is_empty_string(TrF1) of
+                         true -> Bin;
+                         false ->
+                             e_type_string(TrF1, <<Bin/binary, 10>>, TrUserData)
+                     end
+                 end;
+             _ -> Bin
+         end,
+    case M of
+        #{trimPoint := F2} ->
+            begin
+                TrF2 = id(F2, TrUserData),
+                if TrF2 =:= undefined -> B1;
+                   true ->
+                       e_mfield_trim_stream_request_trimPoint(TrF2,
+                                                              <<B1/binary, 18>>,
+                                                              TrUserData)
+                end
+            end;
+        _ -> B1
+    end.
+
 encode_msg_stream(Msg, TrUserData) ->
     encode_msg_stream(Msg, <<>>, TrUserData).
 
@@ -1668,6 +1714,48 @@ encode_msg_list_shards_response(#{} = M, Bin,
                                                        TrUserData)
             end;
         _ -> Bin
+    end.
+
+encode_msg_trim_shard_request(Msg, TrUserData) ->
+    encode_msg_trim_shard_request(Msg, <<>>, TrUserData).
+
+
+encode_msg_trim_shard_request(#{} = M, Bin,
+                              TrUserData) ->
+    B1 = case M of
+             #{streamName := F1} ->
+                 begin
+                     TrF1 = id(F1, TrUserData),
+                     case is_empty_string(TrF1) of
+                         true -> Bin;
+                         false ->
+                             e_type_string(TrF1, <<Bin/binary, 10>>, TrUserData)
+                     end
+                 end;
+             _ -> Bin
+         end,
+    B2 = case M of
+             #{shardId := F2} ->
+                 begin
+                     TrF2 = id(F2, TrUserData),
+                     if TrF2 =:= 0 -> B1;
+                        true -> e_varint(TrF2, <<B1/binary, 16>>, TrUserData)
+                     end
+                 end;
+             _ -> B1
+         end,
+    case M of
+        #{trimPoint := F3} ->
+            begin
+                TrF3 = id(F3, TrUserData),
+                if TrF3 =:= undefined -> B2;
+                   true ->
+                       e_mfield_trim_shard_request_trimPoint(TrF3,
+                                                             <<B2/binary, 26>>,
+                                                             TrUserData)
+                end
+            end;
+        _ -> B2
     end.
 
 encode_msg_create_shard_reader_request(Msg,
@@ -2101,6 +2189,122 @@ encode_msg_read_stream_response(#{} = M, Bin,
                                                                 TrUserData)
             end;
         _ -> Bin
+    end.
+
+encode_msg_read_stream_by_key_request(Msg,
+                                      TrUserData) ->
+    encode_msg_read_stream_by_key_request(Msg,
+                                          <<>>,
+                                          TrUserData).
+
+
+encode_msg_read_stream_by_key_request(#{} = M, Bin,
+                                      TrUserData) ->
+    B1 = case M of
+             #{readerId := F1} ->
+                 begin
+                     TrF1 = id(F1, TrUserData),
+                     case is_empty_string(TrF1) of
+                         true -> Bin;
+                         false ->
+                             e_type_string(TrF1, <<Bin/binary, 10>>, TrUserData)
+                     end
+                 end;
+             _ -> Bin
+         end,
+    B2 = case M of
+             #{streamName := F2} ->
+                 begin
+                     TrF2 = id(F2, TrUserData),
+                     case is_empty_string(TrF2) of
+                         true -> B1;
+                         false ->
+                             e_type_string(TrF2, <<B1/binary, 18>>, TrUserData)
+                     end
+                 end;
+             _ -> B1
+         end,
+    B3 = case M of
+             #{key := F3} ->
+                 begin
+                     TrF3 = id(F3, TrUserData),
+                     case is_empty_string(TrF3) of
+                         true -> B2;
+                         false ->
+                             e_type_string(TrF3, <<B2/binary, 26>>, TrUserData)
+                     end
+                 end;
+             _ -> B2
+         end,
+    B4 = case M of
+             #{from := F4} ->
+                 begin
+                     TrF4 = id(F4, TrUserData),
+                     if TrF4 =:= undefined -> B3;
+                        true ->
+                            e_mfield_read_stream_by_key_request_from(TrF4,
+                                                                     <<B3/binary,
+                                                                       34>>,
+                                                                     TrUserData)
+                     end
+                 end;
+             _ -> B3
+         end,
+    B5 = case M of
+             #{until := F5} ->
+                 begin
+                     TrF5 = id(F5, TrUserData),
+                     if TrF5 =:= undefined -> B4;
+                        true ->
+                            e_mfield_read_stream_by_key_request_until(TrF5,
+                                                                      <<B4/binary,
+                                                                        42>>,
+                                                                      TrUserData)
+                     end
+                 end;
+             _ -> B4
+         end,
+    case M of
+        #{readRecordCount := F6} ->
+            begin
+                TrF6 = id(F6, TrUserData),
+                if TrF6 =:= 0 -> B5;
+                   true -> e_varint(TrF6, <<B5/binary, 48>>, TrUserData)
+                end
+            end;
+        _ -> B5
+    end.
+
+encode_msg_read_stream_by_key_response(Msg,
+                                       TrUserData) ->
+    encode_msg_read_stream_by_key_response(Msg,
+                                           <<>>,
+                                           TrUserData).
+
+
+encode_msg_read_stream_by_key_response(#{} = M, Bin,
+                                       TrUserData) ->
+    B1 = case M of
+             #{recordIds := F1} ->
+                 TrF1 = id(F1, TrUserData),
+                 if TrF1 == [] -> Bin;
+                    true ->
+                        e_field_read_stream_by_key_response_recordIds(TrF1,
+                                                                      Bin,
+                                                                      TrUserData)
+                 end;
+             _ -> Bin
+         end,
+    case M of
+        #{receivedRecords := F2} ->
+            TrF2 = id(F2, TrUserData),
+            if TrF2 == [] -> B1;
+               true ->
+                   e_field_read_stream_by_key_response_receivedRecords(TrF2,
+                                                                       B1,
+                                                                       TrUserData)
+            end;
+        _ -> B1
     end.
 
 encode_msg_read_single_shard_stream_request(Msg,
@@ -4340,6 +4544,14 @@ e_field_list_consumers_response_consumers([], Bin,
                                           _TrUserData) ->
     Bin.
 
+e_mfield_trim_stream_request_trimPoint(Msg, Bin,
+                                       TrUserData) ->
+    SubBin = encode_msg_stream_offset(Msg,
+                                      <<>>,
+                                      TrUserData),
+    Bin2 = e_varint(byte_size(SubBin), Bin),
+    <<Bin2/binary, SubBin/binary>>.
+
 e_mfield_stream_creationTime(Msg, Bin, TrUserData) ->
     SubBin = encode_msg_timestamp(Msg, <<>>, TrUserData),
     Bin2 = e_varint(byte_size(SubBin), Bin),
@@ -4422,6 +4634,12 @@ e_field_list_shards_response_shards([Elem | Rest], Bin,
 e_field_list_shards_response_shards([], Bin,
                                     _TrUserData) ->
     Bin.
+
+e_mfield_trim_shard_request_trimPoint(Msg, Bin,
+                                      TrUserData) ->
+    SubBin = encode_msg_shard_offset(Msg, <<>>, TrUserData),
+    Bin2 = e_varint(byte_size(SubBin), Bin),
+    <<Bin2/binary, SubBin/binary>>.
 
 e_mfield_create_shard_reader_request_shardOffset(Msg,
                                                  Bin, TrUserData) ->
@@ -4555,6 +4773,64 @@ e_field_read_stream_response_receivedRecords([Elem
                                                  TrUserData);
 e_field_read_stream_response_receivedRecords([], Bin,
                                              _TrUserData) ->
+    Bin.
+
+e_mfield_read_stream_by_key_request_from(Msg, Bin,
+                                         TrUserData) ->
+    SubBin = encode_msg_shard_offset(Msg, <<>>, TrUserData),
+    Bin2 = e_varint(byte_size(SubBin), Bin),
+    <<Bin2/binary, SubBin/binary>>.
+
+e_mfield_read_stream_by_key_request_until(Msg, Bin,
+                                          TrUserData) ->
+    SubBin = encode_msg_shard_offset(Msg, <<>>, TrUserData),
+    Bin2 = e_varint(byte_size(SubBin), Bin),
+    <<Bin2/binary, SubBin/binary>>.
+
+e_mfield_read_stream_by_key_response_recordIds(Msg, Bin,
+                                               TrUserData) ->
+    SubBin = encode_msg_record_id(Msg, <<>>, TrUserData),
+    Bin2 = e_varint(byte_size(SubBin), Bin),
+    <<Bin2/binary, SubBin/binary>>.
+
+e_field_read_stream_by_key_response_recordIds([Elem
+                                               | Rest],
+                                              Bin, TrUserData) ->
+    Bin2 = <<Bin/binary, 10>>,
+    Bin3 =
+        e_mfield_read_stream_by_key_response_recordIds(id(Elem,
+                                                          TrUserData),
+                                                       Bin2,
+                                                       TrUserData),
+    e_field_read_stream_by_key_response_recordIds(Rest,
+                                                  Bin3,
+                                                  TrUserData);
+e_field_read_stream_by_key_response_recordIds([], Bin,
+                                              _TrUserData) ->
+    Bin.
+
+e_mfield_read_stream_by_key_response_receivedRecords(Msg,
+                                                     Bin, TrUserData) ->
+    SubBin = encode_msg_h_stream_record(Msg,
+                                        <<>>,
+                                        TrUserData),
+    Bin2 = e_varint(byte_size(SubBin), Bin),
+    <<Bin2/binary, SubBin/binary>>.
+
+e_field_read_stream_by_key_response_receivedRecords([Elem
+                                                     | Rest],
+                                                    Bin, TrUserData) ->
+    Bin2 = <<Bin/binary, 18>>,
+    Bin3 =
+        e_mfield_read_stream_by_key_response_receivedRecords(id(Elem,
+                                                                TrUserData),
+                                                             Bin2,
+                                                             TrUserData),
+    e_field_read_stream_by_key_response_receivedRecords(Rest,
+                                                        Bin3,
+                                                        TrUserData);
+e_field_read_stream_by_key_response_receivedRecords([],
+                                                    Bin, _TrUserData) ->
     Bin.
 
 e_mfield_read_single_shard_stream_request_from(Msg, Bin,
@@ -5548,6 +5824,10 @@ decode_msg_2_doit(list_consumers_response, Bin,
                   TrUserData) ->
     id(decode_msg_list_consumers_response(Bin, TrUserData),
        TrUserData);
+decode_msg_2_doit(trim_stream_request, Bin,
+                  TrUserData) ->
+    id(decode_msg_trim_stream_request(Bin, TrUserData),
+       TrUserData);
 decode_msg_2_doit(stream, Bin, TrUserData) ->
     id(decode_msg_stream(Bin, TrUserData), TrUserData);
 decode_msg_2_doit(batched_record, Bin, TrUserData) ->
@@ -5575,6 +5855,10 @@ decode_msg_2_doit(list_shards_request, Bin,
 decode_msg_2_doit(list_shards_response, Bin,
                   TrUserData) ->
     id(decode_msg_list_shards_response(Bin, TrUserData),
+       TrUserData);
+decode_msg_2_doit(trim_shard_request, Bin,
+                  TrUserData) ->
+    id(decode_msg_trim_shard_request(Bin, TrUserData),
        TrUserData);
 decode_msg_2_doit(create_shard_reader_request, Bin,
                   TrUserData) ->
@@ -5629,6 +5913,16 @@ decode_msg_2_doit(read_stream_request, Bin,
 decode_msg_2_doit(read_stream_response, Bin,
                   TrUserData) ->
     id(decode_msg_read_stream_response(Bin, TrUserData),
+       TrUserData);
+decode_msg_2_doit(read_stream_by_key_request, Bin,
+                  TrUserData) ->
+    id(decode_msg_read_stream_by_key_request(Bin,
+                                             TrUserData),
+       TrUserData);
+decode_msg_2_doit(read_stream_by_key_response, Bin,
+                  TrUserData) ->
+    id(decode_msg_read_stream_by_key_response(Bin,
+                                              TrUserData),
        TrUserData);
 decode_msg_2_doit(read_single_shard_stream_request, Bin,
                   TrUserData) ->
@@ -12883,6 +13177,248 @@ skip_64_list_consumers_response(<<_:64, Rest/binary>>,
                                                F@_1,
                                                TrUserData).
 
+decode_msg_trim_stream_request(Bin, TrUserData) ->
+    dfp_read_field_def_trim_stream_request(Bin,
+                                           0,
+                                           0,
+                                           id(<<>>, TrUserData),
+                                           id('$undef', TrUserData),
+                                           TrUserData).
+
+dfp_read_field_def_trim_stream_request(<<10,
+                                         Rest/binary>>,
+                                       Z1, Z2, F@_1, F@_2, TrUserData) ->
+    d_field_trim_stream_request_streamName(Rest,
+                                           Z1,
+                                           Z2,
+                                           F@_1,
+                                           F@_2,
+                                           TrUserData);
+dfp_read_field_def_trim_stream_request(<<18,
+                                         Rest/binary>>,
+                                       Z1, Z2, F@_1, F@_2, TrUserData) ->
+    d_field_trim_stream_request_trimPoint(Rest,
+                                          Z1,
+                                          Z2,
+                                          F@_1,
+                                          F@_2,
+                                          TrUserData);
+dfp_read_field_def_trim_stream_request(<<>>, 0, 0, F@_1,
+                                       F@_2, _) ->
+    S1 = #{streamName => F@_1},
+    if F@_2 == '$undef' -> S1;
+       true -> S1#{trimPoint => F@_2}
+    end;
+dfp_read_field_def_trim_stream_request(Other, Z1, Z2,
+                                       F@_1, F@_2, TrUserData) ->
+    dg_read_field_def_trim_stream_request(Other,
+                                          Z1,
+                                          Z2,
+                                          F@_1,
+                                          F@_2,
+                                          TrUserData).
+
+dg_read_field_def_trim_stream_request(<<1:1, X:7,
+                                        Rest/binary>>,
+                                      N, Acc, F@_1, F@_2, TrUserData)
+    when N < 32 - 7 ->
+    dg_read_field_def_trim_stream_request(Rest,
+                                          N + 7,
+                                          X bsl N + Acc,
+                                          F@_1,
+                                          F@_2,
+                                          TrUserData);
+dg_read_field_def_trim_stream_request(<<0:1, X:7,
+                                        Rest/binary>>,
+                                      N, Acc, F@_1, F@_2, TrUserData) ->
+    Key = X bsl N + Acc,
+    case Key of
+        10 ->
+            d_field_trim_stream_request_streamName(Rest,
+                                                   0,
+                                                   0,
+                                                   F@_1,
+                                                   F@_2,
+                                                   TrUserData);
+        18 ->
+            d_field_trim_stream_request_trimPoint(Rest,
+                                                  0,
+                                                  0,
+                                                  F@_1,
+                                                  F@_2,
+                                                  TrUserData);
+        _ ->
+            case Key band 7 of
+                0 ->
+                    skip_varint_trim_stream_request(Rest,
+                                                    0,
+                                                    0,
+                                                    F@_1,
+                                                    F@_2,
+                                                    TrUserData);
+                1 ->
+                    skip_64_trim_stream_request(Rest,
+                                                0,
+                                                0,
+                                                F@_1,
+                                                F@_2,
+                                                TrUserData);
+                2 ->
+                    skip_length_delimited_trim_stream_request(Rest,
+                                                              0,
+                                                              0,
+                                                              F@_1,
+                                                              F@_2,
+                                                              TrUserData);
+                3 ->
+                    skip_group_trim_stream_request(Rest,
+                                                   Key bsr 3,
+                                                   0,
+                                                   F@_1,
+                                                   F@_2,
+                                                   TrUserData);
+                5 ->
+                    skip_32_trim_stream_request(Rest,
+                                                0,
+                                                0,
+                                                F@_1,
+                                                F@_2,
+                                                TrUserData)
+            end
+    end;
+dg_read_field_def_trim_stream_request(<<>>, 0, 0, F@_1,
+                                      F@_2, _) ->
+    S1 = #{streamName => F@_1},
+    if F@_2 == '$undef' -> S1;
+       true -> S1#{trimPoint => F@_2}
+    end.
+
+d_field_trim_stream_request_streamName(<<1:1, X:7,
+                                         Rest/binary>>,
+                                       N, Acc, F@_1, F@_2, TrUserData)
+    when N < 57 ->
+    d_field_trim_stream_request_streamName(Rest,
+                                           N + 7,
+                                           X bsl N + Acc,
+                                           F@_1,
+                                           F@_2,
+                                           TrUserData);
+d_field_trim_stream_request_streamName(<<0:1, X:7,
+                                         Rest/binary>>,
+                                       N, Acc, _, F@_2, TrUserData) ->
+    {NewFValue, RestF} = begin
+                             Len = X bsl N + Acc,
+                             <<Bytes:Len/binary, Rest2/binary>> = Rest,
+                             {id(binary:copy(Bytes), TrUserData), Rest2}
+                         end,
+    dfp_read_field_def_trim_stream_request(RestF,
+                                           0,
+                                           0,
+                                           NewFValue,
+                                           F@_2,
+                                           TrUserData).
+
+d_field_trim_stream_request_trimPoint(<<1:1, X:7,
+                                        Rest/binary>>,
+                                      N, Acc, F@_1, F@_2, TrUserData)
+    when N < 57 ->
+    d_field_trim_stream_request_trimPoint(Rest,
+                                          N + 7,
+                                          X bsl N + Acc,
+                                          F@_1,
+                                          F@_2,
+                                          TrUserData);
+d_field_trim_stream_request_trimPoint(<<0:1, X:7,
+                                        Rest/binary>>,
+                                      N, Acc, F@_1, Prev, TrUserData) ->
+    {NewFValue, RestF} = begin
+                             Len = X bsl N + Acc,
+                             <<Bs:Len/binary, Rest2/binary>> = Rest,
+                             {id(decode_msg_stream_offset(Bs, TrUserData),
+                                 TrUserData),
+                              Rest2}
+                         end,
+    dfp_read_field_def_trim_stream_request(RestF,
+                                           0,
+                                           0,
+                                           F@_1,
+                                           if Prev == '$undef' -> NewFValue;
+                                              true ->
+                                                  merge_msg_stream_offset(Prev,
+                                                                          NewFValue,
+                                                                          TrUserData)
+                                           end,
+                                           TrUserData).
+
+skip_varint_trim_stream_request(<<1:1, _:7,
+                                  Rest/binary>>,
+                                Z1, Z2, F@_1, F@_2, TrUserData) ->
+    skip_varint_trim_stream_request(Rest,
+                                    Z1,
+                                    Z2,
+                                    F@_1,
+                                    F@_2,
+                                    TrUserData);
+skip_varint_trim_stream_request(<<0:1, _:7,
+                                  Rest/binary>>,
+                                Z1, Z2, F@_1, F@_2, TrUserData) ->
+    dfp_read_field_def_trim_stream_request(Rest,
+                                           Z1,
+                                           Z2,
+                                           F@_1,
+                                           F@_2,
+                                           TrUserData).
+
+skip_length_delimited_trim_stream_request(<<1:1, X:7,
+                                            Rest/binary>>,
+                                          N, Acc, F@_1, F@_2, TrUserData)
+    when N < 57 ->
+    skip_length_delimited_trim_stream_request(Rest,
+                                              N + 7,
+                                              X bsl N + Acc,
+                                              F@_1,
+                                              F@_2,
+                                              TrUserData);
+skip_length_delimited_trim_stream_request(<<0:1, X:7,
+                                            Rest/binary>>,
+                                          N, Acc, F@_1, F@_2, TrUserData) ->
+    Length = X bsl N + Acc,
+    <<_:Length/binary, Rest2/binary>> = Rest,
+    dfp_read_field_def_trim_stream_request(Rest2,
+                                           0,
+                                           0,
+                                           F@_1,
+                                           F@_2,
+                                           TrUserData).
+
+skip_group_trim_stream_request(Bin, FNum, Z2, F@_1,
+                               F@_2, TrUserData) ->
+    {_, Rest} = read_group(Bin, FNum),
+    dfp_read_field_def_trim_stream_request(Rest,
+                                           0,
+                                           Z2,
+                                           F@_1,
+                                           F@_2,
+                                           TrUserData).
+
+skip_32_trim_stream_request(<<_:32, Rest/binary>>, Z1,
+                            Z2, F@_1, F@_2, TrUserData) ->
+    dfp_read_field_def_trim_stream_request(Rest,
+                                           Z1,
+                                           Z2,
+                                           F@_1,
+                                           F@_2,
+                                           TrUserData).
+
+skip_64_trim_stream_request(<<_:64, Rest/binary>>, Z1,
+                            Z2, F@_1, F@_2, TrUserData) ->
+    dfp_read_field_def_trim_stream_request(Rest,
+                                           Z1,
+                                           Z2,
+                                           F@_1,
+                                           F@_2,
+                                           TrUserData).
+
 decode_msg_stream(Bin, TrUserData) ->
     dfp_read_field_def_stream(Bin,
                               0,
@@ -15605,6 +16141,314 @@ skip_64_list_shards_response(<<_:64, Rest/binary>>, Z1,
                                             Z2,
                                             F@_1,
                                             TrUserData).
+
+decode_msg_trim_shard_request(Bin, TrUserData) ->
+    dfp_read_field_def_trim_shard_request(Bin,
+                                          0,
+                                          0,
+                                          id(<<>>, TrUserData),
+                                          id(0, TrUserData),
+                                          id('$undef', TrUserData),
+                                          TrUserData).
+
+dfp_read_field_def_trim_shard_request(<<10,
+                                        Rest/binary>>,
+                                      Z1, Z2, F@_1, F@_2, F@_3, TrUserData) ->
+    d_field_trim_shard_request_streamName(Rest,
+                                          Z1,
+                                          Z2,
+                                          F@_1,
+                                          F@_2,
+                                          F@_3,
+                                          TrUserData);
+dfp_read_field_def_trim_shard_request(<<16,
+                                        Rest/binary>>,
+                                      Z1, Z2, F@_1, F@_2, F@_3, TrUserData) ->
+    d_field_trim_shard_request_shardId(Rest,
+                                       Z1,
+                                       Z2,
+                                       F@_1,
+                                       F@_2,
+                                       F@_3,
+                                       TrUserData);
+dfp_read_field_def_trim_shard_request(<<26,
+                                        Rest/binary>>,
+                                      Z1, Z2, F@_1, F@_2, F@_3, TrUserData) ->
+    d_field_trim_shard_request_trimPoint(Rest,
+                                         Z1,
+                                         Z2,
+                                         F@_1,
+                                         F@_2,
+                                         F@_3,
+                                         TrUserData);
+dfp_read_field_def_trim_shard_request(<<>>, 0, 0, F@_1,
+                                      F@_2, F@_3, _) ->
+    S1 = #{streamName => F@_1, shardId => F@_2},
+    if F@_3 == '$undef' -> S1;
+       true -> S1#{trimPoint => F@_3}
+    end;
+dfp_read_field_def_trim_shard_request(Other, Z1, Z2,
+                                      F@_1, F@_2, F@_3, TrUserData) ->
+    dg_read_field_def_trim_shard_request(Other,
+                                         Z1,
+                                         Z2,
+                                         F@_1,
+                                         F@_2,
+                                         F@_3,
+                                         TrUserData).
+
+dg_read_field_def_trim_shard_request(<<1:1, X:7,
+                                       Rest/binary>>,
+                                     N, Acc, F@_1, F@_2, F@_3, TrUserData)
+    when N < 32 - 7 ->
+    dg_read_field_def_trim_shard_request(Rest,
+                                         N + 7,
+                                         X bsl N + Acc,
+                                         F@_1,
+                                         F@_2,
+                                         F@_3,
+                                         TrUserData);
+dg_read_field_def_trim_shard_request(<<0:1, X:7,
+                                       Rest/binary>>,
+                                     N, Acc, F@_1, F@_2, F@_3, TrUserData) ->
+    Key = X bsl N + Acc,
+    case Key of
+        10 ->
+            d_field_trim_shard_request_streamName(Rest,
+                                                  0,
+                                                  0,
+                                                  F@_1,
+                                                  F@_2,
+                                                  F@_3,
+                                                  TrUserData);
+        16 ->
+            d_field_trim_shard_request_shardId(Rest,
+                                               0,
+                                               0,
+                                               F@_1,
+                                               F@_2,
+                                               F@_3,
+                                               TrUserData);
+        26 ->
+            d_field_trim_shard_request_trimPoint(Rest,
+                                                 0,
+                                                 0,
+                                                 F@_1,
+                                                 F@_2,
+                                                 F@_3,
+                                                 TrUserData);
+        _ ->
+            case Key band 7 of
+                0 ->
+                    skip_varint_trim_shard_request(Rest,
+                                                   0,
+                                                   0,
+                                                   F@_1,
+                                                   F@_2,
+                                                   F@_3,
+                                                   TrUserData);
+                1 ->
+                    skip_64_trim_shard_request(Rest,
+                                               0,
+                                               0,
+                                               F@_1,
+                                               F@_2,
+                                               F@_3,
+                                               TrUserData);
+                2 ->
+                    skip_length_delimited_trim_shard_request(Rest,
+                                                             0,
+                                                             0,
+                                                             F@_1,
+                                                             F@_2,
+                                                             F@_3,
+                                                             TrUserData);
+                3 ->
+                    skip_group_trim_shard_request(Rest,
+                                                  Key bsr 3,
+                                                  0,
+                                                  F@_1,
+                                                  F@_2,
+                                                  F@_3,
+                                                  TrUserData);
+                5 ->
+                    skip_32_trim_shard_request(Rest,
+                                               0,
+                                               0,
+                                               F@_1,
+                                               F@_2,
+                                               F@_3,
+                                               TrUserData)
+            end
+    end;
+dg_read_field_def_trim_shard_request(<<>>, 0, 0, F@_1,
+                                     F@_2, F@_3, _) ->
+    S1 = #{streamName => F@_1, shardId => F@_2},
+    if F@_3 == '$undef' -> S1;
+       true -> S1#{trimPoint => F@_3}
+    end.
+
+d_field_trim_shard_request_streamName(<<1:1, X:7,
+                                        Rest/binary>>,
+                                      N, Acc, F@_1, F@_2, F@_3, TrUserData)
+    when N < 57 ->
+    d_field_trim_shard_request_streamName(Rest,
+                                          N + 7,
+                                          X bsl N + Acc,
+                                          F@_1,
+                                          F@_2,
+                                          F@_3,
+                                          TrUserData);
+d_field_trim_shard_request_streamName(<<0:1, X:7,
+                                        Rest/binary>>,
+                                      N, Acc, _, F@_2, F@_3, TrUserData) ->
+    {NewFValue, RestF} = begin
+                             Len = X bsl N + Acc,
+                             <<Bytes:Len/binary, Rest2/binary>> = Rest,
+                             {id(binary:copy(Bytes), TrUserData), Rest2}
+                         end,
+    dfp_read_field_def_trim_shard_request(RestF,
+                                          0,
+                                          0,
+                                          NewFValue,
+                                          F@_2,
+                                          F@_3,
+                                          TrUserData).
+
+d_field_trim_shard_request_shardId(<<1:1, X:7,
+                                     Rest/binary>>,
+                                   N, Acc, F@_1, F@_2, F@_3, TrUserData)
+    when N < 57 ->
+    d_field_trim_shard_request_shardId(Rest,
+                                       N + 7,
+                                       X bsl N + Acc,
+                                       F@_1,
+                                       F@_2,
+                                       F@_3,
+                                       TrUserData);
+d_field_trim_shard_request_shardId(<<0:1, X:7,
+                                     Rest/binary>>,
+                                   N, Acc, F@_1, _, F@_3, TrUserData) ->
+    {NewFValue, RestF} = {id(X bsl N + Acc, TrUserData),
+                          Rest},
+    dfp_read_field_def_trim_shard_request(RestF,
+                                          0,
+                                          0,
+                                          F@_1,
+                                          NewFValue,
+                                          F@_3,
+                                          TrUserData).
+
+d_field_trim_shard_request_trimPoint(<<1:1, X:7,
+                                       Rest/binary>>,
+                                     N, Acc, F@_1, F@_2, F@_3, TrUserData)
+    when N < 57 ->
+    d_field_trim_shard_request_trimPoint(Rest,
+                                         N + 7,
+                                         X bsl N + Acc,
+                                         F@_1,
+                                         F@_2,
+                                         F@_3,
+                                         TrUserData);
+d_field_trim_shard_request_trimPoint(<<0:1, X:7,
+                                       Rest/binary>>,
+                                     N, Acc, F@_1, F@_2, Prev, TrUserData) ->
+    {NewFValue, RestF} = begin
+                             Len = X bsl N + Acc,
+                             <<Bs:Len/binary, Rest2/binary>> = Rest,
+                             {id(decode_msg_shard_offset(Bs, TrUserData),
+                                 TrUserData),
+                              Rest2}
+                         end,
+    dfp_read_field_def_trim_shard_request(RestF,
+                                          0,
+                                          0,
+                                          F@_1,
+                                          F@_2,
+                                          if Prev == '$undef' -> NewFValue;
+                                             true ->
+                                                 merge_msg_shard_offset(Prev,
+                                                                        NewFValue,
+                                                                        TrUserData)
+                                          end,
+                                          TrUserData).
+
+skip_varint_trim_shard_request(<<1:1, _:7,
+                                 Rest/binary>>,
+                               Z1, Z2, F@_1, F@_2, F@_3, TrUserData) ->
+    skip_varint_trim_shard_request(Rest,
+                                   Z1,
+                                   Z2,
+                                   F@_1,
+                                   F@_2,
+                                   F@_3,
+                                   TrUserData);
+skip_varint_trim_shard_request(<<0:1, _:7,
+                                 Rest/binary>>,
+                               Z1, Z2, F@_1, F@_2, F@_3, TrUserData) ->
+    dfp_read_field_def_trim_shard_request(Rest,
+                                          Z1,
+                                          Z2,
+                                          F@_1,
+                                          F@_2,
+                                          F@_3,
+                                          TrUserData).
+
+skip_length_delimited_trim_shard_request(<<1:1, X:7,
+                                           Rest/binary>>,
+                                         N, Acc, F@_1, F@_2, F@_3, TrUserData)
+    when N < 57 ->
+    skip_length_delimited_trim_shard_request(Rest,
+                                             N + 7,
+                                             X bsl N + Acc,
+                                             F@_1,
+                                             F@_2,
+                                             F@_3,
+                                             TrUserData);
+skip_length_delimited_trim_shard_request(<<0:1, X:7,
+                                           Rest/binary>>,
+                                         N, Acc, F@_1, F@_2, F@_3,
+                                         TrUserData) ->
+    Length = X bsl N + Acc,
+    <<_:Length/binary, Rest2/binary>> = Rest,
+    dfp_read_field_def_trim_shard_request(Rest2,
+                                          0,
+                                          0,
+                                          F@_1,
+                                          F@_2,
+                                          F@_3,
+                                          TrUserData).
+
+skip_group_trim_shard_request(Bin, FNum, Z2, F@_1, F@_2,
+                              F@_3, TrUserData) ->
+    {_, Rest} = read_group(Bin, FNum),
+    dfp_read_field_def_trim_shard_request(Rest,
+                                          0,
+                                          Z2,
+                                          F@_1,
+                                          F@_2,
+                                          F@_3,
+                                          TrUserData).
+
+skip_32_trim_shard_request(<<_:32, Rest/binary>>, Z1,
+                           Z2, F@_1, F@_2, F@_3, TrUserData) ->
+    dfp_read_field_def_trim_shard_request(Rest,
+                                          Z1,
+                                          Z2,
+                                          F@_1,
+                                          F@_2,
+                                          F@_3,
+                                          TrUserData).
+
+skip_64_trim_shard_request(<<_:64, Rest/binary>>, Z1,
+                           Z2, F@_1, F@_2, F@_3, TrUserData) ->
+    dfp_read_field_def_trim_shard_request(Rest,
+                                          Z1,
+                                          Z2,
+                                          F@_1,
+                                          F@_2,
+                                          F@_3,
+                                          TrUserData).
 
 decode_msg_create_shard_reader_request(Bin,
                                        TrUserData) ->
@@ -19052,6 +19896,876 @@ skip_64_read_stream_response(<<_:64, Rest/binary>>, Z1,
                                             Z2,
                                             F@_1,
                                             TrUserData).
+
+decode_msg_read_stream_by_key_request(Bin,
+                                      TrUserData) ->
+    dfp_read_field_def_read_stream_by_key_request(Bin,
+                                                  0,
+                                                  0,
+                                                  id(<<>>, TrUserData),
+                                                  id(<<>>, TrUserData),
+                                                  id(<<>>, TrUserData),
+                                                  id('$undef', TrUserData),
+                                                  id('$undef', TrUserData),
+                                                  id(0, TrUserData),
+                                                  TrUserData).
+
+dfp_read_field_def_read_stream_by_key_request(<<10,
+                                                Rest/binary>>,
+                                              Z1, Z2, F@_1, F@_2, F@_3, F@_4,
+                                              F@_5, F@_6, TrUserData) ->
+    d_field_read_stream_by_key_request_readerId(Rest,
+                                                Z1,
+                                                Z2,
+                                                F@_1,
+                                                F@_2,
+                                                F@_3,
+                                                F@_4,
+                                                F@_5,
+                                                F@_6,
+                                                TrUserData);
+dfp_read_field_def_read_stream_by_key_request(<<18,
+                                                Rest/binary>>,
+                                              Z1, Z2, F@_1, F@_2, F@_3, F@_4,
+                                              F@_5, F@_6, TrUserData) ->
+    d_field_read_stream_by_key_request_streamName(Rest,
+                                                  Z1,
+                                                  Z2,
+                                                  F@_1,
+                                                  F@_2,
+                                                  F@_3,
+                                                  F@_4,
+                                                  F@_5,
+                                                  F@_6,
+                                                  TrUserData);
+dfp_read_field_def_read_stream_by_key_request(<<26,
+                                                Rest/binary>>,
+                                              Z1, Z2, F@_1, F@_2, F@_3, F@_4,
+                                              F@_5, F@_6, TrUserData) ->
+    d_field_read_stream_by_key_request_key(Rest,
+                                           Z1,
+                                           Z2,
+                                           F@_1,
+                                           F@_2,
+                                           F@_3,
+                                           F@_4,
+                                           F@_5,
+                                           F@_6,
+                                           TrUserData);
+dfp_read_field_def_read_stream_by_key_request(<<34,
+                                                Rest/binary>>,
+                                              Z1, Z2, F@_1, F@_2, F@_3, F@_4,
+                                              F@_5, F@_6, TrUserData) ->
+    d_field_read_stream_by_key_request_from(Rest,
+                                            Z1,
+                                            Z2,
+                                            F@_1,
+                                            F@_2,
+                                            F@_3,
+                                            F@_4,
+                                            F@_5,
+                                            F@_6,
+                                            TrUserData);
+dfp_read_field_def_read_stream_by_key_request(<<42,
+                                                Rest/binary>>,
+                                              Z1, Z2, F@_1, F@_2, F@_3, F@_4,
+                                              F@_5, F@_6, TrUserData) ->
+    d_field_read_stream_by_key_request_until(Rest,
+                                             Z1,
+                                             Z2,
+                                             F@_1,
+                                             F@_2,
+                                             F@_3,
+                                             F@_4,
+                                             F@_5,
+                                             F@_6,
+                                             TrUserData);
+dfp_read_field_def_read_stream_by_key_request(<<48,
+                                                Rest/binary>>,
+                                              Z1, Z2, F@_1, F@_2, F@_3, F@_4,
+                                              F@_5, F@_6, TrUserData) ->
+    d_field_read_stream_by_key_request_readRecordCount(Rest,
+                                                       Z1,
+                                                       Z2,
+                                                       F@_1,
+                                                       F@_2,
+                                                       F@_3,
+                                                       F@_4,
+                                                       F@_5,
+                                                       F@_6,
+                                                       TrUserData);
+dfp_read_field_def_read_stream_by_key_request(<<>>, 0,
+                                              0, F@_1, F@_2, F@_3, F@_4, F@_5,
+                                              F@_6, _) ->
+    S1 = #{readerId => F@_1, streamName => F@_2,
+           key => F@_3, readRecordCount => F@_6},
+    S2 = if F@_4 == '$undef' -> S1;
+            true -> S1#{from => F@_4}
+         end,
+    if F@_5 == '$undef' -> S2;
+       true -> S2#{until => F@_5}
+    end;
+dfp_read_field_def_read_stream_by_key_request(Other, Z1,
+                                              Z2, F@_1, F@_2, F@_3, F@_4, F@_5,
+                                              F@_6, TrUserData) ->
+    dg_read_field_def_read_stream_by_key_request(Other,
+                                                 Z1,
+                                                 Z2,
+                                                 F@_1,
+                                                 F@_2,
+                                                 F@_3,
+                                                 F@_4,
+                                                 F@_5,
+                                                 F@_6,
+                                                 TrUserData).
+
+dg_read_field_def_read_stream_by_key_request(<<1:1, X:7,
+                                               Rest/binary>>,
+                                             N, Acc, F@_1, F@_2, F@_3, F@_4,
+                                             F@_5, F@_6, TrUserData)
+    when N < 32 - 7 ->
+    dg_read_field_def_read_stream_by_key_request(Rest,
+                                                 N + 7,
+                                                 X bsl N + Acc,
+                                                 F@_1,
+                                                 F@_2,
+                                                 F@_3,
+                                                 F@_4,
+                                                 F@_5,
+                                                 F@_6,
+                                                 TrUserData);
+dg_read_field_def_read_stream_by_key_request(<<0:1, X:7,
+                                               Rest/binary>>,
+                                             N, Acc, F@_1, F@_2, F@_3, F@_4,
+                                             F@_5, F@_6, TrUserData) ->
+    Key = X bsl N + Acc,
+    case Key of
+        10 ->
+            d_field_read_stream_by_key_request_readerId(Rest,
+                                                        0,
+                                                        0,
+                                                        F@_1,
+                                                        F@_2,
+                                                        F@_3,
+                                                        F@_4,
+                                                        F@_5,
+                                                        F@_6,
+                                                        TrUserData);
+        18 ->
+            d_field_read_stream_by_key_request_streamName(Rest,
+                                                          0,
+                                                          0,
+                                                          F@_1,
+                                                          F@_2,
+                                                          F@_3,
+                                                          F@_4,
+                                                          F@_5,
+                                                          F@_6,
+                                                          TrUserData);
+        26 ->
+            d_field_read_stream_by_key_request_key(Rest,
+                                                   0,
+                                                   0,
+                                                   F@_1,
+                                                   F@_2,
+                                                   F@_3,
+                                                   F@_4,
+                                                   F@_5,
+                                                   F@_6,
+                                                   TrUserData);
+        34 ->
+            d_field_read_stream_by_key_request_from(Rest,
+                                                    0,
+                                                    0,
+                                                    F@_1,
+                                                    F@_2,
+                                                    F@_3,
+                                                    F@_4,
+                                                    F@_5,
+                                                    F@_6,
+                                                    TrUserData);
+        42 ->
+            d_field_read_stream_by_key_request_until(Rest,
+                                                     0,
+                                                     0,
+                                                     F@_1,
+                                                     F@_2,
+                                                     F@_3,
+                                                     F@_4,
+                                                     F@_5,
+                                                     F@_6,
+                                                     TrUserData);
+        48 ->
+            d_field_read_stream_by_key_request_readRecordCount(Rest,
+                                                               0,
+                                                               0,
+                                                               F@_1,
+                                                               F@_2,
+                                                               F@_3,
+                                                               F@_4,
+                                                               F@_5,
+                                                               F@_6,
+                                                               TrUserData);
+        _ ->
+            case Key band 7 of
+                0 ->
+                    skip_varint_read_stream_by_key_request(Rest,
+                                                           0,
+                                                           0,
+                                                           F@_1,
+                                                           F@_2,
+                                                           F@_3,
+                                                           F@_4,
+                                                           F@_5,
+                                                           F@_6,
+                                                           TrUserData);
+                1 ->
+                    skip_64_read_stream_by_key_request(Rest,
+                                                       0,
+                                                       0,
+                                                       F@_1,
+                                                       F@_2,
+                                                       F@_3,
+                                                       F@_4,
+                                                       F@_5,
+                                                       F@_6,
+                                                       TrUserData);
+                2 ->
+                    skip_length_delimited_read_stream_by_key_request(Rest,
+                                                                     0,
+                                                                     0,
+                                                                     F@_1,
+                                                                     F@_2,
+                                                                     F@_3,
+                                                                     F@_4,
+                                                                     F@_5,
+                                                                     F@_6,
+                                                                     TrUserData);
+                3 ->
+                    skip_group_read_stream_by_key_request(Rest,
+                                                          Key bsr 3,
+                                                          0,
+                                                          F@_1,
+                                                          F@_2,
+                                                          F@_3,
+                                                          F@_4,
+                                                          F@_5,
+                                                          F@_6,
+                                                          TrUserData);
+                5 ->
+                    skip_32_read_stream_by_key_request(Rest,
+                                                       0,
+                                                       0,
+                                                       F@_1,
+                                                       F@_2,
+                                                       F@_3,
+                                                       F@_4,
+                                                       F@_5,
+                                                       F@_6,
+                                                       TrUserData)
+            end
+    end;
+dg_read_field_def_read_stream_by_key_request(<<>>, 0, 0,
+                                             F@_1, F@_2, F@_3, F@_4, F@_5, F@_6,
+                                             _) ->
+    S1 = #{readerId => F@_1, streamName => F@_2,
+           key => F@_3, readRecordCount => F@_6},
+    S2 = if F@_4 == '$undef' -> S1;
+            true -> S1#{from => F@_4}
+         end,
+    if F@_5 == '$undef' -> S2;
+       true -> S2#{until => F@_5}
+    end.
+
+d_field_read_stream_by_key_request_readerId(<<1:1, X:7,
+                                              Rest/binary>>,
+                                            N, Acc, F@_1, F@_2, F@_3, F@_4,
+                                            F@_5, F@_6, TrUserData)
+    when N < 57 ->
+    d_field_read_stream_by_key_request_readerId(Rest,
+                                                N + 7,
+                                                X bsl N + Acc,
+                                                F@_1,
+                                                F@_2,
+                                                F@_3,
+                                                F@_4,
+                                                F@_5,
+                                                F@_6,
+                                                TrUserData);
+d_field_read_stream_by_key_request_readerId(<<0:1, X:7,
+                                              Rest/binary>>,
+                                            N, Acc, _, F@_2, F@_3, F@_4, F@_5,
+                                            F@_6, TrUserData) ->
+    {NewFValue, RestF} = begin
+                             Len = X bsl N + Acc,
+                             <<Bytes:Len/binary, Rest2/binary>> = Rest,
+                             {id(binary:copy(Bytes), TrUserData), Rest2}
+                         end,
+    dfp_read_field_def_read_stream_by_key_request(RestF,
+                                                  0,
+                                                  0,
+                                                  NewFValue,
+                                                  F@_2,
+                                                  F@_3,
+                                                  F@_4,
+                                                  F@_5,
+                                                  F@_6,
+                                                  TrUserData).
+
+d_field_read_stream_by_key_request_streamName(<<1:1,
+                                                X:7, Rest/binary>>,
+                                              N, Acc, F@_1, F@_2, F@_3, F@_4,
+                                              F@_5, F@_6, TrUserData)
+    when N < 57 ->
+    d_field_read_stream_by_key_request_streamName(Rest,
+                                                  N + 7,
+                                                  X bsl N + Acc,
+                                                  F@_1,
+                                                  F@_2,
+                                                  F@_3,
+                                                  F@_4,
+                                                  F@_5,
+                                                  F@_6,
+                                                  TrUserData);
+d_field_read_stream_by_key_request_streamName(<<0:1,
+                                                X:7, Rest/binary>>,
+                                              N, Acc, F@_1, _, F@_3, F@_4, F@_5,
+                                              F@_6, TrUserData) ->
+    {NewFValue, RestF} = begin
+                             Len = X bsl N + Acc,
+                             <<Bytes:Len/binary, Rest2/binary>> = Rest,
+                             {id(binary:copy(Bytes), TrUserData), Rest2}
+                         end,
+    dfp_read_field_def_read_stream_by_key_request(RestF,
+                                                  0,
+                                                  0,
+                                                  F@_1,
+                                                  NewFValue,
+                                                  F@_3,
+                                                  F@_4,
+                                                  F@_5,
+                                                  F@_6,
+                                                  TrUserData).
+
+d_field_read_stream_by_key_request_key(<<1:1, X:7,
+                                         Rest/binary>>,
+                                       N, Acc, F@_1, F@_2, F@_3, F@_4, F@_5,
+                                       F@_6, TrUserData)
+    when N < 57 ->
+    d_field_read_stream_by_key_request_key(Rest,
+                                           N + 7,
+                                           X bsl N + Acc,
+                                           F@_1,
+                                           F@_2,
+                                           F@_3,
+                                           F@_4,
+                                           F@_5,
+                                           F@_6,
+                                           TrUserData);
+d_field_read_stream_by_key_request_key(<<0:1, X:7,
+                                         Rest/binary>>,
+                                       N, Acc, F@_1, F@_2, _, F@_4, F@_5, F@_6,
+                                       TrUserData) ->
+    {NewFValue, RestF} = begin
+                             Len = X bsl N + Acc,
+                             <<Bytes:Len/binary, Rest2/binary>> = Rest,
+                             {id(binary:copy(Bytes), TrUserData), Rest2}
+                         end,
+    dfp_read_field_def_read_stream_by_key_request(RestF,
+                                                  0,
+                                                  0,
+                                                  F@_1,
+                                                  F@_2,
+                                                  NewFValue,
+                                                  F@_4,
+                                                  F@_5,
+                                                  F@_6,
+                                                  TrUserData).
+
+d_field_read_stream_by_key_request_from(<<1:1, X:7,
+                                          Rest/binary>>,
+                                        N, Acc, F@_1, F@_2, F@_3, F@_4, F@_5,
+                                        F@_6, TrUserData)
+    when N < 57 ->
+    d_field_read_stream_by_key_request_from(Rest,
+                                            N + 7,
+                                            X bsl N + Acc,
+                                            F@_1,
+                                            F@_2,
+                                            F@_3,
+                                            F@_4,
+                                            F@_5,
+                                            F@_6,
+                                            TrUserData);
+d_field_read_stream_by_key_request_from(<<0:1, X:7,
+                                          Rest/binary>>,
+                                        N, Acc, F@_1, F@_2, F@_3, Prev, F@_5,
+                                        F@_6, TrUserData) ->
+    {NewFValue, RestF} = begin
+                             Len = X bsl N + Acc,
+                             <<Bs:Len/binary, Rest2/binary>> = Rest,
+                             {id(decode_msg_shard_offset(Bs, TrUserData),
+                                 TrUserData),
+                              Rest2}
+                         end,
+    dfp_read_field_def_read_stream_by_key_request(RestF,
+                                                  0,
+                                                  0,
+                                                  F@_1,
+                                                  F@_2,
+                                                  F@_3,
+                                                  if Prev == '$undef' ->
+                                                         NewFValue;
+                                                     true ->
+                                                         merge_msg_shard_offset(Prev,
+                                                                                NewFValue,
+                                                                                TrUserData)
+                                                  end,
+                                                  F@_5,
+                                                  F@_6,
+                                                  TrUserData).
+
+d_field_read_stream_by_key_request_until(<<1:1, X:7,
+                                           Rest/binary>>,
+                                         N, Acc, F@_1, F@_2, F@_3, F@_4, F@_5,
+                                         F@_6, TrUserData)
+    when N < 57 ->
+    d_field_read_stream_by_key_request_until(Rest,
+                                             N + 7,
+                                             X bsl N + Acc,
+                                             F@_1,
+                                             F@_2,
+                                             F@_3,
+                                             F@_4,
+                                             F@_5,
+                                             F@_6,
+                                             TrUserData);
+d_field_read_stream_by_key_request_until(<<0:1, X:7,
+                                           Rest/binary>>,
+                                         N, Acc, F@_1, F@_2, F@_3, F@_4, Prev,
+                                         F@_6, TrUserData) ->
+    {NewFValue, RestF} = begin
+                             Len = X bsl N + Acc,
+                             <<Bs:Len/binary, Rest2/binary>> = Rest,
+                             {id(decode_msg_shard_offset(Bs, TrUserData),
+                                 TrUserData),
+                              Rest2}
+                         end,
+    dfp_read_field_def_read_stream_by_key_request(RestF,
+                                                  0,
+                                                  0,
+                                                  F@_1,
+                                                  F@_2,
+                                                  F@_3,
+                                                  F@_4,
+                                                  if Prev == '$undef' ->
+                                                         NewFValue;
+                                                     true ->
+                                                         merge_msg_shard_offset(Prev,
+                                                                                NewFValue,
+                                                                                TrUserData)
+                                                  end,
+                                                  F@_6,
+                                                  TrUserData).
+
+d_field_read_stream_by_key_request_readRecordCount(<<1:1,
+                                                     X:7, Rest/binary>>,
+                                                   N, Acc, F@_1, F@_2, F@_3,
+                                                   F@_4, F@_5, F@_6, TrUserData)
+    when N < 57 ->
+    d_field_read_stream_by_key_request_readRecordCount(Rest,
+                                                       N + 7,
+                                                       X bsl N + Acc,
+                                                       F@_1,
+                                                       F@_2,
+                                                       F@_3,
+                                                       F@_4,
+                                                       F@_5,
+                                                       F@_6,
+                                                       TrUserData);
+d_field_read_stream_by_key_request_readRecordCount(<<0:1,
+                                                     X:7, Rest/binary>>,
+                                                   N, Acc, F@_1, F@_2, F@_3,
+                                                   F@_4, F@_5, _, TrUserData) ->
+    {NewFValue, RestF} = {id(X bsl N + Acc, TrUserData),
+                          Rest},
+    dfp_read_field_def_read_stream_by_key_request(RestF,
+                                                  0,
+                                                  0,
+                                                  F@_1,
+                                                  F@_2,
+                                                  F@_3,
+                                                  F@_4,
+                                                  F@_5,
+                                                  NewFValue,
+                                                  TrUserData).
+
+skip_varint_read_stream_by_key_request(<<1:1, _:7,
+                                         Rest/binary>>,
+                                       Z1, Z2, F@_1, F@_2, F@_3, F@_4, F@_5,
+                                       F@_6, TrUserData) ->
+    skip_varint_read_stream_by_key_request(Rest,
+                                           Z1,
+                                           Z2,
+                                           F@_1,
+                                           F@_2,
+                                           F@_3,
+                                           F@_4,
+                                           F@_5,
+                                           F@_6,
+                                           TrUserData);
+skip_varint_read_stream_by_key_request(<<0:1, _:7,
+                                         Rest/binary>>,
+                                       Z1, Z2, F@_1, F@_2, F@_3, F@_4, F@_5,
+                                       F@_6, TrUserData) ->
+    dfp_read_field_def_read_stream_by_key_request(Rest,
+                                                  Z1,
+                                                  Z2,
+                                                  F@_1,
+                                                  F@_2,
+                                                  F@_3,
+                                                  F@_4,
+                                                  F@_5,
+                                                  F@_6,
+                                                  TrUserData).
+
+skip_length_delimited_read_stream_by_key_request(<<1:1,
+                                                   X:7, Rest/binary>>,
+                                                 N, Acc, F@_1, F@_2, F@_3, F@_4,
+                                                 F@_5, F@_6, TrUserData)
+    when N < 57 ->
+    skip_length_delimited_read_stream_by_key_request(Rest,
+                                                     N + 7,
+                                                     X bsl N + Acc,
+                                                     F@_1,
+                                                     F@_2,
+                                                     F@_3,
+                                                     F@_4,
+                                                     F@_5,
+                                                     F@_6,
+                                                     TrUserData);
+skip_length_delimited_read_stream_by_key_request(<<0:1,
+                                                   X:7, Rest/binary>>,
+                                                 N, Acc, F@_1, F@_2, F@_3, F@_4,
+                                                 F@_5, F@_6, TrUserData) ->
+    Length = X bsl N + Acc,
+    <<_:Length/binary, Rest2/binary>> = Rest,
+    dfp_read_field_def_read_stream_by_key_request(Rest2,
+                                                  0,
+                                                  0,
+                                                  F@_1,
+                                                  F@_2,
+                                                  F@_3,
+                                                  F@_4,
+                                                  F@_5,
+                                                  F@_6,
+                                                  TrUserData).
+
+skip_group_read_stream_by_key_request(Bin, FNum, Z2,
+                                      F@_1, F@_2, F@_3, F@_4, F@_5, F@_6,
+                                      TrUserData) ->
+    {_, Rest} = read_group(Bin, FNum),
+    dfp_read_field_def_read_stream_by_key_request(Rest,
+                                                  0,
+                                                  Z2,
+                                                  F@_1,
+                                                  F@_2,
+                                                  F@_3,
+                                                  F@_4,
+                                                  F@_5,
+                                                  F@_6,
+                                                  TrUserData).
+
+skip_32_read_stream_by_key_request(<<_:32,
+                                     Rest/binary>>,
+                                   Z1, Z2, F@_1, F@_2, F@_3, F@_4, F@_5, F@_6,
+                                   TrUserData) ->
+    dfp_read_field_def_read_stream_by_key_request(Rest,
+                                                  Z1,
+                                                  Z2,
+                                                  F@_1,
+                                                  F@_2,
+                                                  F@_3,
+                                                  F@_4,
+                                                  F@_5,
+                                                  F@_6,
+                                                  TrUserData).
+
+skip_64_read_stream_by_key_request(<<_:64,
+                                     Rest/binary>>,
+                                   Z1, Z2, F@_1, F@_2, F@_3, F@_4, F@_5, F@_6,
+                                   TrUserData) ->
+    dfp_read_field_def_read_stream_by_key_request(Rest,
+                                                  Z1,
+                                                  Z2,
+                                                  F@_1,
+                                                  F@_2,
+                                                  F@_3,
+                                                  F@_4,
+                                                  F@_5,
+                                                  F@_6,
+                                                  TrUserData).
+
+decode_msg_read_stream_by_key_response(Bin,
+                                       TrUserData) ->
+    dfp_read_field_def_read_stream_by_key_response(Bin,
+                                                   0,
+                                                   0,
+                                                   id([], TrUserData),
+                                                   id([], TrUserData),
+                                                   TrUserData).
+
+dfp_read_field_def_read_stream_by_key_response(<<10,
+                                                 Rest/binary>>,
+                                               Z1, Z2, F@_1, F@_2,
+                                               TrUserData) ->
+    d_field_read_stream_by_key_response_recordIds(Rest,
+                                                  Z1,
+                                                  Z2,
+                                                  F@_1,
+                                                  F@_2,
+                                                  TrUserData);
+dfp_read_field_def_read_stream_by_key_response(<<18,
+                                                 Rest/binary>>,
+                                               Z1, Z2, F@_1, F@_2,
+                                               TrUserData) ->
+    d_field_read_stream_by_key_response_receivedRecords(Rest,
+                                                        Z1,
+                                                        Z2,
+                                                        F@_1,
+                                                        F@_2,
+                                                        TrUserData);
+dfp_read_field_def_read_stream_by_key_response(<<>>, 0,
+                                               0, R1, R2, TrUserData) ->
+    S1 = #{},
+    S2 = if R1 == '$undef' -> S1;
+            true -> S1#{recordIds => lists_reverse(R1, TrUserData)}
+         end,
+    if R2 == '$undef' -> S2;
+       true ->
+           S2#{receivedRecords => lists_reverse(R2, TrUserData)}
+    end;
+dfp_read_field_def_read_stream_by_key_response(Other,
+                                               Z1, Z2, F@_1, F@_2,
+                                               TrUserData) ->
+    dg_read_field_def_read_stream_by_key_response(Other,
+                                                  Z1,
+                                                  Z2,
+                                                  F@_1,
+                                                  F@_2,
+                                                  TrUserData).
+
+dg_read_field_def_read_stream_by_key_response(<<1:1,
+                                                X:7, Rest/binary>>,
+                                              N, Acc, F@_1, F@_2, TrUserData)
+    when N < 32 - 7 ->
+    dg_read_field_def_read_stream_by_key_response(Rest,
+                                                  N + 7,
+                                                  X bsl N + Acc,
+                                                  F@_1,
+                                                  F@_2,
+                                                  TrUserData);
+dg_read_field_def_read_stream_by_key_response(<<0:1,
+                                                X:7, Rest/binary>>,
+                                              N, Acc, F@_1, F@_2, TrUserData) ->
+    Key = X bsl N + Acc,
+    case Key of
+        10 ->
+            d_field_read_stream_by_key_response_recordIds(Rest,
+                                                          0,
+                                                          0,
+                                                          F@_1,
+                                                          F@_2,
+                                                          TrUserData);
+        18 ->
+            d_field_read_stream_by_key_response_receivedRecords(Rest,
+                                                                0,
+                                                                0,
+                                                                F@_1,
+                                                                F@_2,
+                                                                TrUserData);
+        _ ->
+            case Key band 7 of
+                0 ->
+                    skip_varint_read_stream_by_key_response(Rest,
+                                                            0,
+                                                            0,
+                                                            F@_1,
+                                                            F@_2,
+                                                            TrUserData);
+                1 ->
+                    skip_64_read_stream_by_key_response(Rest,
+                                                        0,
+                                                        0,
+                                                        F@_1,
+                                                        F@_2,
+                                                        TrUserData);
+                2 ->
+                    skip_length_delimited_read_stream_by_key_response(Rest,
+                                                                      0,
+                                                                      0,
+                                                                      F@_1,
+                                                                      F@_2,
+                                                                      TrUserData);
+                3 ->
+                    skip_group_read_stream_by_key_response(Rest,
+                                                           Key bsr 3,
+                                                           0,
+                                                           F@_1,
+                                                           F@_2,
+                                                           TrUserData);
+                5 ->
+                    skip_32_read_stream_by_key_response(Rest,
+                                                        0,
+                                                        0,
+                                                        F@_1,
+                                                        F@_2,
+                                                        TrUserData)
+            end
+    end;
+dg_read_field_def_read_stream_by_key_response(<<>>, 0,
+                                              0, R1, R2, TrUserData) ->
+    S1 = #{},
+    S2 = if R1 == '$undef' -> S1;
+            true -> S1#{recordIds => lists_reverse(R1, TrUserData)}
+         end,
+    if R2 == '$undef' -> S2;
+       true ->
+           S2#{receivedRecords => lists_reverse(R2, TrUserData)}
+    end.
+
+d_field_read_stream_by_key_response_recordIds(<<1:1,
+                                                X:7, Rest/binary>>,
+                                              N, Acc, F@_1, F@_2, TrUserData)
+    when N < 57 ->
+    d_field_read_stream_by_key_response_recordIds(Rest,
+                                                  N + 7,
+                                                  X bsl N + Acc,
+                                                  F@_1,
+                                                  F@_2,
+                                                  TrUserData);
+d_field_read_stream_by_key_response_recordIds(<<0:1,
+                                                X:7, Rest/binary>>,
+                                              N, Acc, Prev, F@_2, TrUserData) ->
+    {NewFValue, RestF} = begin
+                             Len = X bsl N + Acc,
+                             <<Bs:Len/binary, Rest2/binary>> = Rest,
+                             {id(decode_msg_record_id(Bs, TrUserData),
+                                 TrUserData),
+                              Rest2}
+                         end,
+    dfp_read_field_def_read_stream_by_key_response(RestF,
+                                                   0,
+                                                   0,
+                                                   cons(NewFValue,
+                                                        Prev,
+                                                        TrUserData),
+                                                   F@_2,
+                                                   TrUserData).
+
+d_field_read_stream_by_key_response_receivedRecords(<<1:1,
+                                                      X:7, Rest/binary>>,
+                                                    N, Acc, F@_1, F@_2,
+                                                    TrUserData)
+    when N < 57 ->
+    d_field_read_stream_by_key_response_receivedRecords(Rest,
+                                                        N + 7,
+                                                        X bsl N + Acc,
+                                                        F@_1,
+                                                        F@_2,
+                                                        TrUserData);
+d_field_read_stream_by_key_response_receivedRecords(<<0:1,
+                                                      X:7, Rest/binary>>,
+                                                    N, Acc, F@_1, Prev,
+                                                    TrUserData) ->
+    {NewFValue, RestF} = begin
+                             Len = X bsl N + Acc,
+                             <<Bs:Len/binary, Rest2/binary>> = Rest,
+                             {id(decode_msg_h_stream_record(Bs, TrUserData),
+                                 TrUserData),
+                              Rest2}
+                         end,
+    dfp_read_field_def_read_stream_by_key_response(RestF,
+                                                   0,
+                                                   0,
+                                                   F@_1,
+                                                   cons(NewFValue,
+                                                        Prev,
+                                                        TrUserData),
+                                                   TrUserData).
+
+skip_varint_read_stream_by_key_response(<<1:1, _:7,
+                                          Rest/binary>>,
+                                        Z1, Z2, F@_1, F@_2, TrUserData) ->
+    skip_varint_read_stream_by_key_response(Rest,
+                                            Z1,
+                                            Z2,
+                                            F@_1,
+                                            F@_2,
+                                            TrUserData);
+skip_varint_read_stream_by_key_response(<<0:1, _:7,
+                                          Rest/binary>>,
+                                        Z1, Z2, F@_1, F@_2, TrUserData) ->
+    dfp_read_field_def_read_stream_by_key_response(Rest,
+                                                   Z1,
+                                                   Z2,
+                                                   F@_1,
+                                                   F@_2,
+                                                   TrUserData).
+
+skip_length_delimited_read_stream_by_key_response(<<1:1,
+                                                    X:7, Rest/binary>>,
+                                                  N, Acc, F@_1, F@_2,
+                                                  TrUserData)
+    when N < 57 ->
+    skip_length_delimited_read_stream_by_key_response(Rest,
+                                                      N + 7,
+                                                      X bsl N + Acc,
+                                                      F@_1,
+                                                      F@_2,
+                                                      TrUserData);
+skip_length_delimited_read_stream_by_key_response(<<0:1,
+                                                    X:7, Rest/binary>>,
+                                                  N, Acc, F@_1, F@_2,
+                                                  TrUserData) ->
+    Length = X bsl N + Acc,
+    <<_:Length/binary, Rest2/binary>> = Rest,
+    dfp_read_field_def_read_stream_by_key_response(Rest2,
+                                                   0,
+                                                   0,
+                                                   F@_1,
+                                                   F@_2,
+                                                   TrUserData).
+
+skip_group_read_stream_by_key_response(Bin, FNum, Z2,
+                                       F@_1, F@_2, TrUserData) ->
+    {_, Rest} = read_group(Bin, FNum),
+    dfp_read_field_def_read_stream_by_key_response(Rest,
+                                                   0,
+                                                   Z2,
+                                                   F@_1,
+                                                   F@_2,
+                                                   TrUserData).
+
+skip_32_read_stream_by_key_response(<<_:32,
+                                      Rest/binary>>,
+                                    Z1, Z2, F@_1, F@_2, TrUserData) ->
+    dfp_read_field_def_read_stream_by_key_response(Rest,
+                                                   Z1,
+                                                   Z2,
+                                                   F@_1,
+                                                   F@_2,
+                                                   TrUserData).
+
+skip_64_read_stream_by_key_response(<<_:64,
+                                      Rest/binary>>,
+                                    Z1, Z2, F@_1, F@_2, TrUserData) ->
+    dfp_read_field_def_read_stream_by_key_response(Rest,
+                                                   Z1,
+                                                   Z2,
+                                                   F@_1,
+                                                   F@_2,
+                                                   TrUserData).
 
 decode_msg_read_single_shard_stream_request(Bin,
                                             TrUserData) ->
@@ -36471,6 +38185,8 @@ merge_msgs(Prev, New, MsgName, Opts) ->
             merge_msg_list_consumers_response(Prev,
                                               New,
                                               TrUserData);
+        trim_stream_request ->
+            merge_msg_trim_stream_request(Prev, New, TrUserData);
         stream -> merge_msg_stream(Prev, New, TrUserData);
         batched_record ->
             merge_msg_batched_record(Prev, New, TrUserData);
@@ -36486,6 +38202,8 @@ merge_msgs(Prev, New, MsgName, Opts) ->
             merge_msg_list_shards_request(Prev, New, TrUserData);
         list_shards_response ->
             merge_msg_list_shards_response(Prev, New, TrUserData);
+        trim_shard_request ->
+            merge_msg_trim_shard_request(Prev, New, TrUserData);
         create_shard_reader_request ->
             merge_msg_create_shard_reader_request(Prev,
                                                   New,
@@ -36524,6 +38242,14 @@ merge_msgs(Prev, New, MsgName, Opts) ->
             merge_msg_read_stream_request(Prev, New, TrUserData);
         read_stream_response ->
             merge_msg_read_stream_response(Prev, New, TrUserData);
+        read_stream_by_key_request ->
+            merge_msg_read_stream_by_key_request(Prev,
+                                                 New,
+                                                 TrUserData);
+        read_stream_by_key_response ->
+            merge_msg_read_stream_by_key_response(Prev,
+                                                  New,
+                                                  TrUserData);
         read_single_shard_stream_request ->
             merge_msg_read_single_shard_stream_request(Prev,
                                                        New,
@@ -37257,6 +38983,30 @@ merge_msg_list_consumers_response(PMsg, NMsg,
         {_, _} -> S1
     end.
 
+-compile({nowarn_unused_function,merge_msg_trim_stream_request/3}).
+merge_msg_trim_stream_request(PMsg, NMsg, TrUserData) ->
+    S1 = #{},
+    S2 = case {PMsg, NMsg} of
+             {_, #{streamName := NFstreamName}} ->
+                 S1#{streamName => NFstreamName};
+             {#{streamName := PFstreamName}, _} ->
+                 S1#{streamName => PFstreamName};
+             _ -> S1
+         end,
+    case {PMsg, NMsg} of
+        {#{trimPoint := PFtrimPoint},
+         #{trimPoint := NFtrimPoint}} ->
+            S2#{trimPoint =>
+                    merge_msg_stream_offset(PFtrimPoint,
+                                            NFtrimPoint,
+                                            TrUserData)};
+        {_, #{trimPoint := NFtrimPoint}} ->
+            S2#{trimPoint => NFtrimPoint};
+        {#{trimPoint := PFtrimPoint}, _} ->
+            S2#{trimPoint => PFtrimPoint};
+        {_, _} -> S2
+    end.
+
 -compile({nowarn_unused_function,merge_msg_stream/3}).
 merge_msg_stream(PMsg, NMsg, TrUserData) ->
     S1 = #{},
@@ -37495,6 +39245,37 @@ merge_msg_list_shards_response(PMsg, NMsg,
         {_, #{shards := NFshards}} -> S1#{shards => NFshards};
         {#{shards := PFshards}, _} -> S1#{shards => PFshards};
         {_, _} -> S1
+    end.
+
+-compile({nowarn_unused_function,merge_msg_trim_shard_request/3}).
+merge_msg_trim_shard_request(PMsg, NMsg, TrUserData) ->
+    S1 = #{},
+    S2 = case {PMsg, NMsg} of
+             {_, #{streamName := NFstreamName}} ->
+                 S1#{streamName => NFstreamName};
+             {#{streamName := PFstreamName}, _} ->
+                 S1#{streamName => PFstreamName};
+             _ -> S1
+         end,
+    S3 = case {PMsg, NMsg} of
+             {_, #{shardId := NFshardId}} ->
+                 S2#{shardId => NFshardId};
+             {#{shardId := PFshardId}, _} ->
+                 S2#{shardId => PFshardId};
+             _ -> S2
+         end,
+    case {PMsg, NMsg} of
+        {#{trimPoint := PFtrimPoint},
+         #{trimPoint := NFtrimPoint}} ->
+            S3#{trimPoint =>
+                    merge_msg_shard_offset(PFtrimPoint,
+                                           NFtrimPoint,
+                                           TrUserData)};
+        {_, #{trimPoint := NFtrimPoint}} ->
+            S3#{trimPoint => NFtrimPoint};
+        {#{trimPoint := PFtrimPoint}, _} ->
+            S3#{trimPoint => PFtrimPoint};
+        {_, _} -> S3
     end.
 
 -compile({nowarn_unused_function,merge_msg_create_shard_reader_request/3}).
@@ -37789,6 +39570,82 @@ merge_msg_read_stream_response(PMsg, NMsg,
         {#{receivedRecords := PFreceivedRecords}, _} ->
             S1#{receivedRecords => PFreceivedRecords};
         {_, _} -> S1
+    end.
+
+-compile({nowarn_unused_function,merge_msg_read_stream_by_key_request/3}).
+merge_msg_read_stream_by_key_request(PMsg, NMsg,
+                                     TrUserData) ->
+    S1 = #{},
+    S2 = case {PMsg, NMsg} of
+             {_, #{readerId := NFreaderId}} ->
+                 S1#{readerId => NFreaderId};
+             {#{readerId := PFreaderId}, _} ->
+                 S1#{readerId => PFreaderId};
+             _ -> S1
+         end,
+    S3 = case {PMsg, NMsg} of
+             {_, #{streamName := NFstreamName}} ->
+                 S2#{streamName => NFstreamName};
+             {#{streamName := PFstreamName}, _} ->
+                 S2#{streamName => PFstreamName};
+             _ -> S2
+         end,
+    S4 = case {PMsg, NMsg} of
+             {_, #{key := NFkey}} -> S3#{key => NFkey};
+             {#{key := PFkey}, _} -> S3#{key => PFkey};
+             _ -> S3
+         end,
+    S5 = case {PMsg, NMsg} of
+             {#{from := PFfrom}, #{from := NFfrom}} ->
+                 S4#{from =>
+                         merge_msg_shard_offset(PFfrom, NFfrom, TrUserData)};
+             {_, #{from := NFfrom}} -> S4#{from => NFfrom};
+             {#{from := PFfrom}, _} -> S4#{from => PFfrom};
+             {_, _} -> S4
+         end,
+    S6 = case {PMsg, NMsg} of
+             {#{until := PFuntil}, #{until := NFuntil}} ->
+                 S5#{until =>
+                         merge_msg_shard_offset(PFuntil, NFuntil, TrUserData)};
+             {_, #{until := NFuntil}} -> S5#{until => NFuntil};
+             {#{until := PFuntil}, _} -> S5#{until => PFuntil};
+             {_, _} -> S5
+         end,
+    case {PMsg, NMsg} of
+        {_, #{readRecordCount := NFreadRecordCount}} ->
+            S6#{readRecordCount => NFreadRecordCount};
+        {#{readRecordCount := PFreadRecordCount}, _} ->
+            S6#{readRecordCount => PFreadRecordCount};
+        _ -> S6
+    end.
+
+-compile({nowarn_unused_function,merge_msg_read_stream_by_key_response/3}).
+merge_msg_read_stream_by_key_response(PMsg, NMsg,
+                                      TrUserData) ->
+    S1 = #{},
+    S2 = case {PMsg, NMsg} of
+             {#{recordIds := PFrecordIds},
+              #{recordIds := NFrecordIds}} ->
+                 S1#{recordIds =>
+                         'erlang_++'(PFrecordIds, NFrecordIds, TrUserData)};
+             {_, #{recordIds := NFrecordIds}} ->
+                 S1#{recordIds => NFrecordIds};
+             {#{recordIds := PFrecordIds}, _} ->
+                 S1#{recordIds => PFrecordIds};
+             {_, _} -> S1
+         end,
+    case {PMsg, NMsg} of
+        {#{receivedRecords := PFreceivedRecords},
+         #{receivedRecords := NFreceivedRecords}} ->
+            S2#{receivedRecords =>
+                    'erlang_++'(PFreceivedRecords,
+                                NFreceivedRecords,
+                                TrUserData)};
+        {_, #{receivedRecords := NFreceivedRecords}} ->
+            S2#{receivedRecords => NFreceivedRecords};
+        {#{receivedRecords := PFreceivedRecords}, _} ->
+            S2#{receivedRecords => PFreceivedRecords};
+        {_, _} -> S2
     end.
 
 -compile({nowarn_unused_function,merge_msg_read_single_shard_stream_request/3}).
@@ -39056,6 +40913,8 @@ verify_msg(Msg, MsgName, Opts) ->
             v_msg_list_consumers_response(Msg,
                                           [MsgName],
                                           TrUserData);
+        trim_stream_request ->
+            v_msg_trim_stream_request(Msg, [MsgName], TrUserData);
         stream -> v_msg_stream(Msg, [MsgName], TrUserData);
         batched_record ->
             v_msg_batched_record(Msg, [MsgName], TrUserData);
@@ -39076,6 +40935,8 @@ verify_msg(Msg, MsgName, Opts) ->
             v_msg_list_shards_request(Msg, [MsgName], TrUserData);
         list_shards_response ->
             v_msg_list_shards_response(Msg, [MsgName], TrUserData);
+        trim_shard_request ->
+            v_msg_trim_shard_request(Msg, [MsgName], TrUserData);
         create_shard_reader_request ->
             v_msg_create_shard_reader_request(Msg,
                                               [MsgName],
@@ -39114,6 +40975,14 @@ verify_msg(Msg, MsgName, Opts) ->
             v_msg_read_stream_request(Msg, [MsgName], TrUserData);
         read_stream_response ->
             v_msg_read_stream_response(Msg, [MsgName], TrUserData);
+        read_stream_by_key_request ->
+            v_msg_read_stream_by_key_request(Msg,
+                                             [MsgName],
+                                             TrUserData);
+        read_stream_by_key_response ->
+            v_msg_read_stream_by_key_response(Msg,
+                                              [MsgName],
+                                              TrUserData);
         read_single_shard_stream_request ->
             v_msg_read_single_shard_stream_request(Msg,
                                                    [MsgName],
@@ -40390,6 +42259,38 @@ v_msg_list_consumers_response(X, Path, _TrUserData) ->
                   X,
                   Path).
 
+-compile({nowarn_unused_function,v_msg_trim_stream_request/3}).
+-dialyzer({nowarn_function,v_msg_trim_stream_request/3}).
+v_msg_trim_stream_request(#{} = M, Path, TrUserData) ->
+    case M of
+        #{streamName := F1} ->
+            v_type_string(F1, [streamName | Path], TrUserData);
+        _ -> ok
+    end,
+    case M of
+        #{trimPoint := F2} ->
+            v_msg_stream_offset(F2, [trimPoint | Path], TrUserData);
+        _ -> ok
+    end,
+    lists:foreach(fun (streamName) -> ok;
+                      (trimPoint) -> ok;
+                      (OtherKey) ->
+                          mk_type_error({extraneous_key, OtherKey}, M, Path)
+                  end,
+                  maps:keys(M)),
+    ok;
+v_msg_trim_stream_request(M, Path, _TrUserData)
+    when is_map(M) ->
+    mk_type_error({missing_fields,
+                   [] -- maps:keys(M),
+                   trim_stream_request},
+                  M,
+                  Path);
+v_msg_trim_stream_request(X, Path, _TrUserData) ->
+    mk_type_error({expected_msg, trim_stream_request},
+                  X,
+                  Path).
+
 -compile({nowarn_unused_function,v_msg_stream/3}).
 -dialyzer({nowarn_function,v_msg_stream/3}).
 v_msg_stream(#{} = M, Path, TrUserData) ->
@@ -40742,6 +42643,44 @@ v_msg_list_shards_response(M, Path, _TrUserData)
                   Path);
 v_msg_list_shards_response(X, Path, _TrUserData) ->
     mk_type_error({expected_msg, list_shards_response},
+                  X,
+                  Path).
+
+-compile({nowarn_unused_function,v_msg_trim_shard_request/3}).
+-dialyzer({nowarn_function,v_msg_trim_shard_request/3}).
+v_msg_trim_shard_request(#{} = M, Path, TrUserData) ->
+    case M of
+        #{streamName := F1} ->
+            v_type_string(F1, [streamName | Path], TrUserData);
+        _ -> ok
+    end,
+    case M of
+        #{shardId := F2} ->
+            v_type_uint64(F2, [shardId | Path], TrUserData);
+        _ -> ok
+    end,
+    case M of
+        #{trimPoint := F3} ->
+            v_msg_shard_offset(F3, [trimPoint | Path], TrUserData);
+        _ -> ok
+    end,
+    lists:foreach(fun (streamName) -> ok;
+                      (shardId) -> ok;
+                      (trimPoint) -> ok;
+                      (OtherKey) ->
+                          mk_type_error({extraneous_key, OtherKey}, M, Path)
+                  end,
+                  maps:keys(M)),
+    ok;
+v_msg_trim_shard_request(M, Path, _TrUserData)
+    when is_map(M) ->
+    mk_type_error({missing_fields,
+                   [] -- maps:keys(M),
+                   trim_shard_request},
+                  M,
+                  Path);
+v_msg_trim_shard_request(X, Path, _TrUserData) ->
+    mk_type_error({expected_msg, trim_shard_request},
                   X,
                   Path).
 
@@ -41217,6 +43156,120 @@ v_msg_read_stream_response(M, Path, _TrUserData)
                   Path);
 v_msg_read_stream_response(X, Path, _TrUserData) ->
     mk_type_error({expected_msg, read_stream_response},
+                  X,
+                  Path).
+
+-compile({nowarn_unused_function,v_msg_read_stream_by_key_request/3}).
+-dialyzer({nowarn_function,v_msg_read_stream_by_key_request/3}).
+v_msg_read_stream_by_key_request(#{} = M, Path,
+                                 TrUserData) ->
+    case M of
+        #{readerId := F1} ->
+            v_type_string(F1, [readerId | Path], TrUserData);
+        _ -> ok
+    end,
+    case M of
+        #{streamName := F2} ->
+            v_type_string(F2, [streamName | Path], TrUserData);
+        _ -> ok
+    end,
+    case M of
+        #{key := F3} ->
+            v_type_string(F3, [key | Path], TrUserData);
+        _ -> ok
+    end,
+    case M of
+        #{from := F4} ->
+            v_msg_shard_offset(F4, [from | Path], TrUserData);
+        _ -> ok
+    end,
+    case M of
+        #{until := F5} ->
+            v_msg_shard_offset(F5, [until | Path], TrUserData);
+        _ -> ok
+    end,
+    case M of
+        #{readRecordCount := F6} ->
+            v_type_uint64(F6, [readRecordCount | Path], TrUserData);
+        _ -> ok
+    end,
+    lists:foreach(fun (readerId) -> ok;
+                      (streamName) -> ok;
+                      (key) -> ok;
+                      (from) -> ok;
+                      (until) -> ok;
+                      (readRecordCount) -> ok;
+                      (OtherKey) ->
+                          mk_type_error({extraneous_key, OtherKey}, M, Path)
+                  end,
+                  maps:keys(M)),
+    ok;
+v_msg_read_stream_by_key_request(M, Path, _TrUserData)
+    when is_map(M) ->
+    mk_type_error({missing_fields,
+                   [] -- maps:keys(M),
+                   read_stream_by_key_request},
+                  M,
+                  Path);
+v_msg_read_stream_by_key_request(X, Path,
+                                 _TrUserData) ->
+    mk_type_error({expected_msg,
+                   read_stream_by_key_request},
+                  X,
+                  Path).
+
+-compile({nowarn_unused_function,v_msg_read_stream_by_key_response/3}).
+-dialyzer({nowarn_function,v_msg_read_stream_by_key_response/3}).
+v_msg_read_stream_by_key_response(#{} = M, Path,
+                                  TrUserData) ->
+    case M of
+        #{recordIds := F1} ->
+            if is_list(F1) ->
+                   _ = [v_msg_record_id(Elem,
+                                        [recordIds | Path],
+                                        TrUserData)
+                        || Elem <- F1],
+                   ok;
+               true ->
+                   mk_type_error({invalid_list_of, {msg, record_id}},
+                                 F1,
+                                 [recordIds | Path])
+            end;
+        _ -> ok
+    end,
+    case M of
+        #{receivedRecords := F2} ->
+            if is_list(F2) ->
+                   _ = [v_msg_h_stream_record(Elem,
+                                              [receivedRecords | Path],
+                                              TrUserData)
+                        || Elem <- F2],
+                   ok;
+               true ->
+                   mk_type_error({invalid_list_of, {msg, h_stream_record}},
+                                 F2,
+                                 [receivedRecords | Path])
+            end;
+        _ -> ok
+    end,
+    lists:foreach(fun (recordIds) -> ok;
+                      (receivedRecords) -> ok;
+                      (OtherKey) ->
+                          mk_type_error({extraneous_key, OtherKey}, M, Path)
+                  end,
+                  maps:keys(M)),
+    ok;
+v_msg_read_stream_by_key_response(M, Path, _TrUserData)
+    when is_map(M) ->
+    mk_type_error({missing_fields,
+                   [] -- maps:keys(M),
+                   read_stream_by_key_response},
+                  M,
+                  Path);
+v_msg_read_stream_by_key_response(X, Path,
+                                  _TrUserData) ->
+    mk_type_error({expected_msg,
+                   read_stream_by_key_response},
                   X,
                   Path).
 
@@ -44269,6 +46322,7 @@ get_msg_defs() ->
        {'StreamInvalidShardCount', 205},
        {'StreamEmptyBatchedRecord', 206},
        {'StreamInvalidRecordSize', 207},
+       {'StreamInvalidOffset', 208},
        {'SubscriptionNotFound', 300},
        {'SubscriptionExists', 301},
        {'SubscriptionCreationOnNonExistentStream', 302},
@@ -44460,6 +46514,12 @@ get_msg_defs() ->
       [#{name => consumers, fnum => 1, rnum => 2,
          type => {msg, consumer}, occurrence => repeated,
          opts => []}]},
+     {{msg, trim_stream_request},
+      [#{name => streamName, fnum => 1, rnum => 2,
+         type => string, occurrence => optional, opts => []},
+       #{name => trimPoint, fnum => 2, rnum => 3,
+         type => {msg, stream_offset}, occurrence => optional,
+         opts => []}]},
      {{msg, stream},
       [#{name => streamName, fnum => 1, rnum => 2,
          type => string, occurrence => optional, opts => []},
@@ -44528,6 +46588,14 @@ get_msg_defs() ->
      {{msg, list_shards_response},
       [#{name => shards, fnum => 1, rnum => 2,
          type => {msg, shard}, occurrence => repeated,
+         opts => []}]},
+     {{msg, trim_shard_request},
+      [#{name => streamName, fnum => 1, rnum => 2,
+         type => string, occurrence => optional, opts => []},
+       #{name => shardId, fnum => 2, rnum => 3, type => uint64,
+         occurrence => optional, opts => []},
+       #{name => trimPoint, fnum => 3, rnum => 4,
+         type => {msg, shard_offset}, occurrence => optional,
          opts => []}]},
      {{msg, create_shard_reader_request},
       [#{name => streamName, fnum => 1, rnum => 2,
@@ -44611,6 +46679,28 @@ get_msg_defs() ->
      {{msg, read_stream_response},
       [#{name => receivedRecords, fnum => 1, rnum => 2,
          type => {msg, received_record}, occurrence => repeated,
+         opts => []}]},
+     {{msg, read_stream_by_key_request},
+      [#{name => readerId, fnum => 1, rnum => 2,
+         type => string, occurrence => optional, opts => []},
+       #{name => streamName, fnum => 2, rnum => 3,
+         type => string, occurrence => optional, opts => []},
+       #{name => key, fnum => 3, rnum => 4, type => string,
+         occurrence => optional, opts => []},
+       #{name => from, fnum => 4, rnum => 5,
+         type => {msg, shard_offset}, occurrence => optional,
+         opts => []},
+       #{name => until, fnum => 5, rnum => 6,
+         type => {msg, shard_offset}, occurrence => optional,
+         opts => []},
+       #{name => readRecordCount, fnum => 6, rnum => 7,
+         type => uint64, occurrence => optional, opts => []}]},
+     {{msg, read_stream_by_key_response},
+      [#{name => recordIds, fnum => 1, rnum => 2,
+         type => {msg, record_id}, occurrence => repeated,
+         opts => []},
+       #{name => receivedRecords, fnum => 2, rnum => 3,
+         type => {msg, h_stream_record}, occurrence => repeated,
          opts => []}]},
      {{msg, read_single_shard_stream_request},
       [#{name => readerId, fnum => 1, rnum => 2,
@@ -45027,6 +47117,7 @@ get_msg_names() ->
      list_subscriptions_response,
      list_consumers_request,
      list_consumers_response,
+     trim_stream_request,
      stream,
      batched_record,
      h_stream_record,
@@ -45036,6 +47127,7 @@ get_msg_names() ->
      shard,
      list_shards_request,
      list_shards_response,
+     trim_shard_request,
      create_shard_reader_request,
      create_shard_reader_response,
      read_shard_request,
@@ -45048,6 +47140,8 @@ get_msg_names() ->
      stream_offset,
      read_stream_request,
      read_stream_response,
+     read_stream_by_key_request,
+     read_stream_by_key_response,
      read_single_shard_stream_request,
      read_single_shard_stream_response,
      terminate_query_request,
@@ -45154,6 +47248,7 @@ get_msg_or_group_names() ->
      list_subscriptions_response,
      list_consumers_request,
      list_consumers_response,
+     trim_stream_request,
      stream,
      batched_record,
      h_stream_record,
@@ -45163,6 +47258,7 @@ get_msg_or_group_names() ->
      shard,
      list_shards_request,
      list_shards_response,
+     trim_shard_request,
      create_shard_reader_request,
      create_shard_reader_response,
      read_shard_request,
@@ -45175,6 +47271,8 @@ get_msg_or_group_names() ->
      stream_offset,
      read_stream_request,
      read_stream_response,
+     read_stream_by_key_request,
+     read_stream_by_key_response,
      read_single_shard_stream_request,
      read_single_shard_stream_response,
      terminate_query_request,
@@ -45434,6 +47532,12 @@ find_msg_def(list_consumers_response) ->
     [#{name => consumers, fnum => 1, rnum => 2,
        type => {msg, consumer}, occurrence => repeated,
        opts => []}];
+find_msg_def(trim_stream_request) ->
+    [#{name => streamName, fnum => 1, rnum => 2,
+       type => string, occurrence => optional, opts => []},
+     #{name => trimPoint, fnum => 2, rnum => 3,
+       type => {msg, stream_offset}, occurrence => optional,
+       opts => []}];
 find_msg_def(stream) ->
     [#{name => streamName, fnum => 1, rnum => 2,
        type => string, occurrence => optional, opts => []},
@@ -45502,6 +47606,14 @@ find_msg_def(list_shards_request) ->
 find_msg_def(list_shards_response) ->
     [#{name => shards, fnum => 1, rnum => 2,
        type => {msg, shard}, occurrence => repeated,
+       opts => []}];
+find_msg_def(trim_shard_request) ->
+    [#{name => streamName, fnum => 1, rnum => 2,
+       type => string, occurrence => optional, opts => []},
+     #{name => shardId, fnum => 2, rnum => 3, type => uint64,
+       occurrence => optional, opts => []},
+     #{name => trimPoint, fnum => 3, rnum => 4,
+       type => {msg, shard_offset}, occurrence => optional,
        opts => []}];
 find_msg_def(create_shard_reader_request) ->
     [#{name => streamName, fnum => 1, rnum => 2,
@@ -45585,6 +47697,28 @@ find_msg_def(read_stream_request) ->
 find_msg_def(read_stream_response) ->
     [#{name => receivedRecords, fnum => 1, rnum => 2,
        type => {msg, received_record}, occurrence => repeated,
+       opts => []}];
+find_msg_def(read_stream_by_key_request) ->
+    [#{name => readerId, fnum => 1, rnum => 2,
+       type => string, occurrence => optional, opts => []},
+     #{name => streamName, fnum => 2, rnum => 3,
+       type => string, occurrence => optional, opts => []},
+     #{name => key, fnum => 3, rnum => 4, type => string,
+       occurrence => optional, opts => []},
+     #{name => from, fnum => 4, rnum => 5,
+       type => {msg, shard_offset}, occurrence => optional,
+       opts => []},
+     #{name => until, fnum => 5, rnum => 6,
+       type => {msg, shard_offset}, occurrence => optional,
+       opts => []},
+     #{name => readRecordCount, fnum => 6, rnum => 7,
+       type => uint64, occurrence => optional, opts => []}];
+find_msg_def(read_stream_by_key_response) ->
+    [#{name => recordIds, fnum => 1, rnum => 2,
+       type => {msg, record_id}, occurrence => repeated,
+       opts => []},
+     #{name => receivedRecords, fnum => 2, rnum => 3,
+       type => {msg, h_stream_record}, occurrence => repeated,
        opts => []}];
 find_msg_def(read_single_shard_stream_request) ->
     [#{name => readerId, fnum => 1, rnum => 2,
@@ -46030,6 +48164,7 @@ find_enum_def('hstream.server.ErrorCode') ->
      {'StreamInvalidShardCount', 205},
      {'StreamEmptyBatchedRecord', 206},
      {'StreamInvalidRecordSize', 207},
+     {'StreamInvalidOffset', 208},
      {'SubscriptionNotFound', 300},
      {'SubscriptionExists', 301},
      {'SubscriptionCreationOnNonExistentStream', 302},
@@ -46387,6 +48522,8 @@ enum_value_by_symbol('google.protobuf.NullValue',
     'StreamEmptyBatchedRecord';
 'enum_symbol_by_value_hstream.server.ErrorCode'(207) ->
     'StreamInvalidRecordSize';
+'enum_symbol_by_value_hstream.server.ErrorCode'(208) ->
+    'StreamInvalidOffset';
 'enum_symbol_by_value_hstream.server.ErrorCode'(300) ->
     'SubscriptionNotFound';
 'enum_symbol_by_value_hstream.server.ErrorCode'(301) ->
@@ -46467,6 +48604,8 @@ enum_value_by_symbol('google.protobuf.NullValue',
     206;
 'enum_value_by_symbol_hstream.server.ErrorCode'('StreamInvalidRecordSize') ->
     207;
+'enum_value_by_symbol_hstream.server.ErrorCode'('StreamInvalidOffset') ->
+    208;
 'enum_value_by_symbol_hstream.server.ErrorCode'('SubscriptionNotFound') ->
     300;
 'enum_value_by_symbol_hstream.server.ErrorCode'('SubscriptionExists') ->
@@ -46551,6 +48690,9 @@ get_service_def('hstream.server.HStreamApi') ->
         input => delete_stream_request, output => empty,
         input_stream => false, output_stream => false,
         opts => []},
+      #{name => 'TrimStream', input => trim_stream_request,
+        output => empty, input_stream => false,
+        output_stream => false, opts => []},
       #{name => 'GetStream', input => get_stream_request,
         output => get_stream_response, input_stream => false,
         output_stream => false, opts => []},
@@ -46574,6 +48716,9 @@ get_service_def('hstream.server.HStreamApi') ->
         opts => []},
       #{name => 'ListShards', input => list_shards_request,
         output => list_shards_response, input_stream => false,
+        output_stream => false, opts => []},
+      #{name => 'TrimShard', input => trim_shard_request,
+        output => empty, input_stream => false,
         output_stream => false, opts => []},
       #{name => 'CreateShardReader',
         input => create_shard_reader_request,
@@ -46609,6 +48754,11 @@ get_service_def('hstream.server.HStreamApi') ->
         input => read_single_shard_stream_request,
         output => read_single_shard_stream_response,
         input_stream => false, output_stream => true,
+        opts => []},
+      #{name => 'ReadStreamByKey',
+        input => read_stream_by_key_request,
+        output => read_stream_by_key_response,
+        input_stream => true, output_stream => true,
         opts => []},
       #{name => 'CreateSubscription', input => subscription,
         output => subscription, input_stream => false,
@@ -46770,6 +48920,7 @@ get_rpc_names('hstream.server.HStreamApi') ->
     ['Echo',
      'CreateStream',
      'DeleteStream',
+     'TrimStream',
      'GetStream',
      'ListStreams',
      'ListStreamsWithPrefix',
@@ -46777,6 +48928,7 @@ get_rpc_names('hstream.server.HStreamApi') ->
      'Append',
      'GetTailRecordId',
      'ListShards',
+     'TrimShard',
      'CreateShardReader',
      'LookupShardReader',
      'ReadShard',
@@ -46785,6 +48937,7 @@ get_rpc_names('hstream.server.HStreamApi') ->
      'DeleteShardReader',
      'ReadStream',
      'ReadSingleShardStream',
+     'ReadStreamByKey',
      'CreateSubscription',
      'GetSubscription',
      'ListSubscriptions',
@@ -46844,6 +48997,10 @@ find_rpc_def(_, _) -> error.
       input => delete_stream_request, output => empty,
       input_stream => false, output_stream => false,
       opts => []};
+'find_rpc_def_hstream.server.HStreamApi'('TrimStream') ->
+    #{name => 'TrimStream', input => trim_stream_request,
+      output => empty, input_stream => false,
+      output_stream => false, opts => []};
 'find_rpc_def_hstream.server.HStreamApi'('GetStream') ->
     #{name => 'GetStream', input => get_stream_request,
       output => get_stream_response, input_stream => false,
@@ -46874,6 +49031,10 @@ find_rpc_def(_, _) -> error.
 'find_rpc_def_hstream.server.HStreamApi'('ListShards') ->
     #{name => 'ListShards', input => list_shards_request,
       output => list_shards_response, input_stream => false,
+      output_stream => false, opts => []};
+'find_rpc_def_hstream.server.HStreamApi'('TrimShard') ->
+    #{name => 'TrimShard', input => trim_shard_request,
+      output => empty, input_stream => false,
       output_stream => false, opts => []};
 'find_rpc_def_hstream.server.HStreamApi'('CreateShardReader') ->
     #{name => 'CreateShardReader',
@@ -46917,6 +49078,12 @@ find_rpc_def(_, _) -> error.
       input => read_single_shard_stream_request,
       output => read_single_shard_stream_response,
       input_stream => false, output_stream => true,
+      opts => []};
+'find_rpc_def_hstream.server.HStreamApi'('ReadStreamByKey') ->
+    #{name => 'ReadStreamByKey',
+      input => read_stream_by_key_request,
+      output => read_stream_by_key_response,
+      input_stream => true, output_stream => true,
       opts => []};
 'find_rpc_def_hstream.server.HStreamApi'('CreateSubscription') ->
     #{name => 'CreateSubscription', input => subscription,
@@ -47145,6 +49312,8 @@ fqbins_to_service_and_rpc_name(<<"hstream.server.HStreamApi">>, <<"CreateStream"
     {'hstream.server.HStreamApi', 'CreateStream'};
 fqbins_to_service_and_rpc_name(<<"hstream.server.HStreamApi">>, <<"DeleteStream">>) ->
     {'hstream.server.HStreamApi', 'DeleteStream'};
+fqbins_to_service_and_rpc_name(<<"hstream.server.HStreamApi">>, <<"TrimStream">>) ->
+    {'hstream.server.HStreamApi', 'TrimStream'};
 fqbins_to_service_and_rpc_name(<<"hstream.server.HStreamApi">>, <<"GetStream">>) ->
     {'hstream.server.HStreamApi', 'GetStream'};
 fqbins_to_service_and_rpc_name(<<"hstream.server.HStreamApi">>, <<"ListStreams">>) ->
@@ -47159,6 +49328,8 @@ fqbins_to_service_and_rpc_name(<<"hstream.server.HStreamApi">>, <<"GetTailRecord
     {'hstream.server.HStreamApi', 'GetTailRecordId'};
 fqbins_to_service_and_rpc_name(<<"hstream.server.HStreamApi">>, <<"ListShards">>) ->
     {'hstream.server.HStreamApi', 'ListShards'};
+fqbins_to_service_and_rpc_name(<<"hstream.server.HStreamApi">>, <<"TrimShard">>) ->
+    {'hstream.server.HStreamApi', 'TrimShard'};
 fqbins_to_service_and_rpc_name(<<"hstream.server.HStreamApi">>, <<"CreateShardReader">>) ->
     {'hstream.server.HStreamApi', 'CreateShardReader'};
 fqbins_to_service_and_rpc_name(<<"hstream.server.HStreamApi">>, <<"LookupShardReader">>) ->
@@ -47175,6 +49346,8 @@ fqbins_to_service_and_rpc_name(<<"hstream.server.HStreamApi">>, <<"ReadStream">>
     {'hstream.server.HStreamApi', 'ReadStream'};
 fqbins_to_service_and_rpc_name(<<"hstream.server.HStreamApi">>, <<"ReadSingleShardStream">>) ->
     {'hstream.server.HStreamApi', 'ReadSingleShardStream'};
+fqbins_to_service_and_rpc_name(<<"hstream.server.HStreamApi">>, <<"ReadStreamByKey">>) ->
+    {'hstream.server.HStreamApi', 'ReadStreamByKey'};
 fqbins_to_service_and_rpc_name(<<"hstream.server.HStreamApi">>, <<"CreateSubscription">>) ->
     {'hstream.server.HStreamApi', 'CreateSubscription'};
 fqbins_to_service_and_rpc_name(<<"hstream.server.HStreamApi">>, <<"GetSubscription">>) ->
@@ -47273,6 +49446,9 @@ service_and_rpc_name_to_fqbins('hstream.server.HStreamApi',
                                'DeleteStream') ->
     {<<"hstream.server.HStreamApi">>, <<"DeleteStream">>};
 service_and_rpc_name_to_fqbins('hstream.server.HStreamApi',
+                               'TrimStream') ->
+    {<<"hstream.server.HStreamApi">>, <<"TrimStream">>};
+service_and_rpc_name_to_fqbins('hstream.server.HStreamApi',
                                'GetStream') ->
     {<<"hstream.server.HStreamApi">>, <<"GetStream">>};
 service_and_rpc_name_to_fqbins('hstream.server.HStreamApi',
@@ -47293,6 +49469,9 @@ service_and_rpc_name_to_fqbins('hstream.server.HStreamApi',
 service_and_rpc_name_to_fqbins('hstream.server.HStreamApi',
                                'ListShards') ->
     {<<"hstream.server.HStreamApi">>, <<"ListShards">>};
+service_and_rpc_name_to_fqbins('hstream.server.HStreamApi',
+                               'TrimShard') ->
+    {<<"hstream.server.HStreamApi">>, <<"TrimShard">>};
 service_and_rpc_name_to_fqbins('hstream.server.HStreamApi',
                                'CreateShardReader') ->
     {<<"hstream.server.HStreamApi">>, <<"CreateShardReader">>};
@@ -47317,6 +49496,9 @@ service_and_rpc_name_to_fqbins('hstream.server.HStreamApi',
 service_and_rpc_name_to_fqbins('hstream.server.HStreamApi',
                                'ReadSingleShardStream') ->
     {<<"hstream.server.HStreamApi">>, <<"ReadSingleShardStream">>};
+service_and_rpc_name_to_fqbins('hstream.server.HStreamApi',
+                               'ReadStreamByKey') ->
+    {<<"hstream.server.HStreamApi">>, <<"ReadStreamByKey">>};
 service_and_rpc_name_to_fqbins('hstream.server.HStreamApi',
                                'CreateSubscription') ->
     {<<"hstream.server.HStreamApi">>, <<"CreateSubscription">>};
@@ -47476,6 +49658,7 @@ fqbin_to_msg_name(<<"hstream.server.ListSubscriptionsResponse">>) ->
     list_subscriptions_response;
 fqbin_to_msg_name(<<"hstream.server.ListConsumersRequest">>) -> list_consumers_request;
 fqbin_to_msg_name(<<"hstream.server.ListConsumersResponse">>) -> list_consumers_response;
+fqbin_to_msg_name(<<"hstream.server.TrimStreamRequest">>) -> trim_stream_request;
 fqbin_to_msg_name(<<"hstream.server.Stream">>) -> stream;
 fqbin_to_msg_name(<<"hstream.server.BatchedRecord">>) -> batched_record;
 fqbin_to_msg_name(<<"hstream.server.HStreamRecord">>) -> h_stream_record;
@@ -47485,6 +49668,7 @@ fqbin_to_msg_name(<<"hstream.server.RecordId">>) -> record_id;
 fqbin_to_msg_name(<<"hstream.server.Shard">>) -> shard;
 fqbin_to_msg_name(<<"hstream.server.ListShardsRequest">>) -> list_shards_request;
 fqbin_to_msg_name(<<"hstream.server.ListShardsResponse">>) -> list_shards_response;
+fqbin_to_msg_name(<<"hstream.server.TrimShardRequest">>) -> trim_shard_request;
 fqbin_to_msg_name(<<"hstream.server.CreateShardReaderRequest">>) ->
     create_shard_reader_request;
 fqbin_to_msg_name(<<"hstream.server.CreateShardReaderResponse">>) ->
@@ -47503,6 +49687,10 @@ fqbin_to_msg_name(<<"hstream.server.ReadShardStreamResponse">>) ->
 fqbin_to_msg_name(<<"hstream.server.StreamOffset">>) -> stream_offset;
 fqbin_to_msg_name(<<"hstream.server.ReadStreamRequest">>) -> read_stream_request;
 fqbin_to_msg_name(<<"hstream.server.ReadStreamResponse">>) -> read_stream_response;
+fqbin_to_msg_name(<<"hstream.server.ReadStreamByKeyRequest">>) ->
+    read_stream_by_key_request;
+fqbin_to_msg_name(<<"hstream.server.ReadStreamByKeyResponse">>) ->
+    read_stream_by_key_response;
 fqbin_to_msg_name(<<"hstream.server.ReadSingleShardStreamRequest">>) ->
     read_single_shard_stream_request;
 fqbin_to_msg_name(<<"hstream.server.ReadSingleShardStreamResponse">>) ->
@@ -47634,6 +49822,7 @@ msg_name_to_fqbin(list_subscriptions_response) ->
     <<"hstream.server.ListSubscriptionsResponse">>;
 msg_name_to_fqbin(list_consumers_request) -> <<"hstream.server.ListConsumersRequest">>;
 msg_name_to_fqbin(list_consumers_response) -> <<"hstream.server.ListConsumersResponse">>;
+msg_name_to_fqbin(trim_stream_request) -> <<"hstream.server.TrimStreamRequest">>;
 msg_name_to_fqbin(stream) -> <<"hstream.server.Stream">>;
 msg_name_to_fqbin(batched_record) -> <<"hstream.server.BatchedRecord">>;
 msg_name_to_fqbin(h_stream_record) -> <<"hstream.server.HStreamRecord">>;
@@ -47643,6 +49832,7 @@ msg_name_to_fqbin(record_id) -> <<"hstream.server.RecordId">>;
 msg_name_to_fqbin(shard) -> <<"hstream.server.Shard">>;
 msg_name_to_fqbin(list_shards_request) -> <<"hstream.server.ListShardsRequest">>;
 msg_name_to_fqbin(list_shards_response) -> <<"hstream.server.ListShardsResponse">>;
+msg_name_to_fqbin(trim_shard_request) -> <<"hstream.server.TrimShardRequest">>;
 msg_name_to_fqbin(create_shard_reader_request) ->
     <<"hstream.server.CreateShardReaderRequest">>;
 msg_name_to_fqbin(create_shard_reader_response) ->
@@ -47661,6 +49851,10 @@ msg_name_to_fqbin(read_shard_stream_response) ->
 msg_name_to_fqbin(stream_offset) -> <<"hstream.server.StreamOffset">>;
 msg_name_to_fqbin(read_stream_request) -> <<"hstream.server.ReadStreamRequest">>;
 msg_name_to_fqbin(read_stream_response) -> <<"hstream.server.ReadStreamResponse">>;
+msg_name_to_fqbin(read_stream_by_key_request) ->
+    <<"hstream.server.ReadStreamByKeyRequest">>;
+msg_name_to_fqbin(read_stream_by_key_response) ->
+    <<"hstream.server.ReadStreamByKeyResponse">>;
 msg_name_to_fqbin(read_single_shard_stream_request) ->
     <<"hstream.server.ReadSingleShardStreamRequest">>;
 msg_name_to_fqbin(read_single_shard_stream_response) ->
@@ -47940,6 +50134,8 @@ get_msg_containment("hstreamdb_api") ->
      read_shard_stream_response,
      read_single_shard_stream_request,
      read_single_shard_stream_response,
+     read_stream_by_key_request,
+     read_stream_by_key_response,
      read_stream_request,
      read_stream_response,
      received_record,
@@ -47963,6 +50159,8 @@ get_msg_containment("hstreamdb_api") ->
      subscription_offset,
      terminate_query_request,
      timestamp_offset,
+     trim_shard_request,
+     trim_stream_request,
      view];
 get_msg_containment("struct") ->
     [list_value, struct, value];
@@ -47994,6 +50192,7 @@ get_rpc_containment("hstreamdb_api") ->
     [{'hstream.server.HStreamApi', 'Echo'},
      {'hstream.server.HStreamApi', 'CreateStream'},
      {'hstream.server.HStreamApi', 'DeleteStream'},
+     {'hstream.server.HStreamApi', 'TrimStream'},
      {'hstream.server.HStreamApi', 'GetStream'},
      {'hstream.server.HStreamApi', 'ListStreams'},
      {'hstream.server.HStreamApi', 'ListStreamsWithPrefix'},
@@ -48001,6 +50200,7 @@ get_rpc_containment("hstreamdb_api") ->
      {'hstream.server.HStreamApi', 'Append'},
      {'hstream.server.HStreamApi', 'GetTailRecordId'},
      {'hstream.server.HStreamApi', 'ListShards'},
+     {'hstream.server.HStreamApi', 'TrimShard'},
      {'hstream.server.HStreamApi', 'CreateShardReader'},
      {'hstream.server.HStreamApi', 'LookupShardReader'},
      {'hstream.server.HStreamApi', 'ReadShard'},
@@ -48009,6 +50209,7 @@ get_rpc_containment("hstreamdb_api") ->
      {'hstream.server.HStreamApi', 'DeleteShardReader'},
      {'hstream.server.HStreamApi', 'ReadStream'},
      {'hstream.server.HStreamApi', 'ReadSingleShardStream'},
+     {'hstream.server.HStreamApi', 'ReadStreamByKey'},
      {'hstream.server.HStreamApi', 'CreateSubscription'},
      {'hstream.server.HStreamApi', 'GetSubscription'},
      {'hstream.server.HStreamApi', 'ListSubscriptions'},
@@ -48097,6 +50298,8 @@ get_proto_by_msg_name_as_fqbin(<<"hstream.server.ServerNodeStatus">>) ->
     "hstreamdb_api";
 get_proto_by_msg_name_as_fqbin(<<"hstream.server.BatchHStreamRecords">>) ->
     "hstreamdb_api";
+get_proto_by_msg_name_as_fqbin(<<"hstream.server.TrimShardRequest">>) ->
+    "hstreamdb_api";
 get_proto_by_msg_name_as_fqbin(<<"hstream.server.TimestampOffset">>) ->
     "hstreamdb_api";
 get_proto_by_msg_name_as_fqbin(<<"hstream.server.TerminateQueryRequest">>) ->
@@ -48108,6 +50311,8 @@ get_proto_by_msg_name_as_fqbin(<<"hstream.server.StreamingFetchRequest">>) ->
 get_proto_by_msg_name_as_fqbin(<<"hstream.server.StreamOffset">>) ->
     "hstreamdb_api";
 get_proto_by_msg_name_as_fqbin(<<"hstream.server.ReadStreamRequest">>) ->
+    "hstreamdb_api";
+get_proto_by_msg_name_as_fqbin(<<"hstream.server.ReadStreamByKeyRequest">>) ->
     "hstreamdb_api";
 get_proto_by_msg_name_as_fqbin(<<"hstream.server.PerStreamTimeSeriesStatsRequest">>) ->
     "hstreamdb_api";
@@ -48178,6 +50383,8 @@ get_proto_by_msg_name_as_fqbin(<<"hstream.server.StatType">>) ->
     "hstreamdb_api";
 get_proto_by_msg_name_as_fqbin(<<"hstream.server.ServerNode">>) ->
     "hstreamdb_api";
+get_proto_by_msg_name_as_fqbin(<<"hstream.server.ReadStreamByKeyResponse">>) ->
+    "hstreamdb_api";
 get_proto_by_msg_name_as_fqbin(<<"hstream.server.PerStreamTimeSeriesStatsResponse">>) ->
     "hstreamdb_api";
 get_proto_by_msg_name_as_fqbin(<<"hstream.server.PerStreamTimeSeriesStatsAllResponse">>) ->
@@ -48217,6 +50424,8 @@ get_proto_by_msg_name_as_fqbin(<<"hstream.server.HStreamVersion">>) ->
     "hstreamdb_api";
 get_proto_by_msg_name_as_fqbin(<<"google.protobuf.Timestamp">>) -> "timestamp";
 get_proto_by_msg_name_as_fqbin(<<"google.protobuf.Struct">>) -> "struct";
+get_proto_by_msg_name_as_fqbin(<<"hstream.server.TrimStreamRequest">>) ->
+    "hstreamdb_api";
 get_proto_by_msg_name_as_fqbin(<<"hstream.server.ShardOffset">>) ->
     "hstreamdb_api";
 get_proto_by_msg_name_as_fqbin(<<"hstream.server.Shard">>) ->
