@@ -90,7 +90,7 @@ read_stream1(Stream) ->
             % until => #{
             %     offset => {timestampOffset, #{timestampInMs => erlang:system_time(millisecond)}}
             % },
-            max_read_batches => 100
+            maxReadBatches => 100
         }
     }).
 
@@ -108,7 +108,7 @@ read_stream2(Stream) ->
                         shardId => 1877093414140935
                     }}
             },
-            max_read_batches => 100
+            maxReadBatches => 100
         }
     }).
 

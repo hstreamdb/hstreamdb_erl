@@ -92,7 +92,7 @@
 
 -type offset() :: #{offset => special_offset() | timestamp_offset() | record_offset()}.
 
--type limits() :: #{from => offset(), until => offset(), max_read_batches => non_neg_integer()}.
+-type limits() :: #{from => offset(), until => offset(), maxReadBatches => non_neg_integer()}.
 
 -type reader_fold_acc() :: term().
 -type reader_fold_fun() :: fun((hrecord() | eos, reader_fold_acc()) -> reader_fold_acc()).
@@ -101,7 +101,7 @@
     limits => #{
         from => #{offset => {specialOffset, 0}},
         until => #{offset => {specialOffset, 1}},
-        max_read_batches => 0
+        maxReadBatches => 0
     }
 }).
 

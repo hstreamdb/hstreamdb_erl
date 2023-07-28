@@ -231,5 +231,6 @@ fold_stream_key_fun(Key) ->
     fun
         (#{header := #{key := PK}} = Record, Acc) when BinKey =:= PK -> [Record | Acc];
         (#{header := #{key := _OtherPK}}, Acc) ->Acc;
-        (eos, Acc) -> lists:reverse(Acc)
+        (eos, Acc) ->
+            lists:reverse(Acc)
     end.

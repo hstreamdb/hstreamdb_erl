@@ -347,7 +347,7 @@ do_read_single_shard_stream(
         readerId => integer_to_binary(erlang:unique_integer([positive]))
     },
     Limits = maps:get(limits, Opts, #{}),
-    Req = maps:merge(Req0, map_keys([{max_read_batches, maxReadBatches}], Limits)),
+    Req = maps:merge(Req0, map_keys([{maxReadBatches, maxReadBatches}], Limits)),
     Options = #{channel => Channel, timeout => Timeout},
     logger:debug("[hstreamdb] read_single_shard: Req: ~p~nOptions: ~p~n", [Req, Options]),
     case ?HSTREAMDB_GEN_CLIENT:read_single_shard_stream(Options) of
@@ -368,7 +368,7 @@ do_read_shard_gstream(
         shardId => ShardId,
         readerId => integer_to_binary(erlang:unique_integer([positive]))
     },
-    Req = maps:merge(Req0, map_keys([{max_read_batches, maxReadBatches}], Limits)),
+    Req = maps:merge(Req0, Limits),
     Options = #{channel => Channel, timeout => Timeout},
     case ?HSTREAMDB_GEN_CLIENT:read_shard_stream(Options) of
         {ok, GStream} ->

@@ -84,7 +84,7 @@ t_read_single_shard_stream(Config) ->
         limits => #{
             from => #{offset => {specialOffset, 0}},
             until => #{offset => {specialOffset, 1}},
-            max_read_batches => 100000
+            maxReadBatches => 100000
         }
     }),
 
@@ -128,14 +128,14 @@ t_read_single_shard_stream(Config) ->
         limits => #{
             from => #{offset => {specialOffset, 0}},
             until => #{offset => MidRecordOffset},
-            max_read_batches => 100000
+            maxReadBatches => 100000
         }
     }),
     Res2 = hstreamdb:read_single_shard_stream(CM0, ?config(stream_name, Config), #{
         limits => #{
             from => #{offset => MidRecordOffset},
             until => #{offset => {specialOffset, 1}},
-            max_read_batches => 100000
+            maxReadBatches => 100000
         }
     }),
 
@@ -205,7 +205,7 @@ t_read_stream_key_with_shard_reader(Config) ->
     Limits = #{
         from => #{offset => {specialOffset, 0}},
         until => #{offset => {specialOffset, 1}},
-        max_read_batches => 100000
+        maxReadBatches => 100000
     },
 
     Res0 = hstreamdb:read_stream_key_shard(Reader, "PK1", Limits),
@@ -218,6 +218,7 @@ t_read_stream_key_with_shard_reader(Config) ->
     {ok, Recs} = Res0,
 
     ?assertEqual(100, length(Recs)),
+    assert_recs_in_order(Recs),
 
     ok = hstreamdb:stop_reader(Reader).
 
@@ -281,6 +282,7 @@ t_read_stream_key(Config) ->
     ),
 
     {ok, Recs0} = Res0,
+    ok = assert_recs_in_order(Recs0),
 
     ?assertEqual(999, length(Recs0)),
 
@@ -302,6 +304,7 @@ t_read_stream_key(Config) ->
     {ok, Recs1} = Res1,
 
     ?assertEqual(950, length(Recs1)),
+    ok = assert_recs_in_order(Recs1),
 
     % Read less then total records, and less then one read round
 
@@ -321,5 +324,19 @@ t_read_stream_key(Config) ->
     {ok, Recs2} = Res2,
 
     ?assertEqual(121, length(Recs2)),
+    ok = assert_recs_in_order(Recs2),
 
     ok = hstreamdb:stop_reader(Reader).
+
+%%--------------------------------------------------------------------
+%% Internal functions
+%%--------------------------------------------------------------------
+
+assert_recs_in_order([#{payload := PayloadA}, #{payload := PayloadB} = RecB | Rest]) ->
+    {item, NA} = binary_to_term(PayloadA),
+    {item, NB} = binary_to_term(PayloadB),
+    ?assert(NA < NB),
+    assert_recs_in_order([RecB | Rest]);
+assert_recs_in_order([_]) ->
+    ok.
+
