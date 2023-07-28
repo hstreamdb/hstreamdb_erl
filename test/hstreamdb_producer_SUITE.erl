@@ -164,6 +164,23 @@ t_append(Config) ->
 
     ok = assert_ok_flush_result(100).
 
+t_append_many(Config) ->
+    ProducerOptions = #{
+        buffer_pool_size => 1,
+        buffer_options => #{
+            max_records => 10000,
+            interval => 10000
+        }
+    },
+
+    ok = start_producer(Config, ProducerOptions),
+
+    Records = [sample_record() || _ <- lists:seq(1, 100)],
+    ok = hstreamdb:append(producer(Config), Records),
+
+    ok = hstreamdb:flush(producer(Config)),
+    ok = assert_ok_flush_result(100).
+
 t_overflooded(Config) ->
     ProducerOptions = #{
         buffer_pool_size => 1,

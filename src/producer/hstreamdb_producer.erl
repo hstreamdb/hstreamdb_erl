@@ -59,11 +59,11 @@
     terminator = undefined
 }).
 
-append(Producer, {_PartitioningKey, _Record} = PKeyRecord) ->
+append(Producer, PKeyRecordOrRecords) ->
     ecpool:with_client(
         Producer,
         fun(Pid) ->
-            gen_server:call(Pid, {append, PKeyRecord})
+            gen_server:call(Pid, {append, PKeyRecordOrRecords})
         end
     ).
 
@@ -88,7 +88,8 @@ append_flush(Producer, {_PartitioningKey, _Record} = PKeyRecord, Timeout) ->
 %%-------------------------------------------------------------------------------------------------
 %% ecpool part
 
--type callback() :: {module(), atom(), [term()]} | {module(), atom()} | fun((term()) -> any()) | undefined.
+-type callback() ::
+    {module(), atom(), [term()]} | {module(), atom()} | fun((term()) -> any()) | undefined.
 
 -type options() :: #{
     stream := hstreamdb:stream(),
@@ -150,13 +151,15 @@ init([Options]) ->
 
 handle_call(_Req, _From, #state{terminator = Terminator} = State) when Terminator =/= undefined ->
     {reply, {error, terminating}, State};
-handle_call({append, PKeyRecord}, _From, State) ->
-    {Resp, NState} = with_shard_buffer(
-        PKeyRecord,
-        fun(Buffer, Record) -> do_append(Buffer, Record) end,
-        State
-    ),
-    {reply, Resp, NState};
+handle_call({append, R}, _From, State) ->
+    {Res, NState} =
+        case is_list(R) of
+            true ->
+                do_append(R, State);
+            false ->
+                do_append([R], State)
+        end,
+    {reply, Res, NState};
 handle_call(flush, _From, State) ->
     {reply, ok, do_flush(State)};
 handle_call({sync_req, From, {append_flush, PKeyRecord}, Timeout}, _From, State) ->
@@ -308,8 +311,22 @@ with_shard_buffer(
             {Error, State0}
     end.
 
-do_append(Buffer, Record) ->
-    hstreamdb_buffer:append(Buffer, undefined, [Record], infinity).
+do_append([], State) ->
+    {ok, State};
+do_append([PKeyRecord | Rest], State) ->
+    {Res, NState} = with_shard_buffer(
+        PKeyRecord,
+        fun(Buffer, Record) ->
+            hstreamdb_buffer:append(Buffer, undefined, [Record], infinity)
+        end,
+        State
+    ),
+    case Res of
+        ok ->
+            do_append(Rest, NState);
+        {error, _} = Error ->
+            {Error, NState}
+    end.
 
 do_append_flush(Buffer0, Record, From, Timeout) ->
     case hstreamdb_buffer:append(Buffer0, From, [Record], Timeout) of
