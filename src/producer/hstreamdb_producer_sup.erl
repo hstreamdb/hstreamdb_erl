@@ -32,7 +32,6 @@
 
 -type buffer_options() :: #{
     callback := hstreamdb_producer:callback(),
-    producer_name := ecpool:pool_name(),
     interval => pos_integer(),
     batch_reap_timeout => pos_integer(),
     max_records => pos_integer(),

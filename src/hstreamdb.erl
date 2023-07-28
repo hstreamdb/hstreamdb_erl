@@ -19,7 +19,14 @@
 -include("hstreamdb.hrl").
 
 -export([
+    start_client/1,
+    start_client/2,
+    stop_client/1
+]).
+
+-export([
     start_producer/2,
+    start_producer/3,
     stop_producer/1,
     to_record/3,
     append/2,
@@ -106,6 +113,22 @@
 }).
 
 %%--------------------------------------------------------------------
+%% Client facade
+%%--------------------------------------------------------------------
+
+-spec start_client(hstreamdb_client:name(), hstreamdb_client:options() | proplists:proplist()) -> {ok, client()} | {error, term()}.
+start_client(Name, Options) ->
+    hstreamdb_client:start(Name, to_map(Options)).
+
+-spec start_client(hstreamdb_client:options() | proplists:proplist()) -> {ok, client()} | {error, term()}.
+start_client(Options) ->
+    hstreamdb_client:start(to_map(Options)).
+
+-spec stop_client(client() | hstreamdb_client:name()) -> ok.
+stop_client(ClientOrName) ->
+    hstreamdb_client:stop(ClientOrName).
+
+%%--------------------------------------------------------------------
 %% Producer facade
 %%--------------------------------------------------------------------
 
@@ -116,6 +139,59 @@ start_producer(Producer, ProducerOptions) ->
         {error, _} = Error ->
             Error
     end.
+
+%% Legacy API
+start_producer(Client, Producer, ProducerOptions) ->
+    BufferOptions = to_map(
+        [
+            callback,
+            interval,
+            max_records,
+            max_batches
+        ],
+        ProducerOptions
+    ),
+    WriterOptions = to_map(
+        [
+            grpc_timeout
+        ],
+        ProducerOptions
+    ),
+    MgrClientOptions = hstreamdb_client:options(Client),
+    BaseOptions = to_map(
+        [
+            stream,
+            {pool_size, buffer_pool_size},
+            writer_pool_size
+        ],
+        ProducerOptions
+    ),
+    Options = BaseOptions#{
+        buffer_options => BufferOptions,
+        writer_options => WriterOptions,
+        mgr_client_options => MgrClientOptions
+    },
+    case start_producer(Producer, Options) of
+        ok ->
+            {ok, Producer};
+        {error, _} = Error ->
+            Error
+    end.
+
+to_map(KeyMappings, Options) ->
+    to_map(KeyMappings, Options, #{}).
+
+to_map([Key | Rest], Options, Acc) when is_atom(Key) ->
+    to_map([{Key, Key} | Rest], Options, Acc);
+to_map([{KeyFrom, KeyTo} | Rest], Options, Acc) ->
+    case proplists:get_value(KeyFrom, Options, undefined) of
+        undefined ->
+            to_map(Rest, Options, Acc);
+        Value ->
+            to_map(Rest, Options, maps:put(KeyTo, Value, Acc))
+        end;
+to_map([], _Options, Acc) ->
+    Acc.
 
 stop_producer(Producer) ->
     hstreamdb_producers_sup:stop(Producer).
@@ -254,4 +330,12 @@ read_stream_key(Name, Key, Limits) ->
 read_stream_key(Name, Key, Limits, Fold) ->
     hstreamdb_reader:read_key(Name, Key, Limits, Fold).
 
+%%--------------------------------------------------------------------
+%% Helper functions
+%%--------------------------------------------------------------------
+
+to_map(Options) when is_map(Options) ->
+    Options;
+to_map(Options) when is_list(Options) ->
+    maps:from_list(Options).
 

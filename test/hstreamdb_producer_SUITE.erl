@@ -370,6 +370,35 @@ t_nonexistent_stream(Config) ->
         hstreamdb:append_sync(producer(Config), sample_record())
     ).
 
+t_producer_start_legacy(Config) ->
+    ProducerName = producer(Config),
+
+    ProducerLrgacyOptions = [
+        {stream, ?STREAM},
+        {callback, callback()},
+        {max_records, 10},
+        {max_batches, 10},
+        {interval, 10},
+        {grpc_timeout, 5000},
+        {pool_size, 5},
+        {writer_pool_size, 20}
+    ],
+
+    ?assertEqual(
+        {ok, ProducerName},
+        hstreamdb:start_producer(?config(client, Config), ProducerName, ProducerLrgacyOptions)
+    ),
+
+    ?assertMatch(
+        {error, {already_started, _}},
+        hstreamdb:start_producer(?config(client, Config), ProducerName, ProducerLrgacyOptions)
+    ),
+
+    ?assertMatch(
+        {ok, #{}},
+        hstreamdb_producer:append_sync(ProducerName, sample_record(), 1000)
+    ).
+
 %%--------------------------------------------------------------------
 %% Helper functions
 %%--------------------------------------------------------------------

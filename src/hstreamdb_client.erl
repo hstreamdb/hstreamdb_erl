@@ -50,7 +50,8 @@
     read_key_gstream/1,
     fold_key_read_gstream/6,
 
-    name/1
+    name/1,
+    options/1
 ]).
 
 -export_type([
@@ -94,6 +95,7 @@ start(Name, Options) ->
             Client =
                 #{
                     channel => ChannelName,
+                    url => ServerURL,
                     url_map => ServerURLMap,
                     rpc_options => RPCOptions#{gun_opts => GunOpts},
                     host_mapping => HostMapping,
@@ -152,6 +154,20 @@ stop(Name) ->
 -spec name(t()) -> name().
 name(#{channel := Channel}) ->
     Channel.
+
+-spec options(t()) -> options().
+options(#{
+    url := ServerURL,
+    rpc_options := RPCOptions,
+    host_mapping := HostMapping,
+    grpc_timeout := GRPCTimeout
+}) ->
+    #{
+        url => ServerURL,
+        rpc_options => RPCOptions,
+        host_mapping => HostMapping,
+        grpc_timeout => GRPCTimeout
+    }.
 
 echo(Client) ->
     do_echo(Client).
