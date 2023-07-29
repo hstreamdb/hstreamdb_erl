@@ -158,14 +158,7 @@ do_demonitor(ChannelName, Monitors) ->
 do_reap_channel(ChannelName, #{reap_timers_by_pid := ReapTimers0} = State0) ->
     {Pid, MRef} = spawn_monitor(
         fun() ->
-            case grpc_client_sup:stop_channel_pool(ChannelName) of
-                ok ->
-                    ok;
-                Error ->
-                    logger:error("[hstreamdb] error reaping GRPC channel ~p: ~p", [
-                        ChannelName, Error
-                    ])
-            end
+            grpc_client_sup:stop_channel_pool(ChannelName)
         end
     ),
     ReapTimerRef = erlang:send_after(?REAP_TIMEOUT, self(), {reap_timeout, Pid, MRef}),

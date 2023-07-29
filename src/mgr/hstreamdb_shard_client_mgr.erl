@@ -36,13 +36,15 @@
 
 -type options() :: #{
     cache_by_shard_id => boolean(),
-    client_override_opts => grpc_client_sup:options()
+    client_override_opts => hstreamdb_client:rpc_options()
 }.
 
--opaque t() :: #{
-    client_by_addr := #{},
-    addr_by_shard := #{},
-    client_override_opts := grpc_client_sup:options(),
+-type addr() :: {binary(), inet:port_number()}.
+
+-type t() :: #{
+    client_by_addr := #{addr() => hstreamdb:client()},
+    addr_by_shard := #{hstreamdb:shard_id() => addr()},
+    client_override_opts := hstreamdb_client:rpc_options(),
     cache_by_shard_id := boolean(),
     client := hstreamdb:client()
 }.
@@ -95,7 +97,7 @@ lookup_shard_client(
             end
     end.
 
--spec lookup_addr_client(t(), hstreamdb:stream()) -> {ok, hstreamdb:client(), t()} | {error, term()}.
+-spec lookup_addr_client(t(), addr()) -> {ok, hstreamdb:client(), t()} | {error, term()}.
 lookup_addr_client(ShardClientMgr, Addr) ->
     client_by_addr(ShardClientMgr, Addr).
 

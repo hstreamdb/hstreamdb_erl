@@ -35,6 +35,9 @@ jobs:
     - name: run xref
       run: |
         make xref
+    - name: run dialyzer
+      run: |
+        make dialyzer
     - name: docker compose down
       run: |
         make -C ./.ci down

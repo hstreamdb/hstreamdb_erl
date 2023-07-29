@@ -28,7 +28,13 @@
 
 -define(DEFAULT_SHARD_UPDATE_INTERVAL, 3000000).
 
--opaque t() :: #{}.
+-type t() :: #{
+    client := hstreamdb:client(),
+    shard_update_deadline := integer(),
+    shard_update_interval := non_neg_integer(),
+    shards := list(map()) | undefined,
+    stream := hstreamdb:stream()
+}.
 
 -type options() :: #{
     shard_update_interval => pos_integer()

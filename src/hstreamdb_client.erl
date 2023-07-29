@@ -57,18 +57,36 @@
 -export_type([
     t/0,
     name/0,
-    options/0
+    options/0,
+    rpc_options/0
 ]).
 
 -define(READ_KEY_STEP_COUNT, 200).
 
--opaque t() :: #{}.
+-type t() :: #{
+    channel := term(),
+    grpc_timeout := non_neg_integer(),
+    url := binary() | string(),
+    url_map := map(),
+    host_mapping := map(),
+    reap_channel := boolean(),
+    rpc_options := map()
+}.
 
 -type name() :: atom() | string() | binary().
 
+%% grpc_client:client_opts()
+-type rpc_options() :: #{
+    pool_size => pos_integer(),
+    gun_opts => gun:opts(),
+    stream_batch_size => non_neg_integer(),
+    stream_batch_delay_ms => non_neg_integer(),
+    _ => _
+}.
+
 -type options() :: #{
     url := binary() | string(),
-    rpc_options := grpc_client_sup:options(),
+    rpc_options := rpc_options(),
     host_mapping => #{binary() => binary()},
     grpc_timeout => pos_integer(),
     reap_channel => boolean()
@@ -118,10 +136,16 @@ connect(Client, Host, Port) ->
     connect(Client, Host, Port, #{}).
 
 -spec connect(
-    t(), inet:hostname() | inet:ip_address(), inet:port_number(), grpc_client_sup:options()
+    t(), inet:hostname() | inet:ip_address(), inet:port_number(), rpc_options()
 ) -> {ok, t()} | {error, term()}.
 connect(
-    #{url_map := ServerURLMap, rpc_options := RPCOptions, reap_channel := ReapChannel} = Client,
+    #{
+        url_map := ServerURLMap,
+        rpc_options := RPCOptions,
+        reap_channel := ReapChannel,
+        url := ServerURL,
+        grpc_timeout := GRPCTimeout
+    } = Client,
     Host0,
     Port,
     RPCOptionsOverrides
@@ -136,13 +160,18 @@ connect(
     case start_channel(NewChannelName, NewUrlMap, NewRPCOptions, ReapChannel) of
         ok ->
             {ok, Client#{
-                channel := NewChannelName, url_map := NewUrlMap, rpc_options := NewRPCOptions
+                channel => NewChannelName,
+                url_map => NewUrlMap,
+                url => ServerURL,
+                rpc_options => NewRPCOptions,
+                reap_channel => ReapChannel,
+                grpc_timeout => GRPCTimeout
             }};
-        {error, Reason} ->
-            {error, Reason}
+        {error, _} = Error ->
+            Error
     end.
 
--spec stop(t()) -> ok.
+-spec stop(t() | name()) -> ok.
 stop(#{channel := Channel}) ->
     grpc_client_sup:stop_channel_pool(Channel),
     ok = unregister_channel(Channel);
@@ -436,9 +465,7 @@ map_keys([{KeyOld, KeyNew} | Rest], Map) ->
             map_keys(Rest, Map)
     end.
 
-validate_url_and_opts(URL, GunOpts) when is_binary(URL) ->
-    validate_url_and_opts(list_to_binary(URL), GunOpts);
-validate_url_and_opts(URL, GunOpts) when is_list(URL) ->
+validate_url_and_opts(URL, GunOpts) ->
     case uri_string:parse(URL) of
         {error, What, Term} ->
             {error, {invalid_url, What, Term}};
@@ -552,11 +579,9 @@ do_fold_shard_read_gstream(GStream, Fun, Acc) ->
             logger:debug("[hstreamdb] Ok recv~n"),
             case fold_results(Results, Fun, Acc) of
                 {ok, NewAcc} ->
-                    fold_shard_read_gstream(GStream, Fun, NewAcc);
+                    do_fold_shard_read_gstream(GStream, Fun, NewAcc);
                 {stop, NewAcc} ->
-                    {ok, NewAcc};
-                {error, _} = Error ->
-                    Error
+                    {ok, NewAcc}
             end;
         {error, _} = Error ->
             logger:debug("[hstreamdb] Error recv~n"),
@@ -570,9 +595,7 @@ fold_results([Result | Rest], Fun, Acc) ->
         {ok, NewAcc} ->
             fold_results(Rest, Fun, NewAcc);
         {stop, NewAcc} ->
-            {stop, NewAcc};
-        {error, _} = Error ->
-            Error
+            {stop, NewAcc}
     end.
 
 fold_result(#{receivedRecords := Records}, Fun, Acc) ->

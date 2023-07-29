@@ -103,7 +103,8 @@ append_flush(Producer, {_PartitioningKey, _Record} = PKeyRecord, Timeout) ->
     compression_type => none | gzip | zstd
 }.
 
--spec connect(options()) -> get_server:start_ret().
+-type pool_opts() :: list(any() | {opts, options()}).
+-spec connect(pool_opts()) -> get_server:start_ret().
 connect(PoolOptions) ->
     Options = proplists:get_value(opts, PoolOptions),
     gen_server:start_link(?MODULE, [Options], []).

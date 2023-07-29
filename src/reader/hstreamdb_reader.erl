@@ -47,7 +47,7 @@
     stream := hstreamdb:stream(),
     pool_size => non_neg_integer(),
 
-    reader_client_option_overrides => grpc_client_sup:options(),
+    reader_client_option_overrides => hstreamdb_client:rpc_options(),
 
     key_manager_options => hstreamdb_key_mgr:options(),
     shard_client_manager_options => hstreamdb_shard_client_mgr:options()

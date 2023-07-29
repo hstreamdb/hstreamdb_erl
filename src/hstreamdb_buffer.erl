@@ -52,11 +52,11 @@
     current_batch := [internal_record()],
     batch_tab := ets:table(),
     batch_queue := queue:queue(),
-    batch_count := pos_integer(),
+    batch_count := non_neg_integer(),
     inflight_batch_ref := reference() | undefined,
 
-    batch_timer := timer:timer_ref(),
-    flush_timer := timer:timer_ref(),
+    batch_timer := timer:timer_ref() | undefined,
+    flush_timer := timer:timer_ref() | undefined,
     send_batch := fun((batch_message()) -> any()),
     send_after := fun((pos_integer(), term()) -> reference()),
     cancel_send := fun((reference()) -> any()),
@@ -121,7 +121,7 @@ new(#{
     ((is_integer(Timeout) andalso Timeout > 0) orelse Timeout == infinity)
 ).
 
--spec append(hstreamdb_buffer(), [record()], from(), timeout()) ->
+-spec append(hstreamdb_buffer(), from(), [record()], timeout()) ->
     {ok, hstreamdb_buffer()} | {error, term()}.
 append(#{batch_max_count := BatchMaxCount} = Buffer, From, Records, Timeout) when
     ?IS_TIMEOUT(Timeout) andalso is_list(Records)

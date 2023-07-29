@@ -27,6 +27,10 @@ fmt-check: $(REBAR)
 xref: $(REBAR)
 	$(REBAR) xref
 
+.PHONY: dialyzer
+dialyzer: $(REBAR)
+	@$(REBAR) dialyzer
+
 .PHONY: update-proto
 update-proto:
 	$(CURDIR)/script/update_proto.sh master
