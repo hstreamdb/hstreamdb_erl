@@ -99,7 +99,8 @@
 
 -type offset() :: #{offset => special_offset() | timestamp_offset() | record_offset()}.
 
--type limits() :: #{from => offset(), until => offset(), maxReadBatches => non_neg_integer()}.
+-type limits_shard() :: #{from => offset(), until => offset(), maxReadBatches => non_neg_integer()}.
+-type limits_key() :: #{from => offset(), until => offset(), readRecordCount => non_neg_integer()}.
 
 -type reader_fold_acc() :: term().
 -type reader_fold_fun() :: fun((hrecord() | eos, reader_fold_acc()) -> reader_fold_acc()).
@@ -303,12 +304,12 @@ stop_reader(Name) ->
 %% by default, the fold function will filter all records that have
 %% exactly the same key as the one provided.
 
--spec read_stream_key_shard(ecpool:pool_name(), partitioning_key(), limits()) ->
+-spec read_stream_key_shard(ecpool:pool_name(), partitioning_key(), limits_shard()) ->
     {ok, [hstreamdb:hrecord()]} | {error, term()}.
 read_stream_key_shard(Name, Key, Limits) ->
     hstreamdb_reader:read_key_shard(Name, Key, Limits).
 
--spec read_stream_key_shard(ecpool:pool_name(), partitioning_key(), limits(), {
+-spec read_stream_key_shard(ecpool:pool_name(), partitioning_key(), limits_shard(), {
     reader_fold_fun(), reader_fold_acc()
 }) ->
     {ok, [hstreamdb:hrecord()]} | {error, term()}.
@@ -318,12 +319,12 @@ read_stream_key_shard(Name, Key, Limits, Fold) ->
 %% @doc fetch only records that have the same key as the one provided, using
 %% server-side filtering.
 
--spec read_stream_key(ecpool:pool_name(), partitioning_key(), limits()) ->
+-spec read_stream_key(ecpool:pool_name(), partitioning_key(), limits_key()) ->
     {ok, [hstreamdb:hrecord()]} | {error, term()}.
 read_stream_key(Name, Key, Limits) ->
     hstreamdb_reader:read_key(Name, Key, Limits).
 
--spec read_stream_key(ecpool:pool_name(), partitioning_key(), limits(), {
+-spec read_stream_key(ecpool:pool_name(), partitioning_key(), limits_key(), {
     reader_fold_fun(), reader_fold_acc()
 }) ->
     {ok, [hstreamdb:hrecord()]} | {error, term()}.
