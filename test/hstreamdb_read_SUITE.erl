@@ -34,12 +34,13 @@ end_per_suite(_Config) ->
     _ = application:stop(hstreamdb_erl),
     ok.
 
-init_per_testcase(_Case, Config) ->
+init_per_testcase(Case, Config) ->
     Client = hstreamdb_test_helpers:client(test_c),
     StreamName =
         "stream1_" ++ integer_to_list(erlang:system_time()) ++ "_" ++
             integer_to_list(erlang:unique_integer([positive])),
-    ok = hstreamdb_client:create_stream(Client, StreamName, 2, ?DAY, 1),
+    _ = hstreamdb_client:delete_stream(Client, StreamName),
+    ok = hstreamdb_client:create_stream(Client, StreamName, 2, ?DAY, shard_count(Case)),
     [{client, Client}, {stream_name, StreamName} | Config].
 end_per_testcase(_Case, Config) ->
     Client = ?config(client, Config),
@@ -50,12 +51,13 @@ end_per_testcase(_Case, Config) ->
 
 t_read_single_shard_stream(Config) ->
     Client = ?config(client, Config),
+    StreamName = ?config(stream_name, Config),
 
     Producer = ?FUNCTION_NAME,
     ProducerOptions = #{
         buffer_pool_size => 1,
         writer_pool_size => 1,
-        stream => ?config(stream_name, Config),
+        stream => StreamName,
         mgr_client_options => hstreamdb_test_helpers:default_options(),
         buffer_options => #{
             max_records => 100,
@@ -340,3 +342,7 @@ assert_recs_in_order([#{payload := PayloadA}, #{payload := PayloadB} = RecB | Re
 assert_recs_in_order([_]) ->
     ok.
 
+shard_count(t_read_single_shard_stream) ->
+    1;
+shard_count(_) ->
+    2.
