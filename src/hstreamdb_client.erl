@@ -645,9 +645,16 @@ random_name() ->
     "hstreandb-client-" ++ integer_to_list(erlang:system_time()) ++ "-" ++
         integer_to_list(erlang:unique_integer([positive])).
 
-fold_key_read_gstream_rounds(GStream, Req, 0, Fun, Acc) ->
+fold_key_read_gstream_rounds(GStream, Req0, 0, Fun, Acc) ->
+    Req = Req0#{readRecordCount => 0},
     ?LOG_DEBUG("fold_key_read_gstream send: ~p~n", [Req]),
-    ok = grpc_client:send(GStream, Req#{readRecordCount => 0}, fin),
+    ok = grpc_client:send(GStream, Req, fin),
+    %% We received all records we need, but not eos.
+    %% So we need to send a new request to get the eos.
+    case grpc_client:recv(GStream) of
+        {ok, [{eos, _Trails}]} -> ok;
+        {error, not_found} -> ok
+    end,
     {ok, Fun(eos, Acc)};
 fold_key_read_gstream_rounds(GStream, Req, TotalLeft, Fun, Acc) ->
     {NewTotalLeft, StepCount} = read_record_count(TotalLeft, ?READ_KEY_STEP_COUNT),
@@ -663,7 +670,7 @@ fold_key_read_gstream_rounds(GStream, Req, TotalLeft, Fun, Acc) ->
             Error
     end.
 
-fold_key_read_gstream_round(_GStream, Count, _Fun, Acc) when Count =< 0 ->
+fold_key_read_gstream_round(_GStream, Count, _Fun, Acc) when Count == 0 ->
     {ok, Acc};
 fold_key_read_gstream_round(GStream, Count, Fun, Acc) ->
     case grpc_client:recv(GStream) of
@@ -675,7 +682,12 @@ fold_key_read_gstream_round(GStream, Count, Fun, Acc) ->
                 {N, NewAcc} ->
                     fold_key_read_gstream_round(GStream, Count - N, Fun, NewAcc)
             end;
+        {error, not_found} ->
+            ?LOG_DEBUG("fold_key_read_gstream recv not_found"),
+            %% Server has no more records to send and disconnected, gstream is closed.
+            {stop, Acc};
         {error, _} = Error ->
+            ?LOG_DEBUG("fold_key_read_gstream recv error: ~p~n", [Error]),
             Error
     end.
 
