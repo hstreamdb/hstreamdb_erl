@@ -16,79 +16,188 @@
 
 -module(hstreamdb).
 
+-include("hstreamdb.hrl").
+
 -export([
+    start_client/1,
     start_client/2,
-    stop_client/1,
+    stop_client/1
+]).
+
+-export([
+    start_producer/2,
     start_producer/3,
     stop_producer/1,
-    start_consumer/3,
-    stop_consumer/1
-]).
-
--export([
-    echo/1,
-    create_stream/5,
-    delete_stream/2,
-    delete_stream/4
-]).
-
--export([
     to_record/3,
     append/2,
     append/4,
     flush/1,
-    append_flush/2
+    append_flush/2,
+    append_sync/2
 ]).
 
--define(GRPC_TIMEOUT, 5000).
+-export([
+    start_client_manager/1,
+    start_client_manager/2,
+    stop_client_manager/1
+]).
 
--include("hstreamdb.hrl").
+-export([
+    start_key_manager/2,
+    start_key_manager/3,
+    stop_key_manager/1
+]).
 
-start_client(Name, Options) when is_list(Options) ->
-    start_client(Name, maps:from_list(Options));
+-export([
+    read_single_shard_stream/2,
+    read_single_shard_stream/3
+]).
+
+-export([
+    start_reader/2,
+    stop_reader/1,
+    read_stream_key_shard/3,
+    read_stream_key_shard/4,
+    read_stream_key/3,
+    read_stream_key/4
+]).
+
+-export_type([
+    stream/0,
+    partitioning_key/0,
+    client/0,
+    shard_id/0,
+    hrecord/0
+]).
+
+-type stream() :: binary() | string().
+-type partitioning_key() :: binary() | string().
+-type client() :: hstreamdb_client:t().
+-type shard_id() :: integer().
+
+-type hrecord_attributes() :: #{}.
+-type hrecord_header() :: #{
+    flag := 'RAW',
+    key := partitioning_key(),
+    attributes := hrecord_attributes()
+}.
+-type hrecord_payload() :: binary().
+-type hrecord_id() :: #{
+    batchId := integer(),
+    batchIndex := integer(),
+    shardId := shard_id()
+}.
+-type hrecord() :: #{
+    header := hrecord_header(),
+    payload := hrecord_payload(),
+    recordId := hrecord_id()
+}.
+
+-type special_offset() :: {specialOffset, 0 | 1}.
+-type timestamp_offset() :: {timestampOffset, #{timestampInMs => integer()}}.
+-type record_offset() :: {recordOffset, hrecord_id()}.
+
+-type offset() :: #{offset => special_offset() | timestamp_offset() | record_offset()}.
+
+-type limits_shard() :: #{from => offset(), until => offset(), maxReadBatches => non_neg_integer()}.
+-type limits_key() :: #{from => offset(), until => offset(), readRecordCount => non_neg_integer()}.
+
+-type reader_fold_acc() :: term().
+-type reader_fold_fun() :: fun((hrecord() | eos, reader_fold_acc()) -> reader_fold_acc()).
+
+-define(DEFAULT_READ_SINGLE_SHARD_STREAM_OPTS, #{
+    limits => #{
+        from => #{offset => {specialOffset, 0}},
+        until => #{offset => {specialOffset, 1}},
+        maxReadBatches => 0
+    }
+}).
+
+%%--------------------------------------------------------------------
+%% Client facade
+%%--------------------------------------------------------------------
+
+-spec start_client(hstreamdb_client:name(), hstreamdb_client:options() | proplists:proplist()) ->
+    {ok, client()} | {error, term()}.
 start_client(Name, Options) ->
-    ServerURL = maps:get(url, Options),
-    RPCOptions = maps:get(rpc_options, Options),
-    HostMapping = maps:get(host_mapping, Options, #{}),
-    ChannelName = hstreamdb_channel_mgr:channel_name(Name),
-    GRPCTimeout = maps:get(grpc_timeout, Options, ?GRPC_TIMEOUT),
-    case validate_url_and_opts(ServerURL, maps:get(gun_opts, RPCOptions, #{})) of
-        {ok, ServerURLMap, GunOpts} ->
-            Client =
-                #{
-                    channel => ChannelName,
-                    url_map => ServerURLMap,
-                    rpc_options => RPCOptions#{gun_opts => GunOpts},
-                    host_mapping => HostMapping,
-                    grpc_timeout => GRPCTimeout
-                },
-            case hstreamdb_channel_mgr:start_channel(ChannelName, ServerURLMap, RPCOptions) of
-                {ok, _} ->
-                    {ok, Client};
-                {error, Reason} ->
-                    {error, Reason}
-            end;
+    hstreamdb_client:start(Name, to_map(Options)).
+
+-spec start_client(hstreamdb_client:options() | proplists:proplist()) ->
+    {ok, client()} | {error, term()}.
+start_client(Options) ->
+    hstreamdb_client:start(to_map(Options)).
+
+-spec stop_client(client() | hstreamdb_client:name()) -> ok.
+stop_client(ClientOrName) ->
+    hstreamdb_client:stop(ClientOrName).
+
+%%--------------------------------------------------------------------
+%% Producer facade
+%%--------------------------------------------------------------------
+
+start_producer(Producer, ProducerOptions) ->
+    case hstreamdb_producers_sup:start(Producer, ProducerOptions) of
+        {ok, _Pid} ->
+            ok;
         {error, _} = Error ->
             Error
     end.
 
-stop_client(#{channel := Channel}) ->
-    grpc_client_sup:stop_channel_pool(Channel);
-stop_client(Name) ->
-    Channel = hstreamdb_channel_mgr:channel_name(Name),
-    grpc_client_sup:stop_channel_pool(Channel).
-
+%% Legacy API
 start_producer(Client, Producer, ProducerOptions) ->
-    hstreamdb_producer:start(Producer, [{client, Client} | ProducerOptions]).
+    BufferOptions = to_map(
+        [
+            callback,
+            interval,
+            max_records,
+            max_batches
+        ],
+        ProducerOptions
+    ),
+    WriterOptions = to_map(
+        [
+            grpc_timeout
+        ],
+        ProducerOptions
+    ),
+    MgrClientOptions = hstreamdb_client:options(Client),
+    BaseOptions = to_map(
+        [
+            stream,
+            {pool_size, buffer_pool_size},
+            writer_pool_size
+        ],
+        ProducerOptions
+    ),
+    Options = BaseOptions#{
+        buffer_options => BufferOptions,
+        writer_options => WriterOptions,
+        mgr_client_options => MgrClientOptions
+    },
+    case start_producer(Producer, Options) of
+        ok ->
+            {ok, Producer};
+        {error, _} = Error ->
+            Error
+    end.
+
+to_map(KeyMappings, Options) ->
+    to_map(KeyMappings, Options, #{}).
+
+to_map([Key | Rest], Options, Acc) when is_atom(Key) ->
+    to_map([{Key, Key} | Rest], Options, Acc);
+to_map([{KeyFrom, KeyTo} | Rest], Options, Acc) ->
+    case proplists:get_value(KeyFrom, Options, undefined) of
+        undefined ->
+            to_map(Rest, Options, Acc);
+        Value ->
+            to_map(Rest, Options, maps:put(KeyTo, Value, Acc))
+    end;
+to_map([], _Options, Acc) ->
+    Acc.
 
 stop_producer(Producer) ->
-    hstreamdb_producer:stop(Producer).
-
-start_consumer(_Client, Consumer, _ConsumerOptions) ->
-    {ok, Consumer}.
-
-stop_consumer(_) ->
-    ok.
+    hstreamdb_producers_sup:stop(Producer).
 
 to_record(PartitioningKey, PayloadType, Payload) ->
     {PartitioningKey, #{
@@ -103,108 +212,131 @@ to_record(PartitioningKey, PayloadType, Payload) ->
         payload => Payload
     }}.
 
-echo(Client) ->
-    do_echo(Client).
-
-create_stream(Client, Name, ReplFactor, BacklogDuration, ShardCount) ->
-    do_create_stream(Client, Name, ReplFactor, BacklogDuration, ShardCount).
-
-delete_stream(Client, Name) ->
-    delete_stream(Client, Name, true, true).
-
-delete_stream(Client, Name, IgnoreNonExist, Force) ->
-    do_delete_stream(Client, Name, IgnoreNonExist, Force).
-
 append(Producer, PartitioningKey, PayloadType, Payload) ->
     Record = to_record(PartitioningKey, PayloadType, Payload),
     append(Producer, Record).
 
-append(Producer, Data) ->
-    hstreamdb_producer:append(Producer, Data).
+append(Producer, Record) ->
+    hstreamdb_producer:append(Producer, Record).
 
 flush(Producer) ->
     hstreamdb_producer:flush(Producer).
 
-append_flush(Producer, Data) ->
-    hstreamdb_producer:append_flush(Producer, Data).
+append_flush(Producer, Record) ->
+    hstreamdb_producer:append_flush(Producer, Record).
 
-%% -------------------------------------------------------------------------------------------------
-%% internal
+append_sync(Producer, Record) ->
+    hstreamdb_producer:append_sync(Producer, Record).
 
-validate_url_and_opts(URL, GunOpts) when is_binary(URL) ->
-    validate_url_and_opts(list_to_binary(URL), GunOpts);
-validate_url_and_opts(URL, GunOpts) when is_list(URL) ->
-    case uri_string:parse(URL) of
-        {error, What, Term} ->
-            {error, {invalid_url, What, Term}};
-        URIMap when is_map(URIMap) ->
-            validate_scheme_and_opts(set_default_port(URIMap), GunOpts)
+%%--------------------------------------------------------------------
+%% Client Manager facade
+%%--------------------------------------------------------------------
+
+start_client_manager(Client) ->
+    start_client_manager(Client, #{}).
+
+start_client_manager(Client, Options) ->
+    hstreamdb_shard_client_mgr:start(Client, Options).
+
+stop_client_manager(ClientManager) ->
+    hstreamdb_shard_client_mgr:stop(ClientManager).
+
+%%--------------------------------------------------------------------
+%% Key Manager facade
+%%--------------------------------------------------------------------
+
+start_key_manager(Client, StreamName) ->
+    start_key_manager(Client, StreamName, #{}).
+
+start_key_manager(Client, StreamName, Options) ->
+    hstreamdb_key_mgr:start(Client, StreamName, Options).
+
+stop_key_manager(KeyManager) ->
+    hstreamdb_key_mgr:stop(KeyManager).
+
+%%--------------------------------------------------------------------
+%% Reader single shard stream facade (simple, no pool)
+%%--------------------------------------------------------------------
+
+read_single_shard_stream(ClientManager, StreamName) ->
+    read_single_shard_stream(ClientManager, StreamName, ?DEFAULT_READ_SINGLE_SHARD_STREAM_OPTS).
+
+read_single_shard_stream(ClientManager, StreamName, Limits) ->
+    Client = hstreamdb_shard_client_mgr:client(ClientManager),
+    case hstreamdb_client:list_shards(Client, StreamName) of
+        {ok, [#{shardId := ShardId}]} ->
+            case hstreamdb_shard_client_mgr:lookup_shard_client(ClientManager, ShardId) of
+                {ok, ShardClient, NewClientManager} ->
+                    case
+                        hstreamdb_client:read_single_shard_stream(ShardClient, StreamName, Limits)
+                    of
+                        {ok, Result} ->
+                            {ok, Result, NewClientManager};
+                        {error, Reason} ->
+                            {error, Reason, NewClientManager}
+                    end;
+                {error, _} = Error ->
+                    Error
+            end;
+        {ok, L} when is_list(L) andalso length(L) > 1 ->
+            {error, {multiple_shards, L}};
+        {error, _} = Error ->
+            Error
     end.
 
-set_default_port(#{port := _Port} = URIMap) ->
-    URIMap;
-set_default_port(URIMap) ->
-    URIMap#{port => ?DEFAULT_HSTREAMDB_PORT}.
+%%--------------------------------------------------------------------
+%% Read multiple shard stream key facade
+%%--------------------------------------------------------------------
 
-validate_scheme_and_opts(#{scheme := "hstreams"} = URIMap, GunOpts) ->
-    validate_scheme_and_opts(URIMap#{scheme := "https"}, GunOpts);
-validate_scheme_and_opts(#{scheme := "hstream"} = URIMap, GunOpts) ->
-    validate_scheme_and_opts(URIMap#{scheme := "http"}, GunOpts);
-validate_scheme_and_opts(#{scheme := "https"}, #{transport := tcp}) ->
-    {error, {https_invalid_transport, tcp}};
-validate_scheme_and_opts(#{scheme := "https"} = URIMap, GunOpts) ->
-    {ok, URIMap, GunOpts#{transport => tls}};
-validate_scheme_and_opts(#{scheme := "http"}, #{transport := tls}) ->
-    {error, {http_invalid_transport, tls}};
-validate_scheme_and_opts(#{scheme := "http"} = URIMap, GunOpts) ->
-    {ok, URIMap, GunOpts#{transport => tcp}};
-validate_scheme_and_opts(_URIMap, _GunOpts) ->
-    {error, unknown_scheme}.
-
-do_echo(#{channel := Channel, grpc_timeout := Timeout}) ->
-    case ?HSTREAMDB_CLIENT:echo(#{}, #{channel => Channel, timeout => Timeout}) of
-        {ok, #{msg := _}, _} ->
-            {ok, echo};
-        {error, R} ->
-            {error, R}
-    end.
-
-do_create_stream(
-    #{channel := Channel, grpc_timeout := Timeout},
-    Name,
-    ReplFactor,
-    BacklogDuration,
-    ShardCount
-) ->
-    Req = #{
-        streamName => Name,
-        replicationFactor => ReplFactor,
-        backlogDuration => BacklogDuration,
-        shardCount => ShardCount
-    },
-    Options = #{channel => Channel, timeout => Timeout},
-    case ?HSTREAMDB_CLIENT:create_stream(Req, Options) of
-        {ok, _, _} ->
+-spec start_reader(ecpool:pool_name(), hstreamdb_reader:options()) -> ok | {error, term()}.
+start_reader(Name, ReaderOptions) ->
+    case hstreamdb_readers_sup:start(Name, ReaderOptions) of
+        {ok, _Pid} ->
             ok;
-        {error, R} ->
-            {error, R}
+        {error, _} = Error ->
+            Error
     end.
 
-do_delete_stream(
-    #{channel := Channel, grpc_timeout := Timeout},
-    Name,
-    IgnoreNonExist,
-    Force
-) ->
-    Req = #{
-        streamName => Name,
-        ignoreNonExist => IgnoreNonExist,
-        force => Force
-    },
-    Options = #{channel => Channel, timeout => Timeout},
-    case ?HSTREAMDB_CLIENT:delete_stream(Req, Options) of
-        {ok, _, _} ->
-            ok;
-        {error, R} ->
-            {error, R}
-    end.
+-spec stop_reader(ecpool:pool_name()) -> ok.
+stop_reader(Name) ->
+    hstreamdb_readers_sup:stop(Name).
+
+%% @doc Identify the shard that a key belongs to and fold all read records.
+%% by default, the fold function will filter all records that have
+%% exactly the same key as the one provided.
+
+-spec read_stream_key_shard(ecpool:pool_name(), partitioning_key(), limits_shard()) ->
+    {ok, [hstreamdb:hrecord()]} | {error, term()}.
+read_stream_key_shard(Name, Key, Limits) ->
+    hstreamdb_reader:read_key_shard(Name, Key, Limits).
+
+-spec read_stream_key_shard(ecpool:pool_name(), partitioning_key(), limits_shard(), {
+    reader_fold_fun(), reader_fold_acc()
+}) ->
+    {ok, [hstreamdb:hrecord()]} | {error, term()}.
+read_stream_key_shard(Name, Key, Limits, Fold) ->
+    hstreamdb_reader:read_key_shard(Name, Key, Limits, Fold).
+
+%% @doc fetch only records that have the same key as the one provided, using
+%% server-side filtering.
+
+-spec read_stream_key(ecpool:pool_name(), partitioning_key(), limits_key()) ->
+    {ok, [hstreamdb:hrecord()]} | {error, term()}.
+read_stream_key(Name, Key, Limits) ->
+    hstreamdb_reader:read_key(Name, Key, Limits).
+
+-spec read_stream_key(ecpool:pool_name(), partitioning_key(), limits_key(), {
+    reader_fold_fun(), reader_fold_acc()
+}) ->
+    {ok, [hstreamdb:hrecord()]} | {error, term()}.
+read_stream_key(Name, Key, Limits, Fold) ->
+    hstreamdb_reader:read_key(Name, Key, Limits, Fold).
+
+%%--------------------------------------------------------------------
+%% Helper functions
+%%--------------------------------------------------------------------
+
+to_map(Options) when is_map(Options) ->
+    Options;
+to_map(Options) when is_list(Options) ->
+    maps:from_list(Options).

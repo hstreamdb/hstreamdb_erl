@@ -19,3 +19,5 @@ _build
 rebar3.crashdump
 *~
 rebar.lock
+/rebar3
+*_plt

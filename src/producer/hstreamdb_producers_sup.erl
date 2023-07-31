@@ -12,13 +12,18 @@
 %% WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 %% See the License for the specific language governing permissions and
 %% limitations under the License.
+%%
+%% @doc
+%% Supervisor for all producers
 %%--------------------------------------------------------------------
 
--module(hstreamdb_erl_sup).
+-module(hstreamdb_producers_sup).
 
 -behaviour(supervisor).
 
--export([start_link/0]).
+-export([start/2, stop/1]).
+
+-export([start_link/0, spec/0]).
 -export([init/1]).
 
 -define(SERVER, ?MODULE).
@@ -28,3 +33,24 @@ start_link() ->
 
 init([]) ->
     {ok, {#{strategy => one_for_one, intensity => 5, period => 30}, []}}.
+
+spec() ->
+    #{
+        id => ?SERVER,
+        start => {?MODULE, start_link, []},
+        restart => permanent,
+        shutdown => infinity,
+        type => supervisor
+    }.
+
+start(Producer, Opts) ->
+    supervisor:start_child(?SERVER, hstreamdb_producer_sup:spec(Producer, Opts)).
+
+stop(Producer) ->
+    ChildId = hstreamdb_producer_sup:child_id(Producer),
+    case supervisor:terminate_child(?SERVER, ChildId) of
+        ok ->
+            supervisor:delete_child(?SERVER, ChildId);
+        {error, Reason} ->
+            {error, Reason}
+    end.

@@ -14,17 +14,22 @@
 %% limitations under the License.
 %%--------------------------------------------------------------------
 
--module(hstreamdb_erl_app).
+-module(hstreamdb_sup).
 
--behaviour(application).
+-behaviour(supervisor).
 
--export([start/2, stop/1]).
+-export([start_link/0]).
+-export([init/1]).
 
-start(_StartType, _StartArgs) ->
-    _ = application:ensure_all_started(ecpool),
-    hstreamdb_sup:start_link().
+-define(SERVER, ?MODULE).
 
-stop(_State) ->
-    ok.
+start_link() ->
+    supervisor:start_link({local, ?SERVER}, ?MODULE, []).
 
-%% internal functions
+init([]) ->
+    {ok,
+        {#{strategy => one_for_one, intensity => 5, period => 30}, [
+            hstreamdb_channel_reaper:spec(),
+            hstreamdb_producers_sup:spec(),
+            hstreamdb_readers_sup:spec()
+        ]}}.

@@ -14,17 +14,28 @@
 %% limitations under the License.
 %%--------------------------------------------------------------------
 
--module(hstreamdb_erl_app).
+-include_lib("stdlib/include/assert.hrl").
 
--behaviour(application).
+-define(DEFAULT_RECEIVE_TIMEOUT, 200).
 
--export([start/2, stop/1]).
+-define(assertReceive(Pattern), ?assertReceive(Pattern, ?DEFAULT_RECEIVE_TIMEOUT)).
+-define(assertReceived(Pattern), ?assertReceive(Pattern, 0)).
 
-start(_StartType, _StartArgs) ->
-    _ = application:ensure_all_started(ecpool),
-    hstreamdb_sup:start_link().
+-define(assertReceive(Pattern, Timeout),
+    receive
+        Pattern -> ok
+    after Timeout ->
+        ?assert(false, "Expected message not received")
+    end
+).
 
-stop(_State) ->
-    ok.
+-define(refuteReceive(Pattern), ?refuteReceive(Pattern, ?DEFAULT_RECEIVE_TIMEOUT)).
+-define(refuteReceived(Pattern), ?refuteReceive(Pattern, 0)).
 
-%% internal functions
+-define(refuteReceive(Pattern, Timeout),
+    receive
+        Pattern -> ?assert(false, "Unexpected message received")
+    after Timeout ->
+        ok
+    end
+).

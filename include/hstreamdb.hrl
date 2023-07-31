@@ -14,7 +14,7 @@
 %% limitations under the License.
 %%--------------------------------------------------------------------
 
--define(HSTREAMDB_CLIENT, hstream_server_h_stream_api_client).
+-define(HSTREAMDB_GEN_CLIENT, hstream_server_h_stream_api_client).
 
 -type append_record() :: map().
 
@@ -22,10 +22,32 @@
 
 -define(DEFAULT_HSTREAMDB_PORT, 6570).
 
+-define(DEFAULT_MAX_RECORDS, 100).
+-define(DEFAULT_MAX_BATCHES, 500).
+-define(DEFAULT_INTERVAL, 3000).
+-define(POOL_TIMEOUT, 60000).
+-define(DEFAULT_WRITER_POOL_SIZE, 64).
+-define(DEFAULT_BUFFER_POOL_SIZE, 8).
+-define(DEFAULT_BATCH_REAP_TIMEOUT, 120000).
+-define(DEFAULT_COMPRESSION, none).
+
+-define(DEFAULT_READER_POOL_SIZE, 16).
+
+-define(DEFAULT_STOP_TIMEOUT, 5000).
+
+%% ResourseType enum
+
+-define(RES_STREAM, 0).
+-define(RES_SUBSCRIPTION, 1).
+-define(RES_SHARD, 2).
+-define(RES_SHARD_READER, 3).
+-define(RES_CONNECTOR, 4).
+-define(RES_QUERY, 5).
+-define(RES_VIEW, 6).
+
 -record(batch, {
     id :: reference(),
-    from :: gen_server:from(),
-    records :: list(append_record()),
-    compression_type :: compression_type(),
-    deadline :: integer()
+    shard_id :: integer(),
+    tab :: ets:table(),
+    compression_type :: compression_type()
 }).
