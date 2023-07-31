@@ -653,6 +653,8 @@ fold_key_read_gstream_rounds(GStream, Req0, 0, Fun, Acc) ->
     %% So we need to send a new request to get the eos.
     case grpc_client:recv(GStream) of
         {ok, [{eos, _Trails}]} -> ok;
+        %% this is probably a server error, but we do not care,
+        %% we received all records we need anyway.
         {error, not_found} -> ok
     end,
     {ok, Fun(eos, Acc)};
@@ -682,10 +684,6 @@ fold_key_read_gstream_round(GStream, Count, Fun, Acc) ->
                 {N, NewAcc} ->
                     fold_key_read_gstream_round(GStream, Count - N, Fun, NewAcc)
             end;
-        {error, not_found} ->
-            ?LOG_DEBUG("fold_key_read_gstream recv not_found"),
-            %% Server has no more records to send and disconnected, gstream is closed.
-            {stop, Acc};
         {error, _} = Error ->
             ?LOG_DEBUG("fold_key_read_gstream recv error: ~p~n", [Error]),
             Error
