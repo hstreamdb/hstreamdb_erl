@@ -346,4 +346,3 @@ shard_count(t_read_single_shard_stream) ->
     1;
 shard_count(_) ->
     2.
-

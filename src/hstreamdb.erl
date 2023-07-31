@@ -117,11 +117,13 @@
 %% Client facade
 %%--------------------------------------------------------------------
 
--spec start_client(hstreamdb_client:name(), hstreamdb_client:options() | proplists:proplist()) -> {ok, client()} | {error, term()}.
+-spec start_client(hstreamdb_client:name(), hstreamdb_client:options() | proplists:proplist()) ->
+    {ok, client()} | {error, term()}.
 start_client(Name, Options) ->
     hstreamdb_client:start(Name, to_map(Options)).
 
--spec start_client(hstreamdb_client:options() | proplists:proplist()) -> {ok, client()} | {error, term()}.
+-spec start_client(hstreamdb_client:options() | proplists:proplist()) ->
+    {ok, client()} | {error, term()}.
 start_client(Options) ->
     hstreamdb_client:start(to_map(Options)).
 
@@ -190,7 +192,7 @@ to_map([{KeyFrom, KeyTo} | Rest], Options, Acc) ->
             to_map(Rest, Options, Acc);
         Value ->
             to_map(Rest, Options, maps:put(KeyTo, Value, Acc))
-        end;
+    end;
 to_map([], _Options, Acc) ->
     Acc.
 
@@ -299,7 +301,6 @@ start_reader(Name, ReaderOptions) ->
 stop_reader(Name) ->
     hstreamdb_readers_sup:stop(Name).
 
-
 %% @doc Identify the shard that a key belongs to and fold all read records.
 %% by default, the fold function will filter all records that have
 %% exactly the same key as the one provided.
@@ -339,4 +340,3 @@ to_map(Options) when is_map(Options) ->
     Options;
 to_map(Options) when is_list(Options) ->
     maps:from_list(Options).
-

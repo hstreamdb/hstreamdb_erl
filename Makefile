@@ -33,5 +33,5 @@ dialyzer: $(REBAR)
 
 .PHONY: update-proto
 update-proto:
-	$(CURDIR)/script/update_proto.sh master
+	$(CURDIR)/scripts/update-proto.sh master
 
