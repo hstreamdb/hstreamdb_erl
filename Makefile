@@ -35,3 +35,11 @@ dialyzer: $(REBAR)
 update-proto:
 	$(CURDIR)/scripts/update-proto.sh master
 
+.PHONY: clean
+clean:
+	@rm -rf _build
+	@rm -rf rebar3
+	@rm -rf *_crash.dump
+	@rm -rf hstreamdb_erl_*_plt
+
+

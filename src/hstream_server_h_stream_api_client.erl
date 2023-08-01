@@ -633,6 +633,26 @@ lookup_resource(Req, Metadata, Options) ->
                            lookup_resource_request, server_node, <<"hstream.server.LookupResourceRequest">>),
                       Req, Metadata, Options).
 
+-spec lookup_key(hstreamdb_api:lookup_key_request())
+    -> {ok, hstreamdb_api:server_node(), grpc:metadata()}
+     | {error, term()}.
+lookup_key(Req) ->
+    lookup_key(Req, #{}, #{}).
+
+-spec lookup_key(hstreamdb_api:lookup_key_request(), grpc:options())
+    -> {ok, hstreamdb_api:server_node(), grpc:metadata()}
+     | {error, term()}.
+lookup_key(Req, Options) ->
+    lookup_key(Req, #{}, Options).
+
+-spec lookup_key(hstreamdb_api:lookup_key_request(), grpc:metadata(), grpc_client:options())
+    -> {ok, hstreamdb_api:server_node(), grpc:metadata()}
+     | {error, term()}.
+lookup_key(Req, Metadata, Options) ->
+    grpc_client:unary(?DEF(<<"/hstream.server.HStreamApi/LookupKey">>,
+                           lookup_key_request, server_node, <<"hstream.server.LookupKeyRequest">>),
+                      Req, Metadata, Options).
+
 -spec send_admin_command(hstreamdb_api:admin_command_request())
     -> {ok, hstreamdb_api:admin_command_response(), grpc:metadata()}
      | {error, term()}.

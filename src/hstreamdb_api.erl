@@ -440,6 +440,9 @@ encode_msg(Msg, MsgName, Opts) ->
         lookup_resource_request ->
             encode_msg_lookup_resource_request(id(Msg, TrUserData),
                                                TrUserData);
+        lookup_key_request ->
+            encode_msg_lookup_key_request(id(Msg, TrUserData),
+                                          TrUserData);
         get_tail_record_id_request ->
             encode_msg_get_tail_record_id_request(id(Msg,
                                                      TrUserData),
@@ -4009,6 +4012,25 @@ encode_msg_lookup_resource_request(#{} = M, Bin,
         _ -> B1
     end.
 
+encode_msg_lookup_key_request(Msg, TrUserData) ->
+    encode_msg_lookup_key_request(Msg, <<>>, TrUserData).
+
+
+encode_msg_lookup_key_request(#{} = M, Bin,
+                              TrUserData) ->
+    case M of
+        #{partitionKey := F1} ->
+            begin
+                TrF1 = id(F1, TrUserData),
+                case is_empty_string(TrF1) of
+                    true -> Bin;
+                    false ->
+                        e_type_string(TrF1, <<Bin/binary, 10>>, TrUserData)
+                end
+            end;
+        _ -> Bin
+    end.
+
 encode_msg_get_tail_record_id_request(Msg,
                                       TrUserData) ->
     encode_msg_get_tail_record_id_request(Msg,
@@ -6147,6 +6169,10 @@ decode_msg_2_doit(lookup_shard_reader_response, Bin,
 decode_msg_2_doit(lookup_resource_request, Bin,
                   TrUserData) ->
     id(decode_msg_lookup_resource_request(Bin, TrUserData),
+       TrUserData);
+decode_msg_2_doit(lookup_key_request, Bin,
+                  TrUserData) ->
+    id(decode_msg_lookup_key_request(Bin, TrUserData),
        TrUserData);
 decode_msg_2_doit(get_tail_record_id_request, Bin,
                   TrUserData) ->
@@ -34509,6 +34535,171 @@ skip_64_lookup_resource_request(<<_:64, Rest/binary>>,
                                                F@_2,
                                                TrUserData).
 
+decode_msg_lookup_key_request(Bin, TrUserData) ->
+    dfp_read_field_def_lookup_key_request(Bin,
+                                          0,
+                                          0,
+                                          id(<<>>, TrUserData),
+                                          TrUserData).
+
+dfp_read_field_def_lookup_key_request(<<10,
+                                        Rest/binary>>,
+                                      Z1, Z2, F@_1, TrUserData) ->
+    d_field_lookup_key_request_partitionKey(Rest,
+                                            Z1,
+                                            Z2,
+                                            F@_1,
+                                            TrUserData);
+dfp_read_field_def_lookup_key_request(<<>>, 0, 0, F@_1,
+                                      _) ->
+    #{partitionKey => F@_1};
+dfp_read_field_def_lookup_key_request(Other, Z1, Z2,
+                                      F@_1, TrUserData) ->
+    dg_read_field_def_lookup_key_request(Other,
+                                         Z1,
+                                         Z2,
+                                         F@_1,
+                                         TrUserData).
+
+dg_read_field_def_lookup_key_request(<<1:1, X:7,
+                                       Rest/binary>>,
+                                     N, Acc, F@_1, TrUserData)
+    when N < 32 - 7 ->
+    dg_read_field_def_lookup_key_request(Rest,
+                                         N + 7,
+                                         X bsl N + Acc,
+                                         F@_1,
+                                         TrUserData);
+dg_read_field_def_lookup_key_request(<<0:1, X:7,
+                                       Rest/binary>>,
+                                     N, Acc, F@_1, TrUserData) ->
+    Key = X bsl N + Acc,
+    case Key of
+        10 ->
+            d_field_lookup_key_request_partitionKey(Rest,
+                                                    0,
+                                                    0,
+                                                    F@_1,
+                                                    TrUserData);
+        _ ->
+            case Key band 7 of
+                0 ->
+                    skip_varint_lookup_key_request(Rest,
+                                                   0,
+                                                   0,
+                                                   F@_1,
+                                                   TrUserData);
+                1 ->
+                    skip_64_lookup_key_request(Rest,
+                                               0,
+                                               0,
+                                               F@_1,
+                                               TrUserData);
+                2 ->
+                    skip_length_delimited_lookup_key_request(Rest,
+                                                             0,
+                                                             0,
+                                                             F@_1,
+                                                             TrUserData);
+                3 ->
+                    skip_group_lookup_key_request(Rest,
+                                                  Key bsr 3,
+                                                  0,
+                                                  F@_1,
+                                                  TrUserData);
+                5 ->
+                    skip_32_lookup_key_request(Rest, 0, 0, F@_1, TrUserData)
+            end
+    end;
+dg_read_field_def_lookup_key_request(<<>>, 0, 0, F@_1,
+                                     _) ->
+    #{partitionKey => F@_1}.
+
+d_field_lookup_key_request_partitionKey(<<1:1, X:7,
+                                          Rest/binary>>,
+                                        N, Acc, F@_1, TrUserData)
+    when N < 57 ->
+    d_field_lookup_key_request_partitionKey(Rest,
+                                            N + 7,
+                                            X bsl N + Acc,
+                                            F@_1,
+                                            TrUserData);
+d_field_lookup_key_request_partitionKey(<<0:1, X:7,
+                                          Rest/binary>>,
+                                        N, Acc, _, TrUserData) ->
+    {NewFValue, RestF} = begin
+                             Len = X bsl N + Acc,
+                             <<Bytes:Len/binary, Rest2/binary>> = Rest,
+                             {id(binary:copy(Bytes), TrUserData), Rest2}
+                         end,
+    dfp_read_field_def_lookup_key_request(RestF,
+                                          0,
+                                          0,
+                                          NewFValue,
+                                          TrUserData).
+
+skip_varint_lookup_key_request(<<1:1, _:7,
+                                 Rest/binary>>,
+                               Z1, Z2, F@_1, TrUserData) ->
+    skip_varint_lookup_key_request(Rest,
+                                   Z1,
+                                   Z2,
+                                   F@_1,
+                                   TrUserData);
+skip_varint_lookup_key_request(<<0:1, _:7,
+                                 Rest/binary>>,
+                               Z1, Z2, F@_1, TrUserData) ->
+    dfp_read_field_def_lookup_key_request(Rest,
+                                          Z1,
+                                          Z2,
+                                          F@_1,
+                                          TrUserData).
+
+skip_length_delimited_lookup_key_request(<<1:1, X:7,
+                                           Rest/binary>>,
+                                         N, Acc, F@_1, TrUserData)
+    when N < 57 ->
+    skip_length_delimited_lookup_key_request(Rest,
+                                             N + 7,
+                                             X bsl N + Acc,
+                                             F@_1,
+                                             TrUserData);
+skip_length_delimited_lookup_key_request(<<0:1, X:7,
+                                           Rest/binary>>,
+                                         N, Acc, F@_1, TrUserData) ->
+    Length = X bsl N + Acc,
+    <<_:Length/binary, Rest2/binary>> = Rest,
+    dfp_read_field_def_lookup_key_request(Rest2,
+                                          0,
+                                          0,
+                                          F@_1,
+                                          TrUserData).
+
+skip_group_lookup_key_request(Bin, FNum, Z2, F@_1,
+                              TrUserData) ->
+    {_, Rest} = read_group(Bin, FNum),
+    dfp_read_field_def_lookup_key_request(Rest,
+                                          0,
+                                          Z2,
+                                          F@_1,
+                                          TrUserData).
+
+skip_32_lookup_key_request(<<_:32, Rest/binary>>, Z1,
+                           Z2, F@_1, TrUserData) ->
+    dfp_read_field_def_lookup_key_request(Rest,
+                                          Z1,
+                                          Z2,
+                                          F@_1,
+                                          TrUserData).
+
+skip_64_lookup_key_request(<<_:64, Rest/binary>>, Z1,
+                           Z2, F@_1, TrUserData) ->
+    dfp_read_field_def_lookup_key_request(Rest,
+                                          Z1,
+                                          Z2,
+                                          F@_1,
+                                          TrUserData).
+
 decode_msg_get_tail_record_id_request(Bin,
                                       TrUserData) ->
     dfp_read_field_def_get_tail_record_id_request(Bin,
@@ -38410,6 +38601,8 @@ merge_msgs(Prev, New, MsgName, Opts) ->
             merge_msg_lookup_resource_request(Prev,
                                               New,
                                               TrUserData);
+        lookup_key_request ->
+            merge_msg_lookup_key_request(Prev, New, TrUserData);
         get_tail_record_id_request ->
             merge_msg_get_tail_record_id_request(Prev,
                                                  New,
@@ -40613,6 +40806,17 @@ merge_msg_lookup_resource_request(PMsg, NMsg, _) ->
         _ -> S2
     end.
 
+-compile({nowarn_unused_function,merge_msg_lookup_key_request/3}).
+merge_msg_lookup_key_request(PMsg, NMsg, _) ->
+    S1 = #{},
+    case {PMsg, NMsg} of
+        {_, #{partitionKey := NFpartitionKey}} ->
+            S1#{partitionKey => NFpartitionKey};
+        {#{partitionKey := PFpartitionKey}, _} ->
+            S1#{partitionKey => PFpartitionKey};
+        _ -> S1
+    end.
+
 -compile({nowarn_unused_function,merge_msg_get_tail_record_id_request/3}).
 merge_msg_get_tail_record_id_request(PMsg, NMsg, _) ->
     S1 = #{},
@@ -41148,6 +41352,8 @@ verify_msg(Msg, MsgName, Opts) ->
             v_msg_lookup_resource_request(Msg,
                                           [MsgName],
                                           TrUserData);
+        lookup_key_request ->
+            v_msg_lookup_key_request(Msg, [MsgName], TrUserData);
         get_tail_record_id_request ->
             v_msg_get_tail_record_id_request(Msg,
                                              [MsgName],
@@ -45198,6 +45404,32 @@ v_msg_lookup_resource_request(X, Path, _TrUserData) ->
                   X,
                   Path).
 
+-compile({nowarn_unused_function,v_msg_lookup_key_request/3}).
+-dialyzer({nowarn_function,v_msg_lookup_key_request/3}).
+v_msg_lookup_key_request(#{} = M, Path, TrUserData) ->
+    case M of
+        #{partitionKey := F1} ->
+            v_type_string(F1, [partitionKey | Path], TrUserData);
+        _ -> ok
+    end,
+    lists:foreach(fun (partitionKey) -> ok;
+                      (OtherKey) ->
+                          mk_type_error({extraneous_key, OtherKey}, M, Path)
+                  end,
+                  maps:keys(M)),
+    ok;
+v_msg_lookup_key_request(M, Path, _TrUserData)
+    when is_map(M) ->
+    mk_type_error({missing_fields,
+                   [] -- maps:keys(M),
+                   lookup_key_request},
+                  M,
+                  Path);
+v_msg_lookup_key_request(X, Path, _TrUserData) ->
+    mk_type_error({expected_msg, lookup_key_request},
+                  X,
+                  Path).
+
 -compile({nowarn_unused_function,v_msg_get_tail_record_id_request/3}).
 -dialyzer({nowarn_function,v_msg_get_tail_record_id_request/3}).
 v_msg_get_tail_record_id_request(#{} = M, Path,
@@ -46998,6 +47230,9 @@ get_msg_defs() ->
          occurrence => optional, opts => []},
        #{name => resId, fnum => 2, rnum => 3, type => string,
          occurrence => optional, opts => []}]},
+     {{msg, lookup_key_request},
+      [#{name => partitionKey, fnum => 1, rnum => 2,
+         type => string, occurrence => optional, opts => []}]},
      {{msg, get_tail_record_id_request},
       [#{name => streamName, fnum => 1, rnum => 2,
          type => string, occurrence => optional, opts => []},
@@ -47197,6 +47432,7 @@ get_msg_names() ->
      lookup_shard_reader_request,
      lookup_shard_reader_response,
      lookup_resource_request,
+     lookup_key_request,
      get_tail_record_id_request,
      get_tail_record_id_response,
      stat_type,
@@ -47328,6 +47564,7 @@ get_msg_or_group_names() ->
      lookup_shard_reader_request,
      lookup_shard_reader_response,
      lookup_resource_request,
+     lookup_key_request,
      get_tail_record_id_request,
      get_tail_record_id_response,
      stat_type,
@@ -48016,6 +48253,9 @@ find_msg_def(lookup_resource_request) ->
        occurrence => optional, opts => []},
      #{name => resId, fnum => 2, rnum => 3, type => string,
        occurrence => optional, opts => []}];
+find_msg_def(lookup_key_request) ->
+    [#{name => partitionKey, fnum => 1, rnum => 2,
+       type => string, occurrence => optional, opts => []}];
 find_msg_def(get_tail_record_id_request) ->
     [#{name => streamName, fnum => 1, rnum => 2,
        type => string, occurrence => optional, opts => []},
@@ -48810,6 +49050,9 @@ get_service_def('hstream.server.HStreamApi') ->
         input => lookup_resource_request, output => server_node,
         input_stream => false, output_stream => false,
         opts => []},
+      #{name => 'LookupKey', input => lookup_key_request,
+        output => server_node, input_stream => false,
+        output_stream => false, opts => []},
       #{name => 'SendAdminCommand',
         input => admin_command_request,
         output => admin_command_response, input_stream => false,
@@ -48949,6 +49192,7 @@ get_rpc_names('hstream.server.HStreamApi') ->
      'StreamingFetch',
      'DescribeCluster',
      'LookupResource',
+     'LookupKey',
      'SendAdminCommand',
      'PerStreamTimeSeriesStats',
      'PerStreamTimeSeriesStatsAll',
@@ -49146,6 +49390,10 @@ find_rpc_def(_, _) -> error.
       input => lookup_resource_request, output => server_node,
       input_stream => false, output_stream => false,
       opts => []};
+'find_rpc_def_hstream.server.HStreamApi'('LookupKey') ->
+    #{name => 'LookupKey', input => lookup_key_request,
+      output => server_node, input_stream => false,
+      output_stream => false, opts => []};
 'find_rpc_def_hstream.server.HStreamApi'('SendAdminCommand') ->
     #{name => 'SendAdminCommand',
       input => admin_command_request,
@@ -49371,6 +49619,8 @@ fqbins_to_service_and_rpc_name(<<"hstream.server.HStreamApi">>, <<"DescribeClust
     {'hstream.server.HStreamApi', 'DescribeCluster'};
 fqbins_to_service_and_rpc_name(<<"hstream.server.HStreamApi">>, <<"LookupResource">>) ->
     {'hstream.server.HStreamApi', 'LookupResource'};
+fqbins_to_service_and_rpc_name(<<"hstream.server.HStreamApi">>, <<"LookupKey">>) ->
+    {'hstream.server.HStreamApi', 'LookupKey'};
 fqbins_to_service_and_rpc_name(<<"hstream.server.HStreamApi">>, <<"SendAdminCommand">>) ->
     {'hstream.server.HStreamApi', 'SendAdminCommand'};
 fqbins_to_service_and_rpc_name(<<"hstream.server.HStreamApi">>, <<"PerStreamTimeSeriesStats">>) ->
@@ -49532,6 +49782,9 @@ service_and_rpc_name_to_fqbins('hstream.server.HStreamApi',
 service_and_rpc_name_to_fqbins('hstream.server.HStreamApi',
                                'LookupResource') ->
     {<<"hstream.server.HStreamApi">>, <<"LookupResource">>};
+service_and_rpc_name_to_fqbins('hstream.server.HStreamApi',
+                               'LookupKey') ->
+    {<<"hstream.server.HStreamApi">>, <<"LookupKey">>};
 service_and_rpc_name_to_fqbins('hstream.server.HStreamApi',
                                'SendAdminCommand') ->
     {<<"hstream.server.HStreamApi">>, <<"SendAdminCommand">>};
@@ -49764,6 +50017,7 @@ fqbin_to_msg_name(<<"hstream.server.LookupShardReaderRequest">>) ->
 fqbin_to_msg_name(<<"hstream.server.LookupShardReaderResponse">>) ->
     lookup_shard_reader_response;
 fqbin_to_msg_name(<<"hstream.server.LookupResourceRequest">>) -> lookup_resource_request;
+fqbin_to_msg_name(<<"hstream.server.LookupKeyRequest">>) -> lookup_key_request;
 fqbin_to_msg_name(<<"hstream.server.GetTailRecordIdRequest">>) ->
     get_tail_record_id_request;
 fqbin_to_msg_name(<<"hstream.server.GetTailRecordIdResponse">>) ->
@@ -49928,6 +50182,7 @@ msg_name_to_fqbin(lookup_shard_reader_request) ->
 msg_name_to_fqbin(lookup_shard_reader_response) ->
     <<"hstream.server.LookupShardReaderResponse">>;
 msg_name_to_fqbin(lookup_resource_request) -> <<"hstream.server.LookupResourceRequest">>;
+msg_name_to_fqbin(lookup_key_request) -> <<"hstream.server.LookupKeyRequest">>;
 msg_name_to_fqbin(get_tail_record_id_request) ->
     <<"hstream.server.GetTailRecordIdRequest">>;
 msg_name_to_fqbin(get_tail_record_id_response) ->
@@ -50112,6 +50367,7 @@ get_msg_containment("hstreamdb_api") ->
      list_subscriptions_with_prefix_request,
      list_views_request,
      list_views_response,
+     lookup_key_request,
      lookup_resource_request,
      lookup_shard_reader_request,
      lookup_shard_reader_response,
@@ -50222,6 +50478,7 @@ get_rpc_containment("hstreamdb_api") ->
      {'hstream.server.HStreamApi', 'StreamingFetch'},
      {'hstream.server.HStreamApi', 'DescribeCluster'},
      {'hstream.server.HStreamApi', 'LookupResource'},
+     {'hstream.server.HStreamApi', 'LookupKey'},
      {'hstream.server.HStreamApi', 'SendAdminCommand'},
      {'hstream.server.HStreamApi',
       'PerStreamTimeSeriesStats'},
@@ -50407,10 +50664,7 @@ get_proto_by_msg_name_as_fqbin(<<"hstream.server.CheckSubscriptionExistResponse"
     "hstreamdb_api";
 get_proto_by_msg_name_as_fqbin(<<"hstream.server.AdminCommandResponse">>) ->
     "hstreamdb_api";
-get_proto_by_msg_name_as_fqbin(<<"google.protobuf.Empty">>) -> "empty";
 get_proto_by_msg_name_as_fqbin(<<"hstream.server.Query">>) ->
-    "hstreamdb_api";
-get_proto_by_msg_name_as_fqbin(<<"hstream.server.CommandQuery">>) ->
     "hstreamdb_api";
 get_proto_by_msg_name_as_fqbin(<<"hstream.server.CommandStreamTask">>) ->
     "hstreamdb_api";
@@ -50449,6 +50703,8 @@ get_proto_by_msg_name_as_fqbin(<<"hstream.server.PerStreamTimeSeriesStatsAllRequ
 get_proto_by_msg_name_as_fqbin(<<"hstream.server.ParseSqlRequest">>) ->
     "hstreamdb_api";
 get_proto_by_msg_name_as_fqbin(<<"hstream.server.LookupShardRequest">>) ->
+    "hstreamdb_api";
+get_proto_by_msg_name_as_fqbin(<<"hstream.server.LookupKeyRequest">>) ->
     "hstreamdb_api";
 get_proto_by_msg_name_as_fqbin(<<"hstream.server.ListViewsRequest">>) ->
     "hstreamdb_api";
@@ -50526,6 +50782,9 @@ get_proto_by_msg_name_as_fqbin(<<"hstream.server.CommandStreamTaskResponse">>) -
 get_proto_by_msg_name_as_fqbin(<<"hstream.server.AppendResponse">>) ->
     "hstreamdb_api";
 get_proto_by_msg_name_as_fqbin(<<"hstream.server.View">>) ->
+    "hstreamdb_api";
+get_proto_by_msg_name_as_fqbin(<<"google.protobuf.Empty">>) -> "empty";
+get_proto_by_msg_name_as_fqbin(<<"hstream.server.CommandQuery">>) ->
     "hstreamdb_api";
 get_proto_by_msg_name_as_fqbin(E) ->
     error({gpb_error, {badmsg, E}}).

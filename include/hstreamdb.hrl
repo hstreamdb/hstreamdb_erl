@@ -16,10 +16,6 @@
 
 -define(HSTREAMDB_GEN_CLIENT, hstream_server_h_stream_api_client).
 
--type append_record() :: map().
-
--type compression_type() :: none | gzip | zstd.
-
 -define(DEFAULT_HSTREAMDB_PORT, 6570).
 
 -define(DEFAULT_MAX_RECORDS, 100).
@@ -49,5 +45,5 @@
     id :: reference(),
     shard_id :: integer(),
     tab :: ets:table(),
-    compression_type :: compression_type()
+    compression_type :: hstreamdb_client:compression_type()
 }).

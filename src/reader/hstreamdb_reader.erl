@@ -95,7 +95,7 @@ read_key(Reader, Key, Limits, {FoldFun, InitAcc}) ->
         ecpool:with_client(
             Reader,
             fun(Pid) ->
-                gen_server:call(Pid, get_key_gstream)
+                gen_server:call(Pid, {get_key_gstream, Key})
             end
         )
     of
@@ -145,8 +145,8 @@ handle_call({get_shard_gstream, Key, Limits}, _From, State) ->
         {error, Reason, NewState} ->
             {reply, {error, Reason}, NewState}
     end;
-handle_call(get_key_gstream, _From, State) ->
-    case do_get_key_gstream(State) of
+handle_call({get_key_gstream, Key}, _From, State) ->
+    case do_get_key_gstream(State, Key) of
         {ok, Stream, GStream, NewState} ->
             {reply, {ok, Stream, GStream}, NewState};
         {error, Reason, NewState} ->
@@ -203,9 +203,10 @@ do_get_shard_gstream(
     end.
 
 do_get_key_gstream(
-    #{client := Client, shard_client_manager := ShardClientManager, stream := Stream} = State
+    #{client := Client, shard_client_manager := ShardClientManager, stream := Stream} = State,
+    Key
 ) ->
-    case hstreamdb_client:lookup_resource(Client, ?RES_STREAM, Stream) of
+    case hstreamdb_client:lookup_key(Client, Key) of
         {ok, {_Host, _Port} = Addr} ->
             case hstreamdb_shard_client_mgr:lookup_addr_client(ShardClientManager, Addr) of
                 {ok, AddrClient, NewClientManager} ->

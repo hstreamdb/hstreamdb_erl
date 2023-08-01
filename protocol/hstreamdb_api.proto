@@ -78,6 +78,7 @@ service HStreamApi {
   rpc DescribeCluster(google.protobuf.Empty) returns (DescribeClusterResponse) {
   }
   rpc LookupResource(LookupResourceRequest) returns (ServerNode) {}
+  rpc LookupKey(LookupKeyRequest) returns (ServerNode) {}
 
   // Admin Command
   rpc SendAdminCommand(AdminCommandRequest) returns (AdminCommandResponse);
@@ -675,6 +676,8 @@ message LookupResourceRequest {
   ResourceType resType = 1;
   string resId = 2;
 }
+
+message LookupKeyRequest { string partitionKey = 1; }
 
 message GetTailRecordIdRequest {
   string streamName = 1;

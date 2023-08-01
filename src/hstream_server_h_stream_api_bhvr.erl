@@ -130,6 +130,10 @@
     -> {ok, hstreamdb_api:server_node(), grpc:metadata()}
      | {error, grpc_stream:error_response()}.
 
+-callback lookup_key(hstreamdb_api:lookup_key_request(), grpc:metadata())
+    -> {ok, hstreamdb_api:server_node(), grpc:metadata()}
+     | {error, grpc_stream:error_response()}.
+
 -callback send_admin_command(hstreamdb_api:admin_command_request(), grpc:metadata())
     -> {ok, hstreamdb_api:admin_command_response(), grpc:metadata()}
      | {error, grpc_stream:error_response()}.

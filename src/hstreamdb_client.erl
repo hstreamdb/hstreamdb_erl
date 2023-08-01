@@ -41,6 +41,7 @@
     connect/4,
 
     lookup_resource/3,
+    lookup_key/2,
 
     read_single_shard_stream/3,
 
@@ -58,7 +59,22 @@
     t/0,
     name/0,
     options/0,
-    rpc_options/0
+    rpc_options/0,
+
+    replication_factor/0,
+    backlog_duration/0,
+    shard_count/0,
+    addr/0,
+    stream/0,
+    partitioning_key/0,
+    shard_id/0,
+
+    hrecord/0,
+    hrecord_req/0,
+
+    offset/0,
+    limits_shard/0,
+    limits_key/0
 ]).
 
 -define(READ_KEY_STEP_COUNT, 200).
@@ -75,7 +91,71 @@
 
 -type name() :: atom() | string() | binary().
 
-%% grpc_client:client_opts()
+-type replication_factor() :: pos_integer().
+-type backlog_duration() :: pos_integer().
+-type shard_count() :: pos_integer().
+
+-type addr() :: {binary(), inet:port_number()}.
+
+-type stream() :: binary() | string().
+-type partitioning_key() :: binary() | string().
+-type shard_id() :: integer().
+
+-type shard() :: #{
+    shardId := shard_id(),
+    startHashRangeKey := binary(),
+    endHashRangeKey := binary()
+}.
+
+-type hrecord_attributes() :: #{}.
+-type hrecord_header() :: #{
+    flag := atom() | integer(),
+    key := partitioning_key(),
+    attributes => hrecord_attributes()
+}.
+-type hrecord_payload() :: binary().
+-type hrecord_id() :: #{
+    batchId := integer(),
+    batchIndex := integer(),
+    shardId := shard_id()
+}.
+-type hrecord() :: #{
+    header := hrecord_header(),
+    payload := hrecord_payload(),
+    recordId := hrecord_id()
+}.
+
+-type hrecord_req() :: #{
+    header := hrecord_header(),
+    payload := hrecord_payload()
+}.
+
+-type special_offset() :: {specialOffset, 0 | 1}.
+-type timestamp_offset() :: {timestampOffset, #{timestampInMs => integer()}}.
+-type record_offset() :: {recordOffset, hrecord_id()}.
+
+-type offset() :: #{offset => special_offset() | timestamp_offset() | record_offset()}.
+
+-type limits_shard() :: #{from => offset(), until => offset(), maxReadBatches => non_neg_integer()}.
+-type limits_key() :: #{from => offset(), until => offset(), readRecordCount => non_neg_integer()}.
+
+-type reader_fold_acc() :: term().
+-type reader_fold_fun() :: fun((hrecord() | eos, reader_fold_acc()) -> reader_fold_acc()).
+
+-type compression_type() :: none | gzip | zstd.
+
+-type append_req() :: #{
+    stream_name := stream(),
+    records => [hrecord_req()],
+    shard_id := shard_id(),
+    compression_type => compression_type()
+}.
+
+-type append_res() :: #{
+    recordIds := [hrecord_id()]
+}.
+
+%% grpc_client:client_opts() + pool_size option
 -type rpc_options() :: #{
     pool_size => pos_integer(),
     gun_opts => gun:opts(),
@@ -91,6 +171,17 @@
     grpc_timeout => pos_integer(),
     reap_channel => boolean()
 }.
+
+-type grpc_req_options() :: #{
+    timeout => non_neg_integer(),
+    _ => _
+}.
+
+%% ?RES_XXX in hstreamdb.hrl
+-type resource_type() :: integer().
+-type resource_id() :: binary() | string().
+
+-type gstream() :: grpc_client:grpcstream().
 
 %%--------------------------------------------------------------------
 %% API functions
@@ -198,45 +289,66 @@ options(#{
         grpc_timeout => GRPCTimeout
     }.
 
+-spec echo(t()) -> ok | {error, term()}.
 echo(Client) ->
     do_echo(Client).
 
+-spec create_stream(t(), name(), replication_factor(), backlog_duration(), shard_count()) ->
+    ok | {error, term()}.
 create_stream(Client, Name, ReplFactor, BacklogDuration, ShardCount) ->
     do_create_stream(Client, Name, ReplFactor, BacklogDuration, ShardCount).
 
+-spec delete_stream(t(), name()) -> ok | {error, term()}.
 delete_stream(Client, Name) ->
     delete_stream(Client, Name, true, true).
 
+-spec delete_stream(t(), name(), boolean(), boolean()) -> ok | {error, term()}.
 delete_stream(Client, Name, IgnoreNonExist, Force) ->
     do_delete_stream(Client, Name, IgnoreNonExist, Force).
 
+-spec lookup_shard(t(), shard_id()) -> {ok, addr()} | {error, term()}.
 lookup_shard(Client, ShardId) ->
     do_lookup_shard(Client, ShardId).
 
+-spec list_shards(t(), stream()) -> {ok, [shard()]} | {error, term()}.
 list_shards(Client, StreamName) ->
     do_list_shards(Client, StreamName).
 
+-spec append(t(), append_req()) -> ok | {error, term()}.
 append(Client, Req) ->
     append(Client, Req, #{}).
 
+-spec append(t(), append_req(), grpc_req_options()) -> {ok, append_res()} | {error, term()}.
 append(Client, Req, Options) ->
     do_append(Client, Req, Options).
 
+-spec lookup_resource(t(), resource_type(), resource_id()) -> {ok, addr()} | {error, term()}.
 lookup_resource(Client, ResourceType, ResourceId) ->
     do_lookup_resource(Client, ResourceType, ResourceId).
 
+-spec lookup_key(t(), partitioning_key()) -> {ok, addr()} | {error, term()}.
+lookup_key(Client, Key) ->
+    do_lookup_key(Client, Key).
+
+-spec read_single_shard_stream(t(), stream(), limits_shard()) -> {ok, gstream()} | {error, term()}.
 read_single_shard_stream(Client, StreamName, Limits) ->
     do_read_single_shard_stream(Client, StreamName, Limits).
 
+-spec read_shard_gstream(t(), shard_id(), limits_shard()) -> {ok, gstream()} | {error, term()}.
 read_shard_gstream(Client, ShardId, Limits) ->
     do_read_shard_gstream(Client, ShardId, Limits).
 
+-spec read_key_gstream(t()) -> {ok, gstream()} | {error, term()}.
 read_key_gstream(Client) ->
     do_read_key_gstream(Client).
 
+-spec fold_shard_read_gstream(gstream(), reader_fold_fun(), reader_fold_acc()) -> reader_fold_acc().
 fold_shard_read_gstream(GStream, Fun, Acc) ->
     do_fold_shard_read_gstream(GStream, Fun, Acc).
 
+-spec fold_key_read_gstream(
+    gstream(), stream(), partitioning_key(), limits_key(), reader_fold_fun(), reader_fold_acc()
+) -> reader_fold_acc().
 fold_key_read_gstream(GStream, Stream, Key, Limits, Fun, Acc) ->
     do_fold_key_read_gstream(GStream, Stream, Key, Limits, Fun, Acc).
 
@@ -382,6 +494,19 @@ do_lookup_resource(
             {error, Error}
     end.
 
+do_lookup_key(
+    #{channel := Channel, grpc_timeout := Timeout},
+    Key
+) ->
+    Req = #{partitionKey => Key},
+    Options = #{channel => Channel, timeout => Timeout},
+    case ?HSTREAMDB_GEN_CLIENT:lookup_key(Req, Options) of
+        {ok, #{host := Host, port := Port}, _} ->
+            {ok, {Host, Port}};
+        {error, Error} ->
+            {error, Error}
+    end.
+
 do_read_single_shard_stream(
     #{channel := Channel, grpc_timeout := Timeout},
     StreamName,
@@ -392,7 +517,7 @@ do_read_single_shard_stream(
         readerId => integer_to_binary(erlang:unique_integer([positive]))
     },
     Limits = maps:get(limits, Opts, #{}),
-    Req = maps:merge(Req0, map_keys([{maxReadBatches, maxReadBatches}], Limits)),
+    Req = maps:merge(Req0, Limits),
     Options = #{channel => Channel, timeout => Timeout},
     logger:debug("[hstreamdb] read_single_shard: Req: ~p~nOptions: ~p~n", [Req, Options]),
     case ?HSTREAMDB_GEN_CLIENT:read_single_shard_stream(Options) of
@@ -454,16 +579,6 @@ do_fold_key_read_gstream(GStream, Stream, Key, Limits0, Fun, Acc) ->
 
 append_rec(eos, Acc) -> lists:reverse(Acc);
 append_rec(Rec, Acc) -> [Rec | Acc].
-
-map_keys([], Map) ->
-    Map;
-map_keys([{KeyOld, KeyNew} | Rest], Map) ->
-    case Map of
-        #{KeyOld := Value} ->
-            map_keys(Rest, maps:put(KeyNew, Value, maps:remove(KeyOld, Map)));
-        _ ->
-            map_keys(Rest, Map)
-    end.
 
 validate_url_and_opts(URL, GunOpts) ->
     case uri_string:parse(URL) of
