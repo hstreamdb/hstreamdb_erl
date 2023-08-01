@@ -16,8 +16,6 @@
 
 -module(hstreamdb).
 
--include("hstreamdb.hrl").
-
 -export([
     start_client/1,
     start_client/2,
@@ -70,40 +68,17 @@
     hrecord/0
 ]).
 
--type stream() :: binary() | string().
--type partitioning_key() :: binary() | string().
+-type stream() :: hstreamdb_client:stream().
+-type partitioning_key() :: hstreamdb_client:partitioning_key().
 -type client() :: hstreamdb_client:t().
--type shard_id() :: integer().
+-type shard_id() :: hstreamdb_client:shard_id().
+-type hrecord() :: hstreamdb_client:hrecord().
 
--type hrecord_attributes() :: #{}.
--type hrecord_header() :: #{
-    flag := 'RAW',
-    key := partitioning_key(),
-    attributes := hrecord_attributes()
-}.
--type hrecord_payload() :: binary().
--type hrecord_id() :: #{
-    batchId := integer(),
-    batchIndex := integer(),
-    shardId := shard_id()
-}.
--type hrecord() :: #{
-    header := hrecord_header(),
-    payload := hrecord_payload(),
-    recordId := hrecord_id()
-}.
+-type limits_shard() :: hstreamdb_client:limits_shard().
+-type limits_key() :: hstreamdb_client:limits_key().
 
--type special_offset() :: {specialOffset, 0 | 1}.
--type timestamp_offset() :: {timestampOffset, #{timestampInMs => integer()}}.
--type record_offset() :: {recordOffset, hrecord_id()}.
-
--type offset() :: #{offset => special_offset() | timestamp_offset() | record_offset()}.
-
--type limits_shard() :: #{from => offset(), until => offset(), maxReadBatches => non_neg_integer()}.
--type limits_key() :: #{from => offset(), until => offset(), readRecordCount => non_neg_integer()}.
-
--type reader_fold_acc() :: term().
--type reader_fold_fun() :: fun((hrecord() | eos, reader_fold_acc()) -> reader_fold_acc()).
+-type reader_fold_acc() :: hstreamdb_client:reader_fold_acc().
+-type reader_fold_fun() :: hstreamdb_client:reader_fold_fun().
 
 -define(DEFAULT_READ_SINGLE_SHARD_STREAM_OPTS, #{
     limits => #{
