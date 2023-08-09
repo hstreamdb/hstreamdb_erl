@@ -31,6 +31,7 @@
 
 -export([
     connect/1,
+    ecpool_action/2,
     writer_name/1
 ]).
 
@@ -42,6 +43,21 @@
     terminate/2,
     code_change/3
 ]).
+
+-type callback() ::
+    {module(), atom(), [term()]} | {module(), atom()} | fun((term()) -> any()) | undefined.
+
+-type options() :: #{
+    stream := hstreamdb:stream(),
+    callback := callback(),
+    mgr_client_options := hstreamdb_client:options(),
+    producer_name := ecpool:pool_name(),
+    interval => pos_integer(),
+    batch_reap_timeout => pos_integer(),
+    max_records => pos_integer(),
+    max_batches => pos_integer(),
+    compression_type => none | gzip | zstd
+}.
 
 -export_type([options/0, callback/0]).
 
@@ -60,18 +76,26 @@
 }).
 
 append(Producer, PKeyRecordOrRecords) ->
-    ecpool:with_client(
-        Producer,
-        fun(Pid) ->
-            gen_server:call(Pid, {append, PKeyRecordOrRecords})
-        end
+    RecordsByPK = records_by_pk(PKeyRecordOrRecords),
+    do_while_ok(
+        fun({PartitioningKey, Records}) ->
+            append(Producer, PartitioningKey, Records)
+        end,
+        maps:to_list(RecordsByPK)
+    ).
+
+append(Producer, PartitioningKey, Records) ->
+    ecpool:pick_and_do(
+        {Producer, bin(PartitioningKey)},
+        {?MODULE, ecpool_action, [{append, PartitioningKey, Records}]},
+        no_handover
     ).
 
 append_sync(Producer, {_PartitioningKey, _Record} = PKeyRecord) ->
     append_sync(Producer, PKeyRecord, infinity).
 
-append_sync(Producer, {_PartitioningKey, _Record} = PKeyRecord, Timeout) ->
-    sync_request(Producer, {append_sync, PKeyRecord}, Timeout).
+append_sync(Producer, {PartitioningKey, _Record} = PKeyRecord, Timeout) ->
+    sync_request({Producer, bin(PartitioningKey)}, {append_sync, PKeyRecord}, Timeout).
 
 flush(Producer) ->
     foreach_worker(
@@ -82,32 +106,20 @@ flush(Producer) ->
 append_flush(Producer, {_PartitioningKey, _Record} = PKeyRecord) ->
     append_flush(Producer, PKeyRecord, infinity).
 
-append_flush(Producer, {_PartitioningKey, _Record} = PKeyRecord, Timeout) ->
-    sync_request(Producer, {append_flush, PKeyRecord}, Timeout).
+append_flush(Producer, {PartitioningKey, _Record} = PKeyRecord, Timeout) ->
+    sync_request({Producer, bin(PartitioningKey)}, {append_flush, PKeyRecord}, Timeout).
 
 %%-------------------------------------------------------------------------------------------------
 %% ecpool part
-
--type callback() ::
-    {module(), atom(), [term()]} | {module(), atom()} | fun((term()) -> any()) | undefined.
-
--type options() :: #{
-    stream := hstreamdb:stream(),
-    callback := callback(),
-    mgr_client_options := hstreamdb_client:options(),
-    producer_name := ecpool:pool_name(),
-    interval => pos_integer(),
-    batch_reap_timeout => pos_integer(),
-    max_records => pos_integer(),
-    max_batches => pos_integer(),
-    compression_type => none | gzip | zstd
-}.
 
 -type pool_opts() :: list(any() | {opts, options()}).
 -spec connect(pool_opts()) -> get_server:start_ret().
 connect(PoolOptions) ->
     Options = proplists:get_value(opts, PoolOptions),
     gen_server:start_link(?MODULE, [Options], []).
+
+ecpool_action(Client, Req) ->
+    gen_server:call(Client, Req).
 
 %% -------------------------------------------------------------------------------------------------
 %% gen_server part
@@ -152,14 +164,8 @@ init([Options]) ->
 
 handle_call(_Req, _From, #state{terminator = Terminator} = State) when Terminator =/= undefined ->
     {reply, {error, terminating}, State};
-handle_call({append, R}, _From, State) ->
-    {Res, NState} =
-        case is_list(R) of
-            true ->
-                do_append(R, State);
-            false ->
-                do_append([R], State)
-        end,
+handle_call({append, PartitioningKey, Records}, _From, State) ->
+    {Res, NState} = do_append(PartitioningKey, Records, State),
     {reply, Res, NState};
 handle_call(flush, _From, State) ->
     {reply, ok, do_flush(State)};
@@ -205,14 +211,13 @@ code_change(_OldVsn, State, _Extra) ->
 %% -------------------------------------------------------------------------------------------------
 %% internal functions
 
-sync_request(Producer, Req, Timeout) ->
+sync_request(PoolAndKey, Req, Timeout) ->
     Self = alias([reply]),
     case
-        ecpool:with_client(
-            Producer,
-            fun(Pid) ->
-                gen_server:call(Pid, {sync_req, Self, Req, Timeout})
-            end
+        ecpool:pick_and_do(
+            PoolAndKey,
+            {?MODULE, ecpool_action, [{sync_req, Self, Req, Timeout}]},
+            no_handover
         )
     of
         {error, _} = Error ->
@@ -292,7 +297,7 @@ send_reply(From, Response, Callback, Stream) ->
     end.
 
 with_shard_buffer(
-    {PartitioningKey, Record},
+    {PartitioningKey, Value},
     Fun,
     State0 = #state{
         key_manager = KeyManager0
@@ -301,7 +306,7 @@ with_shard_buffer(
     case hstreamdb_key_mgr:choose_shard(KeyManager0, PartitioningKey) of
         {ok, ShardId, KeyManager1} ->
             {Buffer, State1} = get_shard_buffer(ShardId, State0),
-            case Fun(Buffer, Record) of
+            case Fun(Buffer, Value) of
                 {ok, Buffer1} ->
                     State2 = set_shard_buffer(ShardId, Buffer1, State1),
                     {ok, State2#state{key_manager = KeyManager1}};
@@ -312,22 +317,14 @@ with_shard_buffer(
             {Error, State0}
     end.
 
-do_append([], State) ->
-    {ok, State};
-do_append([PKeyRecord | Rest], State) ->
-    {Res, NState} = with_shard_buffer(
-        PKeyRecord,
-        fun(Buffer, Record) ->
-            hstreamdb_buffer:append(Buffer, undefined, [Record], infinity)
+do_append(PartitioningKey, Records0, State) ->
+    with_shard_buffer(
+        {PartitioningKey, Records0},
+        fun(Buffer, Records1) ->
+            hstreamdb_buffer:append(Buffer, undefined, Records1, infinity)
         end,
         State
-    ),
-    case Res of
-        ok ->
-            do_append(Rest, NState);
-        {error, _} = Error ->
-            {Error, NState}
-    end.
+    ).
 
 do_append_flush(Buffer0, Record, From, Timeout) ->
     case hstreamdb_buffer:append(Buffer0, From, [Record], Timeout) of
@@ -416,3 +413,36 @@ apply_callback(undefined, _) ->
 
 writer_name(ProducerName) ->
     {ProducerName, writer}.
+
+records_by_pk(PKeyRecord) when is_tuple(PKeyRecord) ->
+    records_by_pk([PKeyRecord]);
+records_by_pk([]) -> #{};
+records_by_pk([{PK, Record} | Rest]) ->
+    maps:update_with(
+        PK,
+        fun(Records) ->
+            [Record | Records]
+        end,
+        [Record],
+        records_by_pk(Rest)
+    ).
+
+do_while_ok(_Fun, []) ->
+    ok;
+do_while_ok(Fun, [El | List]) ->
+    case Fun(El) of
+        ok ->
+            do_while_ok(Fun, List);
+        {ok, _} ->
+            do_while_ok(Fun, List);
+        {error, _} = Error ->
+            Error
+    end.
+
+bin(L) when is_list(L) ->
+    list_to_binary(L);
+bin(B) when is_binary(B) ->
+    B.
+
+
+

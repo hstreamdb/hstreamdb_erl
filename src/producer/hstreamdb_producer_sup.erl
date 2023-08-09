@@ -84,11 +84,13 @@ init([
     {ok, {#{strategy => one_for_one, intensity => 5, period => 30}, ChildSpecs}}.
 
 buffer_pool_spec(Producer, PoolSize, Opts) ->
-    PoolOpts = [{pool_size, PoolSize}, {opts, Opts}],
+    PoolOpts = [{pool_size, PoolSize}, {pool_type, hash}, {auto_reconnect, true}, {opts, Opts}],
     ecpool_spec(Producer, hstreamdb_producer, PoolOpts).
 
 writer_pool_spec(Producer, PoolSize, Opts) ->
-    WriterOptions = [{pool_size, PoolSize}, {opts, Opts}],
+    WriterOptions = [
+        {pool_size, PoolSize}, {auto_reconnect, true}, {opts, Opts}
+    ],
     ecpool_spec(hstreamdb_producer:writer_name(Producer), hstreamdb_batch_writer, WriterOptions).
 
 terminator_spec(Producer, StopTimeout) ->
