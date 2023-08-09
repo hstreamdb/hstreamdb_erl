@@ -229,8 +229,8 @@ t_read_stream_key(Config) ->
 
     Producer = ?FUNCTION_NAME,
     ProducerOptions = #{
-        buffer_pool_size => 1,
-        writer_pool_size => 1,
+        buffer_pool_size => 10,
+        writer_pool_size => 20,
         stream => ?config(stream_name, Config),
         mgr_client_options => hstreamdb_test_helpers:default_options(),
         buffer_options => #{
