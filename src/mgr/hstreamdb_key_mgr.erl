@@ -24,6 +24,13 @@
 
 -export([choose_shard/2]).
 
+%% For benchmarks/tests
+-export([
+    find_shard/2,
+    index_shards/1,
+    update_shards/2
+]).
+
 -export_type([t/0]).
 
 -define(DEFAULT_SHARD_UPDATE_INTERVAL, 3000000).
@@ -32,9 +39,11 @@
     client := hstreamdb:client(),
     shard_update_deadline := integer(),
     shard_update_interval := non_neg_integer(),
-    shards := list(map()) | undefined,
+    shards := compiled_shards() | undefined,
     stream := hstreamdb:stream()
 }.
+
+-type compiled_shards() :: tuple().
 
 -type options() :: #{
     shard_update_interval => pos_integer()
@@ -71,21 +80,12 @@ choose_shard(KeyMgr0, PartitioningKey) ->
     case update_shards(KeyMgr0) of
         {ok, KeyMgr1} ->
             #{shards := Shards} = KeyMgr1,
-            <<IntHash:128/big-unsigned-integer>> = crypto:hash(md5, PartitioningKey),
-            [#{shardId := ShardId}] =
-                lists:filter(
-                    fun(
-                        #{
-                            startHashRangeKey := SHRK,
-                            endHashRangeKey := EHRK
-                        }
-                    ) ->
-                        IntHash >= binary_to_integer(SHRK) andalso
-                            IntHash =< binary_to_integer(EHRK)
-                    end,
-                    Shards
-                ),
-            {ok, ShardId, KeyMgr1};
+            case find_shard(Shards, PartitioningKey) of
+                not_found ->
+                    {error, {cannot_find_shard, PartitioningKey}};
+                {ok, ShardId} ->
+                    {ok, ShardId, KeyMgr1}
+            end;
         {error, _} = Error ->
             Error
     end.
@@ -96,8 +96,18 @@ choose_shard(KeyMgr0, PartitioningKey) ->
 
 update_shards(
     #{
+        shard_update_interval := ShardUpateInterval
+    } = KeyM,
+    NewShards
+) ->
+    KeyM#{
+        shards := index_shards(NewShards),
+        shard_update_deadline := erlang:monotonic_time(millisecond) + ShardUpateInterval
+    }.
+
+update_shards(
+    #{
         shard_update_deadline := Deadline,
-        shard_update_interval := ShardUpateInterval,
         stream := StreamName,
         client := Client
     } = KeyM
@@ -107,16 +117,52 @@ update_shards(
         true ->
             case list_shards(Client, StreamName) of
                 {ok, Shards} ->
-                    NewKeyM = KeyM#{
-                        shards := Shards,
-                        shard_update_deadline := Now + ShardUpateInterval
-                    },
+                    NewKeyM = update_shards(KeyM, Shards),
                     {ok, NewKeyM};
                 {error, _} = Error ->
                     Error
             end;
         false ->
             {ok, KeyM}
+    end.
+
+index_shards(Shards) ->
+    Compiled = lists:filtermap(
+        fun
+            (
+                #{
+                    isActive := false
+                }
+            ) ->
+                false;
+            (
+                #{
+                    startHashRangeKey := StartBin,
+                    endHashRangeKey := EndBin,
+                    shardId := ShardId
+                }
+            ) ->
+                {true, {binary_to_integer(StartBin), binary_to_integer(EndBin), ShardId}}
+        end,
+        Shards
+    ),
+    list_to_tuple(lists:sort(Compiled)).
+
+find_shard(Shards, PartitioningKey) ->
+    <<IntHash:128/big-unsigned-integer>> = crypto:hash(md5, PartitioningKey),
+    bsearch(Shards, IntHash, 1, tuple_size(Shards)).
+
+bsearch(_Shards, _IntHash, From, To) when From > To ->
+    not_found;
+bsearch(Shards, IntHash, From, To) ->
+    Med = (From + To) div 2,
+    case element(Med, Shards) of
+        {Start, End, ShardId} when IntHash >= Start, IntHash =< End ->
+            {ok, ShardId};
+        {Start, _, _} when IntHash < Start ->
+            bsearch(Shards, IntHash, From, Med - 1);
+        {_, End, _} when IntHash > End ->
+            bsearch(Shards, IntHash, Med + 1, To)
     end.
 
 list_shards(Client, StreamName) ->

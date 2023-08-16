@@ -77,3 +77,53 @@ t_choose_shard_error(Config) ->
         {error, {cannot_list_shards, _}},
         hstreamdb_key_mgr:choose_shard(KeyMgr, <<"key">>)
     ).
+
+t_choose_shard_bsearch_error(Config) ->
+    Client = ?config(client, Config),
+    KeyMgr0 = hstreamdb_key_mgr:start(
+        Client,
+        "stream",
+        #{shard_update_interval => 1000000}
+    ),
+
+    IntHash = int_hash(<<"7">>),
+    Shards = [make_shard_info(IntHash, IntHash) || _ <- lists:seq(1, 100)],
+
+    KeyMgr1 = hstreamdb_key_mgr:update_shards(KeyMgr0, Shards),
+
+    ?assertMatch(
+        {ok, _, _},
+        hstreamdb_key_mgr:choose_shard(KeyMgr1, <<"7">>)
+    ),
+
+    %% We have int_hash(<<"6">>) < int_hash(<<"7">>) < int_hash(<<"3">>)
+
+    ?assertEqual(
+        {error, {cannot_find_shard, <<"6">>}},
+        hstreamdb_key_mgr:choose_shard(KeyMgr1, <<"6">>)
+    ),
+
+    ?assertEqual(
+        {error, {cannot_find_shard, <<"3">>}},
+        hstreamdb_key_mgr:choose_shard(KeyMgr1, <<"3">>)
+    ),
+
+    ok = hstreamdb_key_mgr:stop(KeyMgr1).
+
+%%--------------------------------------------------------------------
+%% Internal functions
+%%--------------------------------------------------------------------
+
+int_hash(Bin) ->
+    <<IntHash:128/big-unsigned-integer>> = crypto:hash(md5, Bin),
+    IntHash.
+
+make_shard_info(From, To) ->
+    #{
+        startHashRangeKey => integer_to_binary(From),
+        endHashRangeKey => integer_to_binary(To),
+        epoch => 5,
+        isActive => true,
+        shardId => erlang:unique_integer([positive]),
+        streamName => <<"stream">>
+    }.
