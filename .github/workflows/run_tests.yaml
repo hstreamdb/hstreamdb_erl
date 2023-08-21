@@ -2,6 +2,8 @@ name: Run tests
 
 on:
   push:
+    branches:
+      - main
   pull_request:
 
 jobs:
@@ -11,8 +13,10 @@ jobs:
         include:
           - runs_on: ubuntu-20.04
             otp_release: 24.1.6
+            send_coveralls: false
           - runs_on: ubuntu-20.04
             otp_release: 25.1.1
+            send_coveralls: true
     runs-on: ${{ matrix.runs_on }}
     steps:
     - uses: actions/checkout@v2
@@ -41,8 +45,10 @@ jobs:
     - name: docker compose down
       run: |
         make -C ./.ci down
-    - uses: actions/upload-artifact@v1
-      with:
-        name: cover
-        path: _build/test/cover
+    - name: send coveralls
+      if: matrix.send_coveralls == true
+      env:
+        COVERALLS_REPO_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        make coveralls
 
