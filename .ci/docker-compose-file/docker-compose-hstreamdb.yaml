@@ -125,7 +125,7 @@ services:
       start_period: 5s
 
   zookeeper:
-    image: zookeeper
+    image: zookeeper:3.8.1
     expose:
       - 2181
     networks:
