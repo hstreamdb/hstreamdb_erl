@@ -1,0 +1,36 @@
+CONFIG ++
+    case os:getenv("GITHUB_ACTIONS") of
+        "true" ->
+            Cfgs0 = [
+                {coveralls_service_job_id, os:getenv("GITHUB_RUN_ID")},
+                {coveralls_commit_sha, os:getenv("GITHUB_SHA")},
+                {coveralls_service_number, os:getenv("GITHUB_RUN_NUMBER")}
+            ],
+            Cfgs1 =
+                case
+                    os:getenv("GITHUB_EVENT_NAME") =:= "pull_request" andalso
+                        string:tokens(os:getenv("GITHUB_REF"), "/")
+                of
+                    [_, "pull", PRNO, _] ->
+                        [{coveralls_service_pull_request, PRNO} | Cfgs0];
+                    _ ->
+                        Cfgs0
+                end,
+            RepoToken =
+                case os:getenv("COVERALLS_REPO_TOKEN") of
+                    false ->
+                        "";
+                    Token ->
+                        Token
+                end,
+            RepoTokenRedacted = "... " ++ integer_to_list(length(RepoToken)) ++ " chars ...",
+            io:format(
+                "In GitHub Actions, added coveralls config:~n~p~n", [
+                    Cfgs1 ++ [{coveralls_repo_token, RepoTokenRedacted}]
+                ]
+            ),
+            Cfgs1 ++ [{coveralls_repo_token, RepoToken}];
+        _ ->
+            io:format("Not in GitHub Actions, skip coveralls~n"),
+            []
+    end.

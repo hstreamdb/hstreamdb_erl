@@ -5,15 +5,15 @@ $(REBAR):
 
 .PHONY: ct
 ct: $(REBAR)
-	$(REBAR) ct --name 'test@127.0.0.1' --readable true -v -c
+	$(REBAR) as test ct --name 'test@127.0.0.1' --readable true -v -c
 
 .PHONY: ct-suite
 ct-suite: $(REBAR)
-	$(REBAR) ct --name 'test@127.0.0.1' --readable true -v --suite $(SUITE)
+	$(REBAR) as test ct --name 'test@127.0.0.1' --readable true -v --suite $(SUITE)
 
 .PHONY: cover
 cover: ct
-	$(REBAR) cover
+	$(REBAR) as test cover
 
 .PHONY: fmt
 fmt: $(REBAR)
@@ -34,6 +34,10 @@ dialyzer: $(REBAR)
 .PHONY: update-proto
 update-proto:
 	$(CURDIR)/scripts/update-proto.sh master
+
+.PHONY: coveralls
+coveralls: $(REBAR)
+	$(REBAR) as test coveralls send
 
 .PHONY: clean
 clean:
