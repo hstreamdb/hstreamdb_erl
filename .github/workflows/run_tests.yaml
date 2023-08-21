@@ -17,6 +17,11 @@ jobs:
             send_coveralls: true
     runs-on: ${{ matrix.runs_on }}
     steps:
+    - name: test
+      env:
+        SECRETNAME: ${{ secrets.SECRETNAME }}
+      run: |
+        env
     - uses: actions/checkout@v2
     - uses: erlef/setup-beam@v1
       with:
