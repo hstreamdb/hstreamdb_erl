@@ -31,7 +31,8 @@ start_link(Reader, Opts) ->
 
 init([Reader, Opts]) ->
     PoolSize = maps:get(pool_size, Opts, ?DEFAULT_READER_POOL_SIZE),
-    EcpoolOpts = [{pool_size, PoolSize}, {reader_options, Opts}],
+    AutoReconnect = maps:get(auto_reconnect, Opts, ?DEAULT_AUTO_RECONNECT),
+    EcpoolOpts = [{pool_size, PoolSize}, {reader_options, Opts}, {auto_reconnect, AutoReconnect}],
     ChildSpecs = [
         pool_spec(Reader, EcpoolOpts)
     ],

@@ -27,7 +27,8 @@
 -export([init/1]).
 
 -type writer_options() :: #{
-    grpc_timeout => non_neg_integer()
+    grpc_timeout => non_neg_integer(),
+    auto_reconnect => false | pos_integer()
 }.
 
 -type buffer_options() :: #{
@@ -36,7 +37,8 @@
     batch_reap_timeout => pos_integer(),
     max_records => pos_integer(),
     max_batches => pos_integer(),
-    compression_type => none | gzip | zstd
+    compression_type => none | gzip | zstd,
+    auto_reconnect => false | pos_integer()
 }.
 
 -type options() :: #{
@@ -84,12 +86,14 @@ init([
     {ok, {#{strategy => one_for_one, intensity => 5, period => 30}, ChildSpecs}}.
 
 buffer_pool_spec(Producer, PoolSize, Opts) ->
-    PoolOpts = [{pool_size, PoolSize}, {pool_type, hash}, {auto_reconnect, true}, {opts, Opts}],
+    AutoReconnect = maps:get(auto_reconnect, Opts, ?DEAULT_AUTO_RECONNECT),
+    PoolOpts = [{pool_size, PoolSize}, {pool_type, hash}, {auto_reconnect, AutoReconnect}, {opts, Opts}],
     ecpool_spec(Producer, hstreamdb_producer, PoolOpts).
 
 writer_pool_spec(Producer, PoolSize, Opts) ->
+    AutoReconnect = maps:get(auto_reconnect, Opts, ?DEAULT_AUTO_RECONNECT),
     WriterOptions = [
-        {pool_size, PoolSize}, {auto_reconnect, true}, {opts, Opts}
+        {pool_size, PoolSize}, {auto_reconnect, true}, {opts, Opts}, {auto_reconnect, AutoReconnect}
     ],
     ecpool_spec(hstreamdb_producer:writer_name(Producer), hstreamdb_batch_writer, WriterOptions).
 
