@@ -45,7 +45,9 @@
 -type options() :: #{
     mgr_client_options := hsteamdb_client:options(),
     stream := hstreamdb:stream(),
+
     pool_size => non_neg_integer(),
+    auto_reconnect => false | pos_integer(),
 
     reader_client_option_overrides => hstreamdb_client:rpc_options(),
 
