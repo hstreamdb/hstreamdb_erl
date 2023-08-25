@@ -49,3 +49,15 @@
     tab :: ets:table(),
     compression_type :: hstreamdb_client:compression_type()
 }).
+
+-define(MEASURE(LABEL, CODE),
+    (fun() ->
+        {__TIME__, __RES__} = timer:tc(
+            fun() ->
+                CODE
+            end
+        ),
+        logger:debug("[hstreamdb] ~p in ~p ms", [LABEL, __TIME__ / 1000]),
+        __RES__
+    end)()
+).

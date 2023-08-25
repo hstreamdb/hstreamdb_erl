@@ -93,20 +93,31 @@ read_key(Reader, Key, Limits) ->
 }) ->
     {ok, [hstreamdb:hrecord()]} | {error, term()}.
 read_key(Reader, Key, Limits, {FoldFun, InitAcc}) ->
-    case
-        ecpool:with_client(
-            Reader,
-            fun(Pid) ->
-                gen_server:call(Pid, {get_key_gstream, Key})
-            end
-        )
-    of
-        {ok, Stream, GStream} ->
-            hstreamdb_client:fold_key_read_gstream(GStream, Stream, Key, Limits, FoldFun, InitAcc);
+    LookupClient = ecpool:with_client(
+        Reader,
+        fun(Pid) -> gen_server:call(Pid, get_lookup_client) end
+    ),
+    case ?MEASURE({lookup_key, self(), Key}, hstreamdb_client:lookup_key(LookupClient, Key)) of
+        {ok, {_Host, _Port} = Addr} ->
+            case
+                ecpool:with_client(
+                    Reader,
+                    fun(Pid) -> gen_server:call(Pid, {get_key_gstream, Key, Addr}) end
+                )
+            of
+                {ok, Stream, GStream} ->
+                    ?MEASURE(
+                        {fold_key_read_gstream, Stream, Key},
+                        hstreamdb_client:fold_key_read_gstream(
+                            GStream, Stream, Key, Limits, FoldFun, InitAcc
+                        )
+                    );
+                {error, _} = Error ->
+                    Error
+            end;
         {error, _} = Error ->
             Error
     end.
-
 
 %%-------------------------------------------------------------------------------------------------
 %% ecpool part
@@ -147,13 +158,15 @@ handle_call({get_shard_gstream, Key, Limits}, _From, State) ->
         {error, Reason, NewState} ->
             {reply, {error, Reason}, NewState}
     end;
-handle_call({get_key_gstream, Key}, _From, State) ->
-    case do_get_key_gstream(State, Key) of
+handle_call({get_key_gstream, Key, Addr}, _From, State) ->
+    case do_get_key_gstream(State, Key, Addr) of
         {ok, Stream, GStream, NewState} ->
             {reply, {ok, Stream, GStream}, NewState};
         {error, Reason, NewState} ->
             {reply, {error, Reason}, NewState}
     end;
+handle_call(get_lookup_client, _From, #{client := Client} = State) ->
+    {reply, Client, State};
 handle_call(Request, _From, State) ->
     {reply, {error, {unknown_call, Request}}, State}.
 
@@ -205,35 +218,40 @@ do_get_shard_gstream(
     end.
 
 do_get_key_gstream(
-    #{client := Client, shard_client_manager := ShardClientManager, stream := Stream} = State,
-    Key
+    #{shard_client_manager := ShardClientManager, stream := Stream} = State,
+    _Key,
+    Addr
 ) ->
-    case hstreamdb_client:lookup_key(Client, Key) of
-        {ok, {_Host, _Port} = Addr} ->
-            case hstreamdb_shard_client_mgr:lookup_addr_client(ShardClientManager, Addr) of
-                {ok, AddrClient, NewClientManager} ->
-                    case hstreamdb_client:read_key_gstream(AddrClient) of
-                        {ok, GStream} ->
-                            {ok, Stream, GStream, State#{
-                                shard_client_manager => NewClientManager
-                            }};
-                        {error, Reason} ->
-                            {error, Reason, State#{
-                                shard_client_manager => NewClientManager
-                            }}
-                    end;
-                {error, _} = Error ->
-                    {error, Error, State#{stream_addr => Addr}}
+    case
+        ?MEASURE(
+            {lookup_addr_client, self(), Addr},
+            hstreamdb_shard_client_mgr:lookup_addr_client(ShardClientManager, Addr)
+        )
+    of
+        {ok, AddrClient, NewClientManager} ->
+            case
+                ?MEASURE(
+                    {read_key_gstream, self(), Addr},
+                    hstreamdb_client:read_key_gstream(AddrClient)
+                )
+            of
+                {ok, GStream} ->
+                    {ok, Stream, GStream, State#{
+                        shard_client_manager => NewClientManager
+                    }};
+                {error, Reason} ->
+                    {error, Reason, State#{
+                        shard_client_manager => NewClientManager
+                    }}
             end;
-        {error, Reason} ->
-            {error, Reason, State}
+        {error, _} = Error ->
+            {error, Error, State#{stream_addr => Addr}}
     end.
 
 fold_stream_key_fun(Key) ->
     BinKey = iolist_to_binary(Key),
     fun
         (#{header := #{key := PK}} = Record, Acc) when BinKey =:= PK -> [Record | Acc];
-        (#{header := #{key := _OtherPK}}, Acc) ->Acc;
-        (eos, Acc) ->
-            lists:reverse(Acc)
+        (#{header := #{key := _OtherPK}}, Acc) -> Acc;
+        (eos, Acc) -> lists:reverse(Acc)
     end.

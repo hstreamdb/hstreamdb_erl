@@ -7,6 +7,8 @@
 -export([
     start/0,
     client/0,
+    opts/0,
+    opts_emqx/0,
     test_lookup_resourse/0,
     populate_stream/1,
     populate_stream/2,
@@ -19,10 +21,15 @@
 
 client() ->
     Name = "c-" ++ integer_to_list(erlang:unique_integer([positive])),
-    {ok, Client} = hstreamdb_client:start(Name, #{
+    {ok, Client} = hstreamdb_client:start(Name, opts()),
+    logger:debug("[hstreamdb] start client  ~p~n", [Client]),
+    Client.
+
+opts() ->
+    #{
         url => "http://127.0.0.1:6570",
         rpc_options => #{
-            pool_size => 3
+            pool_size => 50
             % gun_opts => #{
             %     transport => tls,
             %     transport_opts => [{cacertfile, CA}]
@@ -32,9 +39,15 @@ client() ->
             <<"10.5.0.4">> => <<"127.0.0.1">>,
             <<"10.5.0.5">> => <<"127.0.0.1">>
         }
-    }),
-    logger:debug("[hstreamdb] start client  ~p~n", [Client]),
-    Client.
+    }.
+
+opts_emqx() ->
+    #{
+        url => "http://127.0.0.1:26570",
+        rpc_options => #{
+            pool_size => 5
+        }
+    }.
 
 test_lookup_resourse() ->
     Client = client(),
