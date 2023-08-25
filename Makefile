@@ -1,5 +1,8 @@
 REBAR = $(CURDIR)/rebar3
 
+all: $(REBAR)
+	$(REBAR) compile
+
 $(REBAR):
 	wget https://s3.amazonaws.com/rebar3/rebar3 && chmod +x rebar3
 
