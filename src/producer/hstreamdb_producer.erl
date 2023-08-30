@@ -129,6 +129,7 @@ init([Options]) ->
 
     StreamName = maps:get(stream, Options),
     MgrClientOptions = maps:get(mgr_client_options, Options),
+    MgrOptions = maps:get(mgr_options, Options),
     ProducerName = maps:get(producer_name, Options),
 
     Callback = maps:get(callback, Options, undefined),
@@ -156,7 +157,7 @@ init([Options]) ->
                 batch_tab = BatchTab,
                 buffer_opts = BufferOpts,
                 buffers = #{},
-                key_manager = hstreamdb_key_mgr:start(Client, StreamName)
+                key_manager = hstreamdb_key_mgr:start(Client, StreamName, MgrOptions)
             }};
         {error, _} = Error ->
             Error

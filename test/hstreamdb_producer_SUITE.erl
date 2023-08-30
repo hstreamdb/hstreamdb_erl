@@ -279,6 +279,36 @@ t_append_sync(Config) ->
         hstreamdb_producer:append_sync(producer(Config), sample_record(), 100)
     ).
 
+t_stream_recreate(Config) ->
+    ProducerOptions = #{
+        buffer_pool_size => 1,
+        buffer_options => #{
+            max_records => 10,
+            max_batches => 10,
+            interval => 500,
+            mgr_options => #{
+                shard_update_interval => 0
+            }
+        }
+    },
+
+    Client = ?config(client, Config),
+
+    ok = start_producer(Config, ProducerOptions),
+
+    ?assertMatch(
+        {ok, #{}},
+        hstreamdb_producer:append_sync(producer(Config), sample_record(), 1000)
+    ),
+
+    _ = hstreamdb_client:delete_stream(Client, ?STREAM),
+    ok = hstreamdb_client:create_stream(Client, ?STREAM, 2, ?DAY, 5),
+
+    ?assertMatch(
+        {ok, #{}},
+        hstreamdb_producer:append_sync(producer(Config), sample_record(), 1000)
+    ).
+
 t_graceful_stop(Config) ->
     ProducerOptions = #{
         buffer_pool_size => 5,
