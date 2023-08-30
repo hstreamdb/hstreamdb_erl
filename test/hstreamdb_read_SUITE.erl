@@ -258,6 +258,8 @@ t_read_stream_key(Config) ->
     Record = hstreamdb:to_record("PK", raw, <<>>),
     {ok, _} = hstreamdb:append_flush(Producer, Record),
 
+    ok = hstreamdb:stop_producer(Producer),
+
     %% Read records
 
     ReaderOptions = #{
@@ -327,6 +329,70 @@ t_read_stream_key(Config) ->
 
     ?assertEqual(121, length(Recs2)),
     ok = assert_recs_in_order(Recs2),
+
+    ok = hstreamdb:stop_reader(Reader).
+
+t_trim(Config) ->
+    StreamName = ?config(stream_name, Config),
+
+    %% Prepare records
+
+    Producer = ?FUNCTION_NAME,
+    ProducerOptions = #{
+        buffer_pool_size => 2,
+        writer_pool_size => 2,
+        stream => StreamName,
+        mgr_client_options => hstreamdb_test_helpers:default_options(),
+        buffer_options => #{
+            max_records => 10,
+            max_time => 10
+        }
+    },
+
+    ok = hstreamdb:start_producer(Producer, ProducerOptions),
+
+    {ok, _Id0} = hstreamdb:append_sync(
+        Producer,
+        hstreamdb:to_record(<<"PK">>, raw, <<"R0">>)
+    ),
+    {ok, Id1} = hstreamdb:append_sync(
+        Producer,
+        hstreamdb:to_record(<<"PK">>, raw, <<"R1">>)
+    ),
+
+    ok = hstreamdb:stop_producer(Producer),
+
+    %% Read records
+
+    ReaderOptions = #{
+        mgr_client_options => hstreamdb_test_helpers:default_options(),
+        stream => StreamName,
+        pool_size => 5
+    },
+
+    Reader = "reader_" ++ atom_to_list(?FUNCTION_NAME),
+    ok = hstreamdb:start_reader(Reader, ReaderOptions),
+
+    Limits = #{
+        from => #{offset => {specialOffset, 0}},
+        until => #{offset => {specialOffset, 1}}
+    },
+
+    ?assertMatch(
+        {ok, [#{payload := <<"R0">>}, #{payload := <<"R1">>}]},
+        hstreamdb:read_stream_key(Reader, "PK", Limits)
+    ),
+
+    {ok, _} = hstreamdb_client:trim(
+        ?config(client, Config),
+        StreamName,
+        [Id1]
+    ),
+
+    ?assertMatch(
+        {ok, [#{payload := <<"R1">>}]},
+        hstreamdb:read_stream_key(Reader, "PK", Limits)
+    ),
 
     ok = hstreamdb:stop_reader(Reader).
 

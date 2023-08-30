@@ -23,6 +23,10 @@
     -> {ok, hstreamdb_api:empty(), grpc:metadata()}
      | {error, grpc_stream:error_response()}.
 
+-callback trim_shards(hstreamdb_api:trim_shards_request(), grpc:metadata())
+    -> {ok, hstreamdb_api:trim_shards_response(), grpc:metadata()}
+     | {error, grpc_stream:error_response()}.
+
 -callback get_stream(hstreamdb_api:get_stream_request(), grpc:metadata())
     -> {ok, hstreamdb_api:get_stream_response(), grpc:metadata()}
      | {error, grpc_stream:error_response()}.
@@ -188,6 +192,18 @@
 
 -callback parse_sql(hstreamdb_api:parse_sql_request(), grpc:metadata())
     -> {ok, hstreamdb_api:parse_sql_response(), grpc:metadata()}
+     | {error, grpc_stream:error_response()}.
+
+-callback register_schema(hstreamdb_api:schema(), grpc:metadata())
+    -> {ok, hstreamdb_api:empty(), grpc:metadata()}
+     | {error, grpc_stream:error_response()}.
+
+-callback get_schema(hstreamdb_api:get_schema_request(), grpc:metadata())
+    -> {ok, hstreamdb_api:schema(), grpc:metadata()}
+     | {error, grpc_stream:error_response()}.
+
+-callback unregister_schema(hstreamdb_api:unregister_schema_request(), grpc:metadata())
+    -> {ok, hstreamdb_api:empty(), grpc:metadata()}
      | {error, grpc_stream:error_response()}.
 
 -callback create_connector(hstreamdb_api:create_connector_request(), grpc:metadata())

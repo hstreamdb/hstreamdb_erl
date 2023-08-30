@@ -103,6 +103,26 @@ trim_stream(Req, Metadata, Options) ->
                            trim_stream_request, empty, <<"hstream.server.TrimStreamRequest">>),
                       Req, Metadata, Options).
 
+-spec trim_shards(hstreamdb_api:trim_shards_request())
+    -> {ok, hstreamdb_api:trim_shards_response(), grpc:metadata()}
+     | {error, term()}.
+trim_shards(Req) ->
+    trim_shards(Req, #{}, #{}).
+
+-spec trim_shards(hstreamdb_api:trim_shards_request(), grpc:options())
+    -> {ok, hstreamdb_api:trim_shards_response(), grpc:metadata()}
+     | {error, term()}.
+trim_shards(Req, Options) ->
+    trim_shards(Req, #{}, Options).
+
+-spec trim_shards(hstreamdb_api:trim_shards_request(), grpc:metadata(), grpc_client:options())
+    -> {ok, hstreamdb_api:trim_shards_response(), grpc:metadata()}
+     | {error, term()}.
+trim_shards(Req, Metadata, Options) ->
+    grpc_client:unary(?DEF(<<"/hstream.server.HStreamApi/TrimShards">>,
+                           trim_shards_request, trim_shards_response, <<"hstream.server.TrimShardsRequest">>),
+                      Req, Metadata, Options).
+
 -spec get_stream(hstreamdb_api:get_stream_request())
     -> {ok, hstreamdb_api:get_stream_response(), grpc:metadata()}
      | {error, term()}.
@@ -931,6 +951,66 @@ parse_sql(Req, Options) ->
 parse_sql(Req, Metadata, Options) ->
     grpc_client:unary(?DEF(<<"/hstream.server.HStreamApi/ParseSql">>,
                            parse_sql_request, parse_sql_response, <<"hstream.server.ParseSqlRequest">>),
+                      Req, Metadata, Options).
+
+-spec register_schema(hstreamdb_api:schema())
+    -> {ok, hstreamdb_api:empty(), grpc:metadata()}
+     | {error, term()}.
+register_schema(Req) ->
+    register_schema(Req, #{}, #{}).
+
+-spec register_schema(hstreamdb_api:schema(), grpc:options())
+    -> {ok, hstreamdb_api:empty(), grpc:metadata()}
+     | {error, term()}.
+register_schema(Req, Options) ->
+    register_schema(Req, #{}, Options).
+
+-spec register_schema(hstreamdb_api:schema(), grpc:metadata(), grpc_client:options())
+    -> {ok, hstreamdb_api:empty(), grpc:metadata()}
+     | {error, term()}.
+register_schema(Req, Metadata, Options) ->
+    grpc_client:unary(?DEF(<<"/hstream.server.HStreamApi/RegisterSchema">>,
+                           schema, empty, <<"hstream.server.Schema">>),
+                      Req, Metadata, Options).
+
+-spec get_schema(hstreamdb_api:get_schema_request())
+    -> {ok, hstreamdb_api:schema(), grpc:metadata()}
+     | {error, term()}.
+get_schema(Req) ->
+    get_schema(Req, #{}, #{}).
+
+-spec get_schema(hstreamdb_api:get_schema_request(), grpc:options())
+    -> {ok, hstreamdb_api:schema(), grpc:metadata()}
+     | {error, term()}.
+get_schema(Req, Options) ->
+    get_schema(Req, #{}, Options).
+
+-spec get_schema(hstreamdb_api:get_schema_request(), grpc:metadata(), grpc_client:options())
+    -> {ok, hstreamdb_api:schema(), grpc:metadata()}
+     | {error, term()}.
+get_schema(Req, Metadata, Options) ->
+    grpc_client:unary(?DEF(<<"/hstream.server.HStreamApi/GetSchema">>,
+                           get_schema_request, schema, <<"hstream.server.GetSchemaRequest">>),
+                      Req, Metadata, Options).
+
+-spec unregister_schema(hstreamdb_api:unregister_schema_request())
+    -> {ok, hstreamdb_api:empty(), grpc:metadata()}
+     | {error, term()}.
+unregister_schema(Req) ->
+    unregister_schema(Req, #{}, #{}).
+
+-spec unregister_schema(hstreamdb_api:unregister_schema_request(), grpc:options())
+    -> {ok, hstreamdb_api:empty(), grpc:metadata()}
+     | {error, term()}.
+unregister_schema(Req, Options) ->
+    unregister_schema(Req, #{}, Options).
+
+-spec unregister_schema(hstreamdb_api:unregister_schema_request(), grpc:metadata(), grpc_client:options())
+    -> {ok, hstreamdb_api:empty(), grpc:metadata()}
+     | {error, term()}.
+unregister_schema(Req, Metadata, Options) ->
+    grpc_client:unary(?DEF(<<"/hstream.server.HStreamApi/UnregisterSchema">>,
+                           unregister_schema_request, empty, <<"hstream.server.UnregisterSchemaRequest">>),
                       Req, Metadata, Options).
 
 -spec create_connector(hstreamdb_api:create_connector_request())
