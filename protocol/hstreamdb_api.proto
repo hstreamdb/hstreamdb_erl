@@ -27,6 +27,9 @@ service HStreamApi {
   rpc CreateStream(Stream) returns (Stream) {}
   rpc DeleteStream(DeleteStreamRequest) returns (google.protobuf.Empty) {}
   rpc TrimStream(TrimStreamRequest) returns (google.protobuf.Empty) {}
+  // Find the oldest recordId in each shard, and trim all the records before
+  // that recordId(exclude)."
+  rpc TrimShards(TrimShardsRequest) returns (TrimShardsResponse) {}
   rpc GetStream(GetStreamRequest) returns (GetStreamResponse) {}
   rpc ListStreams(ListStreamsRequest) returns (ListStreamsResponse) {}
   rpc ListStreamsWithPrefix(ListStreamsWithPrefixRequest)
@@ -110,6 +113,11 @@ service HStreamApi {
   rpc PauseQuery(PauseQueryRequest) returns (google.protobuf.Empty) {}
   // parse query sql, return structuralized information
   rpc ParseSql(ParseSqlRequest) returns (ParseSqlResponse) {}
+
+  rpc RegisterSchema(Schema) returns (google.protobuf.Empty) {}
+  rpc GetSchema(GetSchemaRequest) returns (Schema) {}
+  rpc UnregisterSchema(UnregisterSchemaRequest)
+      returns (google.protobuf.Empty) {}
 
   // connector related apis
   rpc CreateConnector(CreateConnectorRequest) returns (Connector) {}
@@ -261,6 +269,18 @@ message TrimStreamRequest {
   StreamOffset trimPoint = 2;
 }
 
+message TrimShardsRequest {
+  string streamName = 1;
+  // recordId: "shardId-batchId-batchIndex"
+  repeated string recordIds = 2;
+}
+
+message TrimShardsResponse {
+  // return map{shardId -> RecordId}, records before recordId(exclude) for each
+  // shard are all trimmed
+  map<uint64, string> trimPoints = 1;
+}
+
 message Stream {
   string streamName = 1;
   uint32 replicationFactor = 2;
@@ -383,6 +403,7 @@ message ReadShardStreamRequest {
   // Total number of batches reader read at most
   uint64 maxReadBatches = 4;
   ShardOffset until = 5;
+  string streamName = 6;
 }
 
 message ReadShardStreamResponse { repeated ReceivedRecord receivedRecords = 1; }
@@ -497,6 +518,22 @@ message ParseSqlRequest { string sql = 1; }
 message ParseSqlResponse {
   oneof sql { ExecuteViewQuerySql evqSql = 1; }
 }
+
+message ColumnCatalog {
+  uint32 index = 1;
+  string name = 2;
+  string type = 3;
+  bool isNullable = 4;
+  bool isHidden = 5;
+}
+
+message Schema {
+  string owner = 1;
+  repeated ColumnCatalog columns = 2;
+}
+
+message GetSchemaRequest { string owner = 1; }
+message UnregisterSchemaRequest { string owner = 1; }
 
 message ExecuteViewQuerySql { string view = 1; }
 
@@ -691,6 +728,8 @@ enum StreamStats {
   AppendInRecords = 1;
   AppendTotal = 2;
   AppendFailed = 3;
+  ReadInBytes = 4;
+  ReadInBatches = 5;
 }
 
 enum SubscriptionStats {
@@ -762,6 +801,8 @@ enum ErrorCode {
   StreamEmptyBatchedRecord = 206;
   StreamInvalidRecordSize = 207;
   StreamInvalidOffset = 208;
+  StreamInvalidRecordId = 209;
+  StreamShardNotExists = 210;
 
   // 3xx -> Subscription Errors
   SubscriptionNotFound = 300;

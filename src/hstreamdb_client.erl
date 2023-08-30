@@ -51,6 +51,9 @@
     read_key_gstream/1,
     fold_key_read_gstream/6,
 
+    trim/3,
+    trim/4,
+
     name/1,
     options/1
 ]).
@@ -100,6 +103,7 @@
 -type stream() :: binary() | string().
 -type partitioning_key() :: binary() | string().
 -type shard_id() :: integer().
+-type trim_point() :: binary().
 
 -type shard() :: #{
     shardId := shard_id(),
@@ -351,6 +355,15 @@ fold_shard_read_gstream(GStream, Fun, Acc) ->
 ) -> reader_fold_acc().
 fold_key_read_gstream(GStream, Stream, Key, Limits, Fun, Acc) ->
     do_fold_key_read_gstream(GStream, Stream, Key, Limits, Fun, Acc).
+
+-spec trim(t(), stream(), [hrecord_id()]) -> {ok, #{shard_id() => trim_point()}} | {error, term()}.
+trim(#{grpc_timeout := Timeout} = Client, Stream, Offsets) ->
+    do_trim(Client, Stream, Offsets, Timeout).
+
+-spec trim(t(), stream(), [hrecord_id()], pos_integer()) ->
+    {ok, #{shard_id() => trim_point()}} | {error, term()}.
+trim(Client, Stream, Offsets, Timeout) ->
+    do_trim(Client, Stream, Offsets, Timeout).
 
 %%--------------------------------------------------------------------
 %% Internal functions
@@ -827,3 +840,26 @@ read_record_count(infinity, StepCount) ->
 read_record_count(TotalLeft, StepCount) ->
     NewStepCount = min(TotalLeft, StepCount),
     {TotalLeft - NewStepCount, NewStepCount}.
+
+do_trim(#{channel := Channel}, Stream, Offsets, Timeout) ->
+    RecordIds = format_offsets(Offsets),
+    Req = #{streamName => Stream, recordIds => RecordIds},
+    Options = #{channel => Channel, timeout => Timeout},
+    case ?HSTREAMDB_GEN_CLIENT:trim_shards(Req, Options) of
+        {ok, #{trimPoints := TrimPoints}, _} ->
+            {ok, TrimPoints};
+        {error, _} = Error ->
+            Error
+    end.
+
+format_offsets(Offsets) ->
+    lists:map(fun format_offset/1, Offsets).
+
+format_offset(#{shardId := ShardId, batchId := BatchId, batchIndex := BatchIndex}) ->
+    <<
+        (integer_to_binary(ShardId))/binary,
+        "-",
+        (integer_to_binary(BatchId))/binary,
+        "-",
+        (integer_to_binary(BatchIndex))/binary
+    >>.
