@@ -38,7 +38,8 @@
     max_records => pos_integer(),
     max_batches => pos_integer(),
     compression_type => none | gzip | zstd,
-    auto_reconnect => false | pos_integer()
+    auto_reconnect => false | pos_integer(),
+    mgr_options => hstreamdb_key_mgr:options()
 }.
 
 -type options() :: #{
@@ -64,10 +65,12 @@ init([
 ]) ->
     BufferPoolSize = maps:get(buffer_pool_size, Opts, ?DEFAULT_BUFFER_POOL_SIZE),
     BufferOptions0 = maps:get(buffer_options, Opts, #{}),
+    MgrOptions = maps:get(mgr_options, BufferOptions0, #{}),
     BufferOptions = BufferOptions0#{
         stream => Stream,
         producer_name => Producer,
-        mgr_client_options => MgrClientOptions
+        mgr_client_options => MgrClientOptions,
+        mgr_options => MgrOptions
     },
 
     WriterPoolSize = maps:get(writer_pool_size, Opts, ?DEFAULT_WRITER_POOL_SIZE),
@@ -93,7 +96,7 @@ buffer_pool_spec(Producer, PoolSize, Opts) ->
 writer_pool_spec(Producer, PoolSize, Opts) ->
     AutoReconnect = maps:get(auto_reconnect, Opts, ?DEAULT_AUTO_RECONNECT),
     WriterOptions = [
-        {pool_size, PoolSize}, {auto_reconnect, true}, {opts, Opts}, {auto_reconnect, AutoReconnect}
+        {pool_size, PoolSize}, {opts, Opts}, {auto_reconnect, AutoReconnect}
     ],
     ecpool_spec(hstreamdb_producer:writer_name(Producer), hstreamdb_batch_writer, WriterOptions).
 
