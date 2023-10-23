@@ -26,6 +26,8 @@
     start/2,
     stop/1,
 
+    create/2,
+
     echo/1,
     create_stream/5,
     delete_stream/2,
@@ -39,6 +41,8 @@
 
     connect/3,
     connect/4,
+
+    connect_next/1,
 
     lookup_resource/3,
     lookup_key/2,
@@ -82,11 +86,15 @@
 
 -define(READ_KEY_STEP_COUNT, 200).
 
+-define(DEFAULT_RPC_OPTIONS, #{
+    pool_size => 1
+}).
+
 -type t() :: #{
     channel := term(),
     grpc_timeout := non_neg_integer(),
     url := binary() | string(),
-    url_map := map(),
+    url_maps := [map()],
     host_mapping := map(),
     reap_channel := boolean(),
     rpc_options := map()
@@ -170,7 +178,7 @@
 
 -type options() :: #{
     url := binary() | string(),
-    rpc_options := rpc_options(),
+    rpc_options => rpc_options(),
     host_mapping => #{binary() => binary()},
     grpc_timeout => pos_integer(),
     reap_channel => boolean()
@@ -197,32 +205,57 @@ start(Options) ->
 
 -spec start(name(), options()) -> {ok, t()} | {error, term()}.
 start(Name, Options) ->
+    case create(Name, Options) of
+        {ok, Client} ->
+            case connect_next(Client) of
+                {ok, NewClient} ->
+                    {ok, NewClient};
+                {{error, _} = Error, _NewClient} ->
+                    Error
+            end;
+        {error, _} = Error ->
+            Error
+    end.
+
+-spec create(name(), options()) -> {ok, t()} | {error, term()}.
+create(Name, Options) ->
     ServerURL = maps:get(url, Options),
-    RPCOptions = maps:get(rpc_options, Options),
+    RPCOptions = maps:get(rpc_options, Options, ?DEFAULT_RPC_OPTIONS),
     HostMapping = maps:get(host_mapping, Options, #{}),
     ChannelName = to_channel_name(Name),
     GRPCTimeout = maps:get(grpc_timeout, Options, ?GRPC_TIMEOUT),
     ReapChannel = maps:get(reap_channel, Options, true),
-    case validate_url_and_opts(ServerURL, maps:get(gun_opts, RPCOptions, #{})) of
-        {ok, ServerURLMap, GunOpts} ->
-            Client =
-                #{
-                    channel => ChannelName,
-                    url => ServerURL,
-                    url_map => ServerURLMap,
-                    rpc_options => RPCOptions#{gun_opts => GunOpts},
-                    host_mapping => HostMapping,
-                    grpc_timeout => GRPCTimeout,
-                    reap_channel => ReapChannel
-                },
-            case start_channel(ChannelName, ServerURLMap, RPCOptions, ReapChannel) of
-                ok ->
-                    {ok, Client};
-                {error, Reason} ->
-                    {error, Reason}
-            end;
+    case validate_urls_and_opts(ServerURL, maps:get(gun_opts, RPCOptions, #{})) of
+        {ok, ServerURLMaps, GunOpts} ->
+            {ok, #{
+                channel => ChannelName,
+                url => ServerURL,
+                url_maps => ServerURLMaps,
+                rpc_options => RPCOptions#{gun_opts => GunOpts},
+                host_mapping => HostMapping,
+                grpc_timeout => GRPCTimeout,
+                reap_channel => ReapChannel
+            }};
         {error, _} = Error ->
             Error
+    end.
+
+-spec connect_next(t()) -> {ok, t()} | {{error, term()}, t()}.
+connect_next(
+    #{
+        channel := ChannelName,
+        url_maps := [URLMap | Rest],
+        rpc_options := RPCOptions,
+        reap_channel := ReapChannel
+    } = Client
+) ->
+    NewUrlMaps = Rest ++ [URLMap],
+    NewClient = Client#{url_maps => NewUrlMaps},
+    case start_channel(ChannelName, URLMap, RPCOptions, ReapChannel) of
+        ok ->
+            {ok, NewClient};
+        {error, Reason} ->
+            {{error, Reason}, NewClient}
     end.
 
 -spec connect(t(), inet:hostname() | inet:ip_address(), inet:port_number()) ->
@@ -235,7 +268,7 @@ connect(Client, Host, Port) ->
 ) -> {ok, t()} | {error, term()}.
 connect(
     #{
-        url_map := ServerURLMap,
+        url_maps := [ServerURLMap | _],
         rpc_options := RPCOptions,
         reap_channel := ReapChannel,
         url := ServerURL,
@@ -256,7 +289,7 @@ connect(
         ok ->
             {ok, Client#{
                 channel => NewChannelName,
-                url_map => NewUrlMap,
+                url_maps => [NewUrlMap],
                 url => ServerURL,
                 rpc_options => NewRPCOptions,
                 reap_channel => ReapChannel,
@@ -592,6 +625,57 @@ do_fold_key_read_gstream(GStream, Stream, Key, Limits0, Fun, Acc) ->
 
 append_rec(eos, Acc) -> lists:reverse(Acc);
 append_rec(Rec, Acc) -> [Rec | Acc].
+
+validate_urls_and_opts(URLs, GunOpts0) ->
+    SplitURLs = string:split(URLs, ",", all),
+    case SplitURLs of
+        [""] ->
+            {error, {invalid_url, "empty", URLs}};
+        [URL | Other] ->
+            %% We infer scheme and options from the first URL
+            case validate_url_and_opts(URL, GunOpts0) of
+                {ok, URLMap, GunOpts1} ->
+                    case parse_other_hosts(Other, URLMap, [URLMap]) of
+                        {ok, URLMaps} ->
+                            {ok, URLMaps, GunOpts1};
+                        {error, _} = Error ->
+                            Error
+                    end;
+                {error, _} = Error ->
+                    Error
+            end
+    end.
+
+parse_other_hosts([], _BaseUrlMap, Acc) ->
+    {ok, lists:reverse(Acc)};
+parse_other_hosts([HostPort | Rest], BaseUrlMap, Acc) ->
+    case parse_host_port(HostPort) of
+        {ok, Host, Port} ->
+            parse_other_hosts(Rest, BaseUrlMap, [
+                maps:merge(BaseUrlMap, #{
+                    host => Host,
+                    port => Port
+                })
+                | Acc
+            ]);
+        {error, _} = Error ->
+            Error
+    end.
+
+parse_host_port(HostPort) ->
+    case string:split(HostPort, ":", all) of
+        [Host] ->
+            {ok, Host, ?DEFAULT_HSTREAMDB_PORT};
+        [Host, PortStr] ->
+            case string:to_integer(PortStr) of
+                {Port, ""} ->
+                    {ok, Host, Port};
+                _ ->
+                    {error, {invalid_port, PortStr}}
+            end;
+        _ ->
+            {error, {invalid_host_port, HostPort}}
+    end.
 
 validate_url_and_opts(URL, GunOpts) ->
     case uri_string:parse(URL) of
