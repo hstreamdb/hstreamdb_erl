@@ -1,0 +1,14 @@
+[
+  {
+    "name": "hserver0",
+    "listen": "0.0.0.0:7570",
+    "upstream": "10.5.0.4:6570",
+    "enabled": true
+  },
+  {
+    "name": "hserver1",
+    "listen": "0.0.0.0:7572",
+    "upstream": "10.5.0.5:6572",
+    "enabled": true
+  }
+]

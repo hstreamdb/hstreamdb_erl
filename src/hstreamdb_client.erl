@@ -314,14 +314,14 @@ connect(
         grpc_timeout := GRPCTimeout
     } = Client,
     Host0,
-    Port,
+    Port0,
     RPCOptionsOverrides
 ) ->
-    Host1 = map_host(Client, Host0),
-    NewChannelName = new_channel_name(Client, Host1, Port),
+    {Host1, Port1} = map_host(Client, {Host0, Port0}),
+    NewChannelName = new_channel_name(Client, Host1, Port1),
     NewUrlMap = maps:merge(ServerURLMap, #{
         host => Host1,
-        port => Port
+        port => Port1
     }),
     NewRPCOptions = maps:merge(RPCOptions, RPCOptionsOverrides),
     case start_channel(NewChannelName, NewUrlMap, NewRPCOptions, ReapChannel) of
@@ -744,8 +744,13 @@ validate_scheme_and_opts(#{scheme := "http"} = URIMap, GunOpts) ->
 validate_scheme_and_opts(_URIMap, _GunOpts) ->
     {error, unknown_scheme}.
 
-map_host(#{host_mapping := HostMapping} = _Client, Host) ->
-    host_to_string(maps:get(Host, HostMapping, Host)).
+map_host(#{host_mapping := HostMapping} = _Client, {Host, Port}) ->
+    case maps:find({Host, Port}, HostMapping) of
+        {ok, {Host1, Port1}} ->
+            {host_to_string(Host1), Port1};
+        error ->
+            {host_to_string(Host), Port}
+    end.
 
 new_channel_name(#{channel := ChannelName}, Host, Port) ->
     lists:concat([
