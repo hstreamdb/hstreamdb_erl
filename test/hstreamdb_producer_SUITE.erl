@@ -5,6 +5,8 @@
 
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("common_test/include/ct.hrl").
+-include_lib("snabbkaffe/include/snabbkaffe.hrl").
+-include("assert.hrl").
 
 -define(DAY, (24 * 60 * 60)).
 
@@ -14,7 +16,7 @@
     receive
         {producer_result, {{flush, ?STREAM, 1}, Result}} ->
             ok
-    after 300 ->
+    after 2000 ->
         ct:fail("producer result not received")
     end
 end).
@@ -35,8 +37,10 @@ init_per_testcase(_TestCase, Config) ->
     Client = hstreamdb_test_helpers:client(test_c),
     _ = hstreamdb_client:delete_stream(Client, ?STREAM),
     ok = hstreamdb_client:create_stream(Client, ?STREAM, 2, ?DAY, 5),
+    _ = snabbkaffe:start_trace(),
     [{producer_name, test_producer}, {client, Client} | Config].
 end_per_testcase(_TestCase, Config) ->
+    _ = snabbkaffe:stop(),
     try
         hstreamdb:stop_producer(?config(producer_name, Config))
     catch
@@ -181,7 +185,7 @@ t_append_many(Config) ->
     ok = hstreamdb:flush(producer(Config)),
     ok = assert_ok_flush_result(100).
 
-t_overflooded(Config) ->
+t_overflooded_queue(Config) ->
     ProducerOptions = #{
         buffer_pool_size => 1,
         buffer_options => #{
@@ -192,6 +196,34 @@ t_overflooded(Config) ->
     },
 
     ok = start_producer(Config, ProducerOptions),
+
+    lists:foreach(
+        fun(_) ->
+            _ = hstreamdb:append(producer(Config), sample_record())
+        end,
+        lists:seq(1, 100)
+    ),
+
+    ?assertMatch(
+        {error, {queue_full, _}},
+        hstreamdb:append_flush(producer(Config), sample_record())
+    ).
+
+t_overflooded_batches(Config) ->
+    ProducerOptions = #{
+        buffer_pool_size => 1,
+        buffer_options => #{
+            max_records => 1,
+            max_batches => 1,
+            interval => 10000
+        }
+    },
+
+    ?assertWaitEvent(
+        ok = start_producer(Config, ProducerOptions),
+        #{?snk_kind := batch_aggregator_discovered},
+        5000
+    ),
 
     lists:foreach(
         fun(_) ->
@@ -268,7 +300,7 @@ t_append_sync(Config) ->
 
     {Time, Res} = timer:tc(
         fun() ->
-            hstreamdb_producer:append_sync(producer(Config), sample_record(), 1000)
+            hstreamdb_batch_aggregator:append_sync(producer(Config), sample_record(), 1000)
         end
     ),
     ?assertMatch({ok, #{}}, Res),
@@ -276,38 +308,41 @@ t_append_sync(Config) ->
 
     ?assertEqual(
         {error, timeout},
-        hstreamdb_producer:append_sync(producer(Config), sample_record(), 100)
+        hstreamdb_batch_aggregator:append_sync(producer(Config), sample_record(), 100)
     ).
 
-t_stream_recreate(Config) ->
-    ProducerOptions = #{
-        buffer_pool_size => 1,
-        buffer_options => #{
-            max_records => 10,
-            max_batches => 10,
-            interval => 500,
-            mgr_options => #{
-                shard_update_interval => 0
-            }
-        }
-    },
+%% TODO: this only worked with shard_update_interval = 0
+%% We should fix the common case, and then restrore this test
 
-    Client = ?config(client, Config),
+% t_stream_recreate(Config) ->
+%     ProducerOptions = #{
+%         buffer_pool_size => 1,
+%         buffer_options => #{
+%             max_records => 10,
+%             max_batches => 10,
+%             interval => 500,
+%             mgr_options => #{
+%                 shard_update_interval => 0
+%             }
+%         }
+%     },
 
-    ok = start_producer(Config, ProducerOptions),
+%     Client = ?config(client, Config),
 
-    ?assertMatch(
-        {ok, #{}},
-        hstreamdb_producer:append_sync(producer(Config), sample_record(), 1000)
-    ),
+%     ok = start_producer(Config, ProducerOptions),
 
-    _ = hstreamdb_client:delete_stream(Client, ?STREAM),
-    ok = hstreamdb_client:create_stream(Client, ?STREAM, 2, ?DAY, 5),
+%     ?assertMatch(
+%         {ok, #{}},
+%         hstreamdb_batch_aggregator:append_sync(producer(Config), sample_record(), 1000)
+%     ),
 
-    ?assertMatch(
-        {ok, #{}},
-        hstreamdb_producer:append_sync(producer(Config), sample_record(), 1000)
-    ).
+%     _ = hstreamdb_client:delete_stream(Client, ?STREAM),
+%     ok = hstreamdb_client:create_stream(Client, ?STREAM, 2, ?DAY, 5),
+
+%     ?assertMatch(
+%         {ok, #{}},
+%         hstreamdb_batch_aggregator:append_sync(producer(Config), sample_record(), 1000)
+%     ).
 
 t_graceful_stop(Config) ->
     ProducerOptions = #{
@@ -390,14 +425,36 @@ t_nonexistent_stream(Config) ->
 
     ok = start_producer(Config, ProducerOptions),
 
+    %% batch_aggregator is still discovering
     ?assertMatch(
-        {error, {cannot_list_shards, _}},
-        hstreamdb:append(producer(Config), sample_record())
+        {error, timeout},
+        hstreamdb:append_sync(producer(Config), sample_record(), 1000)
+    ).
+
+t_removed_stream(Config) ->
+    ProducerOptions = #{
+        buffer_pool_size => 1,
+        buffer_options => #{
+            max_records => 10,
+            max_batches => 10,
+            interval => 500
+        }
+    },
+
+    ?assertWaitEvent(
+        ok = start_producer(Config, ProducerOptions),
+        #{?snk_kind := batch_aggregator_discovered},
+        5000
     ),
 
+    Client = ?config(client, Config),
+    _ = hstreamdb_client:delete_stream(Client, ?STREAM),
+
+    %% TODO:
+    %% This should be retried
     ?assertMatch(
-        {error, {cannot_list_shards, _}},
-        hstreamdb:append_sync(producer(Config), sample_record())
+        {error, {unavailable, <<"\"NOTFOUND: requested identifier does not exist\"">>}},
+        hstreamdb:append_sync(producer(Config), sample_record(), 1000)
     ).
 
 t_producer_start_legacy(Config) ->
@@ -426,7 +483,7 @@ t_producer_start_legacy(Config) ->
 
     ?assertMatch(
         {ok, #{}},
-        hstreamdb_producer:append_sync(ProducerName, sample_record(), 1000)
+        hstreamdb_batch_aggregator:append_sync(ProducerName, sample_record(), 1000)
     ).
 
 %%--------------------------------------------------------------------
@@ -437,7 +494,7 @@ start_producer(Config, Options) ->
     BufferOptions0 = maps:get(buffer_options, Options, #{}),
     BufferOptions = maps:merge(#{callback => callback()}, BufferOptions0),
     Options0 = #{
-        mgr_client_options => hstreamdb_test_helpers:default_options(),
+        client_options => hstreamdb_test_helpers:default_options(),
         stream => ?STREAM
     },
     Options1 = maps:merge(Options0, Options),

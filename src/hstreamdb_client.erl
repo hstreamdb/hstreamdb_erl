@@ -26,6 +26,7 @@
     start/2,
     stop/1,
 
+    create/1,
     create/2,
 
     echo/1,
@@ -39,10 +40,11 @@
     append/2,
     append/3,
 
+    connect/1,
     connect/3,
     connect/4,
 
-    connect_next/1,
+    reconnect/1,
 
     lookup_resource/3,
     lookup_key/2,
@@ -207,15 +209,19 @@ start(Options) ->
 start(Name, Options) ->
     case create(Name, Options) of
         {ok, Client} ->
-            case connect_next(Client) of
-                {ok, NewClient} ->
-                    {ok, NewClient};
+            case connect(Client) of
+                ok ->
+                    {ok, Client};
                 {{error, _} = Error, _NewClient} ->
                     Error
             end;
         {error, _} = Error ->
             Error
     end.
+
+-spec create(options()) -> {ok, t()} | {error, term()}.
+create(Options) ->
+    create(random_name(), Options).
 
 -spec create(name(), options()) -> {ok, t()} | {error, term()}.
 create(Name, Options) ->
@@ -240,22 +246,55 @@ create(Name, Options) ->
             Error
     end.
 
--spec connect_next(t()) -> {ok, t()} | {{error, term()}, t()}.
-connect_next(
+-spec reconnect(t()) -> ok | {error, term()}.
+reconnect(Client) ->
+    _ = stop(Client),
+    connect(Client).
+
+-spec connect(t()) -> ok | {error, term()}.
+connect(#{url_maps := UrlMaps} = Client) ->
+    connect(Client, shuffle(UrlMaps)).
+
+connect(_Client, []) ->
+    {error, no_more_urls_to_connect};
+connect(
     #{
         channel := ChannelName,
-        url_maps := [URLMap | Rest],
         rpc_options := RPCOptions,
         reap_channel := ReapChannel
-    } = Client
+    } = Client,
+    [URLMap | Rest]
 ) ->
-    NewUrlMaps = Rest ++ [URLMap],
-    NewClient = Client#{url_maps => NewUrlMaps},
-    case start_channel(ChannelName, URLMap, RPCOptions, ReapChannel) of
-        ok ->
-            {ok, NewClient};
-        {error, Reason} ->
-            {{error, Reason}, NewClient}
+    try
+        case start_channel(ChannelName, URLMap, RPCOptions, ReapChannel) of
+            ok ->
+                case echo(Client) of
+                    ok ->
+                        ok;
+                    {error, Reason} ->
+                        logger:error(
+                            "[hstreamdb] ping new connection failed: ~p, url: ~p, channel: ~p~n",
+                            [Reason, uri_string:recompose(URLMap), ChannelName]
+                        ),
+                        _ = stop(Client),
+                        connect(Client, Rest)
+                end;
+            {error, Reason} ->
+                logger:error(
+                    "[hstreamdb] start new connection failed: ~p, url: ~p, channel: ~p~n",
+                    [Reason, uri_string:recompose(URLMap), ChannelName]
+                ),
+                _ = stop(Client),
+                connect(Client, Rest)
+        end
+    catch
+        Class:CrashReason ->
+            logger:error(
+                "[hstreamdb] start new connection crashed: ~p, url: ~p, channel: ~p~n",
+                [Class, CrashReason, uri_string:recompose(URLMap), ChannelName]
+            ),
+            _ = stop(Client),
+            connect(Client, Rest)
     end.
 
 -spec connect(t(), inet:hostname() | inet:ip_address(), inet:port_number()) ->
@@ -947,3 +986,7 @@ format_offset(#{shardId := ShardId, batchId := BatchId, batchIndex := BatchIndex
         "-",
         (integer_to_binary(BatchIndex))/binary
     >>.
+
+shuffle(List) ->
+    {_, ShuffledList} = lists:unzip(lists:sort([{rand:uniform(), X} || X <- List])),
+    ShuffledList.

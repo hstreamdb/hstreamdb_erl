@@ -1,0 +1,564 @@
+%%--------------------------------------------------------------------
+%% Copyright (c) 2020-2022 EMQ Technologies Co., Ltd. All Rights Reserved.
+%%
+%% Licensed under the Apache License, Version 2.0 (the "License");
+%% you may not use this file except in compliance with the License.
+%% You may obtain a copy of the License at
+%%
+%%     http://www.apache.org/licenses/LICENSE-2.0
+%%
+%% Unless required by applicable law or agreed to in writing, software
+%% distributed under the License is distributed on an "AS IS" BASIS,
+%% WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+%% See the License for the specific language governing permissions and
+%% limitations under the License.
+%%--------------------------------------------------------------------
+
+-module(hstreamdb_batch_aggregator).
+
+-include("hstreamdb.hrl").
+-include_lib("snabbkaffe/include/snabbkaffe.hrl").
+
+-behaviour(gen_statem).
+
+-export([
+    append/2,
+    flush/1,
+    append_flush/2,
+    append_flush/3,
+    append_sync/2,
+    append_sync/3
+]).
+
+-export([
+    connect/1,
+    ecpool_action/2,
+    writer_name/1
+]).
+
+-export([
+    init/1,
+    callback_mode/0,
+    handle_event/4,
+    terminate/3,
+    code_change/4
+]).
+
+-type callback() ::
+    {module(), atom(), [term()]} | {module(), atom()} | fun((term()) -> any()) | undefined.
+
+-type options() :: #{
+    stream := hstreamdb:stream(),
+    callback := callback(),
+    name := ecpool:pool_name(),
+    interval => pos_integer(),
+    batch_reap_timeout => pos_integer(),
+    max_records => pos_integer(),
+    max_batches => pos_integer(),
+    compression_type => none | gzip | zstd,
+    discovery_backoff_opts => hstreamdb_backoff:options()
+}.
+
+-export_type([options/0, callback/0]).
+
+-record(data, {
+    name,
+    writer_name,
+    stream,
+    compression_type,
+    callback,
+
+    queue,
+    queue_size,
+    queue_max_size,
+
+    batch_tab,
+    buffers,
+    buffer_opts,
+
+    discovery_backoff_opts,
+    key_manager,
+
+    terminator = undefined
+}).
+
+append(Producer, PKeyRecordOrRecords) ->
+    RecordsByPK = records_by_pk(PKeyRecordOrRecords),
+    do_while_ok(
+        fun({PartitioningKey, Records}) ->
+            append(Producer, PartitioningKey, Records)
+        end,
+        maps:to_list(RecordsByPK)
+    ).
+
+append(Producer, PartitioningKey, Records) ->
+    ecpool:pick_and_do(
+        {Producer, bin(PartitioningKey)},
+        {?MODULE, ecpool_action, [{append, PartitioningKey, Records}]},
+        no_handover
+    ).
+
+append_sync(Producer, {_PartitioningKey, _Record} = PKeyRecord) ->
+    append_sync(Producer, PKeyRecord, infinity).
+
+append_sync(Producer, {PartitioningKey, _Record} = PKeyRecord, Timeout) ->
+    sync_request({Producer, bin(PartitioningKey)}, {append_sync, PKeyRecord}, Timeout).
+
+flush(Producer) ->
+    foreach_worker(
+        fun(Pid) -> gen_server:call(Pid, flush) end,
+        Producer
+    ).
+
+append_flush(Producer, {_PartitioningKey, _Record} = PKeyRecord) ->
+    append_flush(Producer, PKeyRecord, infinity).
+
+append_flush(Producer, {PartitioningKey, _Record} = PKeyRecord, Timeout) ->
+    sync_request({Producer, bin(PartitioningKey)}, {append_flush, PKeyRecord}, Timeout).
+
+%%-------------------------------------------------------------------------------------------------
+%% ecpool callbacks
+%%-------------------------------------------------------------------------------------------------
+
+-type pool_opts() :: list(any() | {opts, options()}).
+-spec connect(pool_opts()) -> get_server:start_ret().
+connect(PoolOptions) ->
+    Options = proplists:get_value(opts, PoolOptions),
+    gen_statem:start_link(?MODULE, [Options], []).
+
+ecpool_action(Client, Req) ->
+    gen_statem:call(Client, Req).
+
+%%-------------------------------------------------------------------------------------------------
+%% gen_statem callbacks
+%%-------------------------------------------------------------------------------------------------
+
+-define(discovering(Backoff), {discovering, Backoff}).
+-define(active, active).
+-define(terminating, terminating).
+
+callback_mode() ->
+    handle_event_function.
+
+init([Options]) ->
+    _ = process_flag(trap_exit, true),
+
+    StreamName = maps:get(stream, Options),
+    Name = maps:get(name, Options),
+
+    Callback = maps:get(callback, Options, undefined),
+
+    BatchTab = ets:new(?MODULE, [public]),
+
+    BatchSize = maps:get(max_records, Options, ?DEFAULT_MAX_RECORDS),
+    BatchMaxCount = maps:get(max_batches, Options, ?DEFAULT_MAX_BATCHES),
+
+    BufferOpts = buffer_opts(Options),
+    CompressionType = maps:get(compression_type, Options, ?DEFAULT_COMPRESSION),
+
+    DiscoveryBackoffOpts = maps:get(
+        discovery_backoff_opts, Options, ?DEFAULT_DISOVERY_BACKOFF_OPTIONS
+    ),
+
+    Data = #data{
+        name = Name,
+        writer_name = writer_name(Name),
+        stream = StreamName,
+        compression_type = CompressionType,
+        callback = Callback,
+
+        batch_tab = BatchTab,
+        buffer_opts = BufferOpts,
+        buffers = #{},
+
+        queue = [],
+        queue_size = 0,
+        queue_max_size = BatchSize * BatchMaxCount,
+
+        discovery_backoff_opts = DiscoveryBackoffOpts,
+        key_manager = undefined
+    },
+    Backoff = hstreamdb_backoff:new(DiscoveryBackoffOpts),
+    {ok, ?discovering(Backoff), Data, [{state_timeout, 0, discover}]}.
+
+%% Discovering
+
+handle_event(state_timeout, discover, ?discovering(Backoff0), #data{name = Name} = Data0) ->
+    case hstreamdb_discovery:key_manager(Name) of
+        {ok, KeyManager} ->
+            Data1 = Data0#data{key_manager = KeyManager},
+            Data2 = pour_queue_to_buffers(Data1),
+            ?tp(batch_aggregator_discovered, #{name => Name}),
+            {next_state, ?active, Data2};
+        not_found ->
+            {Delay, Backoff1} = hstreamdb_backoff:next_delay(Backoff0),
+            {next_state, ?discovering(Backoff1), Data0, [{state_timeout, Delay, discover}]}
+    end;
+handle_event(cast, {stop, _Terminator}, ?discovering(_Backoff), _Data) ->
+    {keep_state_and_data, postpone};
+handle_event({call, From}, flush, ?discovering(_Backoff), _Data) ->
+    %% Will flush after discovering
+    {keep_state_and_data, [postpone, {reply, From, ok}]};
+handle_event(
+    {call, From}, {append, _PartitioningKey, _Records} = Req, ?discovering(_Backoff), Data
+) ->
+    enqueue_and_reply(Data, Req, From);
+handle_event(
+    {call, From},
+    {sync_req, _Caller, _Req, _Timeout} = Req,
+    ?discovering(_Backoff),
+    Data
+) ->
+    enqueue_and_reply(Data, Req, From);
+
+%% Terminating
+
+handle_event({call, From}, _Req, ?terminating, _Data) ->
+    {keep_state_and_data, [{reply, From, {error, terminating}}]};
+handle_event(
+    info,
+    {write_result, ShardId, BatchRef, Result},
+    ?terminating,
+    Data
+) ->
+    {keep_state, maybe_report_empty(handle_write_result(Data, ShardId, BatchRef, Result))};
+handle_event(info, {shard_buffer_event, ShardId, Message}, ?terminating, Data) ->
+    {keep_state, maybe_report_empty(handle_shard_buffer_event(Data, ShardId, Message))};
+%% Active
+
+handle_event({call, From}, {append, _PartitioningKey, _Records} = Req, ?active, Data) ->
+    {Resp, NData} = handle_append_request(Data, Req),
+    {keep_state, NData, [{reply, From, Resp}]};
+handle_event({call, From}, flush, ?active, Data) ->
+    {keep_state, do_flush(Data), [{reply, From, ok}]};
+handle_event(
+    {call, From}, {sync_req, _Caller, _Req, _Timeout} = Req, ?active, Data
+) ->
+    {Resp, NData} = handle_append_request(Data, Req),
+    {keep_state, NData, [{reply, From, Resp}]};
+handle_event(cast, {stop, Terminator}, ?active, Data0) ->
+    Data1 = do_flush(Data0),
+    {next_state, ?terminating, maybe_report_empty(Data1#data{terminator = Terminator})};
+handle_event(
+    info,
+    {write_result, ShardId, BatchRef, Result},
+    ?active,
+    Data
+) ->
+    {keep_state, maybe_report_empty(handle_write_result(Data, ShardId, BatchRef, Result))};
+handle_event(info, {shard_buffer_event, ShardId, Message}, ?active, Data) ->
+    {keep_state, maybe_report_empty(handle_shard_buffer_event(Data, ShardId, Message))};
+%% Fallbacks
+
+handle_event({call, From}, Request, _State, _Data) ->
+    {keep_state_and_data, [{reply, From, {error, {unknown_call, Request}}}]};
+handle_event(info, _Request, _State, _Data) ->
+    keep_state_and_data;
+handle_event(cast, _Request, _State, _Data) ->
+    keep_state_and_data.
+
+terminate(_Reason, _State, _Data) ->
+    ok.
+
+code_change(_OldVsn, State, Data, _Extra) ->
+    {ok, State, Data}.
+
+%% -------------------------------------------------------------------------------------------------
+%% internal functions
+
+sync_request(PoolAndKey, Req, Timeout) ->
+    Self = alias([reply]),
+    case
+        ecpool:pick_and_do(
+            PoolAndKey,
+            {?MODULE, ecpool_action, [{sync_req, Self, Req, Timeout}]},
+            no_handover
+        )
+    of
+        {error, _} = Error ->
+            Error;
+        ok ->
+            wait_reply(Self, Timeout)
+    end.
+
+wait_reply(Self, Timeout) ->
+    receive
+        {reply, Self, Resp} ->
+            Resp
+    after Timeout ->
+        unalias(Self),
+        receive
+            {reply, Self, Resp} ->
+                Resp
+        after 0 ->
+            {error, timeout}
+        end
+    end.
+
+foreach_worker(Fun, Pool) ->
+    lists:foreach(
+        fun({_Name, WPid}) ->
+            ecpool_worker:exec(
+                WPid,
+                Fun,
+                ?POOL_TIMEOUT
+            )
+        end,
+        ecpool:workers(Pool)
+    ).
+
+append_to_queue(
+    #data{queue = Queue, queue_size = Size, queue_max_size = MaxSize} = Data, Req
+) ->
+    Length = request_record_count(Req),
+    case Size + Length > MaxSize of
+        true ->
+            {error, {queue_full, Req}};
+        false ->
+            {ok, Data#data{queue = [Req | Queue], queue_size = Size + Length}}
+    end.
+
+request_record_count({sync_req, _Caller, _Req, _Timeout}) -> 1;
+request_record_count({append, _PartitioningKey, Records}) -> length(Records).
+
+pour_queue_to_buffers(#data{queue = Queue} = Data) ->
+    NData = lists:foldl(
+        fun(Req, Data0) ->
+            %% We cannot overflow the buffers
+            {ok, Data1} = handle_append_request(Data0, Req),
+            Data1
+        end,
+        Data,
+        lists:reverse(Queue)
+    ),
+    NData#data{queue = [], queue_size = 0}.
+
+handle_append_request(Data, {append, PartitioningKey, Records}) ->
+    do_append(PartitioningKey, Records, Data);
+handle_append_request(Data, {sync_req, Caller, {append_flush, PKeyRecord}, Timeout}) ->
+    with_shard_buffer(
+        PKeyRecord,
+        fun(Buffer, Record) -> do_append_flush(Buffer, Record, Caller, Timeout) end,
+        Data
+    );
+handle_append_request(Data, {sync_req, Caller, {append_sync, PKeyRecord}, Timeout}) ->
+    with_shard_buffer(
+        PKeyRecord,
+        fun(Buffer, Record) -> do_append_sync(Buffer, Record, Caller, Timeout) end,
+        Data
+    ).
+
+get_shard_buffer(ShardId, #data{buffers = Buffers, buffer_opts = BufferOpts} = Data) ->
+    case maps:get(ShardId, Buffers, undefined) of
+        undefined ->
+            Buffer = new_buffer(ShardId, BufferOpts, Data),
+            NData = set_shard_buffer(ShardId, Buffer, Data),
+            {Buffer, NData};
+        Buffer ->
+            {Buffer, Data}
+    end.
+
+set_shard_buffer(ShardId, Buffer, #data{buffers = Buffers} = Data) ->
+    Data#data{buffers = maps:put(ShardId, Buffer, Buffers)}.
+
+new_buffer(
+    ShardId, BufferOpts, #data{batch_tab = BatchTab, callback = Callback, stream = Stream} = Data
+) ->
+    Opts = #{
+        batch_tab => BatchTab,
+
+        send_batch => fun(BufferBatch) ->
+            write(ShardId, BufferBatch, Data)
+        end,
+        send_after => fun(Timeout, Message) ->
+            erlang:send_after(Timeout, self(), {shard_buffer_event, ShardId, Message})
+        end,
+        cancel_send => fun(Ref) ->
+            erlang:cancel_timer(Ref)
+        end,
+        send_reply => fun(From, Response) ->
+            send_reply(From, Response, Callback, Stream)
+        end
+    },
+    hstreamdb_buffer:new(maps:merge(BufferOpts, Opts)).
+
+send_reply(From, Response, Callback, Stream) ->
+    case From of
+        undefined ->
+            apply_callback(Callback, {{flush, Stream, 1}, Response});
+        AliasRef when is_reference(AliasRef) ->
+            erlang:send(AliasRef, {reply, AliasRef, Response});
+        _ ->
+            logger:warning("[hstreamdb_batch_aggregator] Unexpected From: ~p", [From])
+    end.
+
+with_shard_buffer(
+    {PartitioningKey, Value},
+    Fun,
+    Data0 = #data{
+        key_manager = KeyManager
+    }
+) ->
+    case hstreamdb_key_mgr:choose_shard(KeyManager, PartitioningKey) of
+        {ok, ShardId} ->
+            {Buffer, Data1} = get_shard_buffer(ShardId, Data0),
+            case Fun(Buffer, Value) of
+                {ok, Buffer1} ->
+                    Data2 = set_shard_buffer(ShardId, Buffer1, Data1),
+                    {ok, Data2};
+                {error, _} = Error ->
+                    {Error, Data1}
+            end;
+        {error, _} = Error ->
+            {Error, Data0}
+    end.
+
+do_append(PartitioningKey, Records0, Data) ->
+    with_shard_buffer(
+        {PartitioningKey, Records0},
+        fun(Buffer, Records1) ->
+            hstreamdb_buffer:append(Buffer, undefined, Records1, infinity)
+        end,
+        Data
+    ).
+
+do_append_flush(Buffer0, Record, From, Timeout) ->
+    case hstreamdb_buffer:append(Buffer0, From, [Record], Timeout) of
+        {ok, Buffer1} ->
+            {ok, hstreamdb_buffer:flush(Buffer1)};
+        {error, _} = Error ->
+            Error
+    end.
+
+do_append_sync(Buffer, Record, From, Timeout) ->
+    hstreamdb_buffer:append(Buffer, From, [Record], Timeout).
+
+write(ShardId, #{batch_ref := Ref, tab := Tab}, #data{
+    writer_name = WriterName, compression_type = CompressionType
+}) ->
+    Batch = #batch{
+        id = Ref,
+        shard_id = ShardId,
+        tab = Tab,
+        compression_type = CompressionType
+    },
+    ecpool:with_client(
+        WriterName,
+        fun(WriterPid) ->
+            ok = hstreamdb_batch_writer:write(WriterPid, Batch)
+        end
+    ).
+
+do_flush(
+    Data = #data{
+        buffers = Buffers
+    }
+) ->
+    lists:foldl(
+        fun(ShardId, St0) ->
+            {Buffer0, St1} = get_shard_buffer(ShardId, St0),
+            Buffer1 = hstreamdb_buffer:flush(Buffer0),
+            set_shard_buffer(ShardId, Buffer1, St1)
+        end,
+        Data,
+        maps:keys(Buffers)
+    ).
+
+handle_write_result(
+    Data0,
+    ShardId,
+    BatchRef,
+    Result
+) ->
+    {Buffer0, Data1} = get_shard_buffer(ShardId, Data0),
+    Buffer1 = hstreamdb_buffer:handle_batch_response(Buffer0, BatchRef, Result),
+    set_shard_buffer(ShardId, Buffer1, Data1).
+
+handle_shard_buffer_event(Data0, ShardId, Event) ->
+    {Buffer0, Data1} = get_shard_buffer(ShardId, Data0),
+    Buffer1 = hstreamdb_buffer:handle_event(Buffer0, Event),
+    set_shard_buffer(ShardId, Buffer1, Data1).
+
+maybe_report_empty(#data{terminator = undefined} = Data) ->
+    Data;
+maybe_report_empty(#data{terminator = Terminator} = Data) ->
+    case are_all_buffers_empty(Data) of
+        true ->
+            erlang:send(Terminator, {empty, Terminator}),
+            Data;
+        false ->
+            Data
+    end.
+
+are_all_buffers_empty(#data{buffers = Buffers}) ->
+    lists:all(
+        fun(Buffer) ->
+            hstreamdb_buffer:is_empty(Buffer)
+        end,
+        maps:values(Buffers)
+    ).
+
+apply_callback({M, F}, R) ->
+    erlang:apply(M, F, [R]);
+apply_callback({M, F, A}, R) ->
+    erlang:apply(M, F, [R | A]);
+apply_callback(F, R) when is_function(F) ->
+    F(R);
+apply_callback(undefined, _) ->
+    ok.
+
+writer_name(ProducerName) ->
+    {ProducerName, writer}.
+
+records_by_pk(PKeyRecord) when is_tuple(PKeyRecord) ->
+    records_by_pk([PKeyRecord]);
+records_by_pk([]) ->
+    #{};
+records_by_pk([{PK, Record} | Rest]) ->
+    maps:update_with(
+        PK,
+        fun(Records) ->
+            [Record | Records]
+        end,
+        [Record],
+        records_by_pk(Rest)
+    ).
+
+do_while_ok(_Fun, []) ->
+    ok;
+do_while_ok(Fun, [El | List]) ->
+    case Fun(El) of
+        ok ->
+            do_while_ok(Fun, List);
+        {ok, _} ->
+            do_while_ok(Fun, List);
+        {error, _} = Error ->
+            Error
+    end.
+
+bin(L) when is_list(L) ->
+    list_to_binary(L);
+bin(B) when is_binary(B) ->
+    B.
+
+buffer_opts(Options) ->
+    #{
+        flush_interval => maps:get(interval, Options, ?DEFAULT_INTERVAL),
+        batch_timeout => maps:get(
+            batch_reap_timeout, Options, ?DEFAULT_BATCH_REAP_TIMEOUT
+        ),
+        batch_size => maps:get(max_records, Options, ?DEFAULT_MAX_RECORDS),
+        batch_max_count => maps:get(max_batches, Options, ?DEFAULT_MAX_BATCHES)
+    }.
+
+
+enqueue_and_reply(Data, Req, From) ->
+    keep_state_and_reply(
+        append_to_queue(Data, Req),
+        From
+    ).
+
+keep_state_and_reply({ok, Data}, From) ->
+        {keep_state, Data, [{reply, From, ok}]};
+keep_state_and_reply({error, _} = Error, From) ->
+        {keep_state_and_data, [{reply, From, Error}]}.

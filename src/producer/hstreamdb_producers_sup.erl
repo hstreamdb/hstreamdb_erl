@@ -19,6 +19,8 @@
 
 -module(hstreamdb_producers_sup).
 
+-include("hstreamdb.hrl").
+
 -behaviour(supervisor).
 
 -export([start/2, stop/1]).
@@ -32,6 +34,7 @@ start_link() ->
     supervisor:start_link({local, ?SERVER}, ?MODULE, []).
 
 init([]) ->
+    _ = ets:new(?DISCOVERY_TAB, [named_table, public, set, {read_concurrency, true}]),
     {ok, {#{strategy => one_for_one, intensity => 5, period => 30}, []}}.
 
 spec() ->

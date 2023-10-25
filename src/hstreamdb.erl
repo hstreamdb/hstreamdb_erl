@@ -31,7 +31,8 @@
     append/4,
     flush/1,
     append_flush/2,
-    append_sync/2
+    append_sync/2,
+    append_sync/3
 ]).
 
 -export([
@@ -135,7 +136,7 @@ start_producer(Client, Producer, ProducerOptions) ->
         ],
         ProducerOptions
     ),
-    MgrClientOptions = hstreamdb_client:options(Client),
+    ClientOptions = hstreamdb_client:options(Client),
     BaseOptions = to_map(
         [
             stream,
@@ -147,7 +148,7 @@ start_producer(Client, Producer, ProducerOptions) ->
     Options = BaseOptions#{
         buffer_options => BufferOptions,
         writer_options => WriterOptions,
-        mgr_client_options => MgrClientOptions
+        client_options => ClientOptions
     },
     case start_producer(Producer, Options) of
         ok ->
@@ -192,16 +193,19 @@ append(Producer, PartitioningKey, PayloadType, Payload) ->
     append(Producer, Record).
 
 append(Producer, Record) ->
-    hstreamdb_producer:append(Producer, Record).
+    hstreamdb_batch_aggregator:append(Producer, Record).
 
 flush(Producer) ->
-    hstreamdb_producer:flush(Producer).
+    hstreamdb_batch_aggregator:flush(Producer).
 
 append_flush(Producer, Record) ->
-    hstreamdb_producer:append_flush(Producer, Record).
+    hstreamdb_batch_aggregator:append_flush(Producer, Record).
 
 append_sync(Producer, Record) ->
-    hstreamdb_producer:append_sync(Producer, Record).
+    hstreamdb_batch_aggregator:append_sync(Producer, Record).
+
+append_sync(Producer, Record, Timeout) ->
+    hstreamdb_batch_aggregator:append_sync(Producer, Record, Timeout).
 
 %%--------------------------------------------------------------------
 %% Client Manager facade
@@ -217,17 +221,17 @@ stop_client_manager(ClientManager) ->
     hstreamdb_shard_client_mgr:stop(ClientManager).
 
 %%--------------------------------------------------------------------
-%% Key Manager facade
+%% Auto Key Manager facade
 %%--------------------------------------------------------------------
 
 start_key_manager(Client, StreamName) ->
     start_key_manager(Client, StreamName, #{}).
 
 start_key_manager(Client, StreamName, Options) ->
-    hstreamdb_key_mgr:start(Client, StreamName, Options).
+    hstreamdb_auto_key_mgr:start(Client, StreamName, Options).
 
 stop_key_manager(KeyManager) ->
-    hstreamdb_key_mgr:stop(KeyManager).
+    hstreamdb_auto_key_mgr:stop(KeyManager).
 
 %%--------------------------------------------------------------------
 %% Reader single shard stream facade (simple, no pool)

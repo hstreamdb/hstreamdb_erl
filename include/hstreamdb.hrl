@@ -43,6 +43,15 @@
 -define(RES_QUERY, 5).
 -define(RES_VIEW, 6).
 
+-define(DEFAULT_BATCH_BACKOFF_OPTIONS, {1000, 30000, 2}).
+-define(DEFAULT_DISOVERY_BACKOFF_OPTIONS, {100, 5000, 1.5}).
+
+-define(DISCOVERY_TAB, hstreamdb_discovery_tab).
+
+-define(DEFAULT_MIN_ACTIVE_TIME, 5000).
+
+-define(DEFAULT_MAX_QUEUE_SIZE, 10000).
+
 -record(batch, {
     id :: reference(),
     shard_id :: integer(),

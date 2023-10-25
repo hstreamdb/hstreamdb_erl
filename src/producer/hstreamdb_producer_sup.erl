@@ -26,29 +26,35 @@
 -export([start_link/2, spec/2, child_id/1]).
 -export([init/1]).
 
--type writer_options() :: #{
+-type batch_writer_options() :: #{
     grpc_timeout => non_neg_integer(),
     auto_reconnect => false | pos_integer()
 }.
 
--type buffer_options() :: #{
-    callback := hstreamdb_producer:callback(),
+-type batch_aggregator_options() :: #{
+    callback := hstreamdb_batch_aggregator:callback(),
     interval => pos_integer(),
     batch_reap_timeout => pos_integer(),
     max_records => pos_integer(),
     max_batches => pos_integer(),
     compression_type => none | gzip | zstd,
-    auto_reconnect => false | pos_integer(),
-    mgr_options => hstreamdb_key_mgr:options()
+    discovery_backoff_opts => hstreamdb_backoff:options(),
+    auto_reconnect => false | pos_integer()
+}.
+
+-type discovery_options() :: #{
+    backoff_options := hstreamdb_backoff:options(),
+    min_active_time => non_neg_integer()
 }.
 
 -type options() :: #{
     stream := hstreamdb:stream(),
-    mgr_client_options := hstreamdb_client:options(),
+    client_options := hstreamdb_client:options(),
     buffer_pool_size => non_neg_integer(),
-    buffer_options => buffer_options(),
-    writer_options => writer_options(),
+    buffer_options => batch_aggregator_options(),
+    writer_options => batch_writer_options(),
     writer_pool_size => non_neg_integer(),
+    discovery_options => discovery_options(),
     stop_timeout => non_neg_integer()
 }.
 
@@ -60,45 +66,59 @@ init([
     Producer,
     #{
         stream := Stream,
-        mgr_client_options := MgrClientOptions
+        client_options := ClientOptions
     } = Opts
 ]) ->
     BufferPoolSize = maps:get(buffer_pool_size, Opts, ?DEFAULT_BUFFER_POOL_SIZE),
     BufferOptions0 = maps:get(buffer_options, Opts, #{}),
-    MgrOptions = maps:get(mgr_options, BufferOptions0, #{}),
     BufferOptions = BufferOptions0#{
         stream => Stream,
-        producer_name => Producer,
-        mgr_client_options => MgrClientOptions,
-        mgr_options => MgrOptions
+        name => Producer
     },
 
     WriterPoolSize = maps:get(writer_pool_size, Opts, ?DEFAULT_WRITER_POOL_SIZE),
     WriterOptions0 = maps:get(writer_options, Opts, #{}),
     WriterOptions = WriterOptions0#{
         stream => Stream,
-        mgr_client_options => MgrClientOptions
+        name => Producer
+    },
+
+    DiscoveryOptions0 = maps:get(discovery_options, Opts, #{}),
+    DiscoveryOptions = DiscoveryOptions0#{
+        stream => Stream,
+        name => Producer,
+        client_options => ClientOptions
     },
     StopTimeout = maps:get(stop_timeout, Opts, ?DEFAULT_STOP_TIMEOUT),
 
     ChildSpecs = [
-        buffer_pool_spec(Producer, BufferPoolSize, BufferOptions),
-        writer_pool_spec(Producer, WriterPoolSize, WriterOptions),
+        discovery_spec(DiscoveryOptions),
+        batch_aggregator_pool_spec(Producer, BufferPoolSize, BufferOptions),
+        batch_writer_pool_spec(Producer, WriterPoolSize, WriterOptions),
         terminator_spec(Producer, StopTimeout)
     ],
     {ok, {#{strategy => one_for_one, intensity => 5, period => 30}, ChildSpecs}}.
 
-buffer_pool_spec(Producer, PoolSize, Opts) ->
+discovery_spec(Opts) ->
+    #{
+        id => discovery,
+        start => {hstreamdb_discovery, start_link, [Opts]},
+        restart => permanent,
+        shutdown => infinity,
+        type => worker
+    }.
+
+batch_aggregator_pool_spec(Producer, PoolSize, Opts) ->
     AutoReconnect = maps:get(auto_reconnect, Opts, ?DEAULT_AUTO_RECONNECT),
     PoolOpts = [{pool_size, PoolSize}, {pool_type, hash}, {auto_reconnect, AutoReconnect}, {opts, Opts}],
-    ecpool_spec(Producer, hstreamdb_producer, PoolOpts).
+    ecpool_spec(Producer, hstreamdb_batch_aggregator, PoolOpts).
 
-writer_pool_spec(Producer, PoolSize, Opts) ->
+batch_writer_pool_spec(Producer, PoolSize, Opts) ->
     AutoReconnect = maps:get(auto_reconnect, Opts, ?DEAULT_AUTO_RECONNECT),
     WriterOptions = [
         {pool_size, PoolSize}, {opts, Opts}, {auto_reconnect, AutoReconnect}
     ],
-    ecpool_spec(hstreamdb_producer:writer_name(Producer), hstreamdb_batch_writer, WriterOptions).
+    ecpool_spec(hstreamdb_batch_aggregator:writer_name(Producer), hstreamdb_batch_writer, WriterOptions).
 
 terminator_spec(Producer, StopTimeout) ->
     #{

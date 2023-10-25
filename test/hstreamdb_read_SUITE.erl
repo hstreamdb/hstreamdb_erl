@@ -58,7 +58,7 @@ t_read_single_shard_stream(Config) ->
         buffer_pool_size => 1,
         writer_pool_size => 1,
         stream => StreamName,
-        mgr_client_options => hstreamdb_test_helpers:default_options(),
+        client_options => hstreamdb_test_helpers:default_options(),
         buffer_options => #{
             max_records => 100,
             max_time => 10000
@@ -167,7 +167,7 @@ t_read_stream_key_with_shard_reader(Config) ->
         buffer_pool_size => 1,
         writer_pool_size => 1,
         stream => ?config(stream_name, Config),
-        mgr_client_options => hstreamdb_test_helpers:default_options(),
+        client_options => hstreamdb_test_helpers:default_options(),
         buffer_options => #{
             max_records => 10,
             max_time => 10000
@@ -232,7 +232,7 @@ t_read_stream_key(Config) ->
         buffer_pool_size => 10,
         writer_pool_size => 20,
         stream => ?config(stream_name, Config),
-        mgr_client_options => hstreamdb_test_helpers:default_options(),
+        client_options => hstreamdb_test_helpers:default_options(),
         buffer_options => #{
             max_records => 10,
             max_time => 10000
@@ -342,7 +342,7 @@ t_trim(Config) ->
         buffer_pool_size => 2,
         writer_pool_size => 2,
         stream => StreamName,
-        mgr_client_options => hstreamdb_test_helpers:default_options(),
+        client_options => hstreamdb_test_helpers:default_options(),
         buffer_options => #{
             max_records => 10,
             max_time => 10

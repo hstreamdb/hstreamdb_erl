@@ -122,7 +122,7 @@ new(#{
 ).
 
 -spec append(hstreamdb_buffer(), from(), [record()], timeout()) ->
-    {ok, hstreamdb_buffer()} | {error, term()}.
+    {ok, hstreamdb_buffer()} | {error, {batch_count_too_large, integer()}}.
 append(#{batch_max_count := BatchMaxCount} = Buffer, From, Records, Timeout) when
     ?IS_TIMEOUT(Timeout) andalso is_list(Records)
 ->

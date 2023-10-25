@@ -36,24 +36,14 @@
 
 -export_type([options/0]).
 
-%% Writer need only one channel. Because it is a sync call.
--define(CLIENT_OPTS, #{
-    pool_size => 1
-}).
-
--define(CLIENT_MGR_OPTS, #{
-    cache_by_shard_id => true,
-    client_override_opts => ?CLIENT_OPTS
-}).
-
 -define(DEFAULT_GRPC_TIMEOUT, 30000).
 
 -include("hstreamdb.hrl").
 
 -record(state, {
+    name,
     stream,
-    grpc_timeout,
-    client_manager
+    grpc_timeout
 }).
 
 start_link(Opts) ->
@@ -69,7 +59,7 @@ stop(Pid) ->
 %% ecpool part
 
 -type options() :: #{
-    mgr_client_options := hstreamdb_client:options(),
+    name := ecpool:pool_name(),
     stream := hstreamdb:stream(),
     grpc_timeout => non_neg_integer()
 }.
@@ -85,18 +75,13 @@ connect(PoolOptions) ->
 init([Opts]) ->
     process_flag(trap_exit, true),
     StreamName = maps:get(stream, Opts),
-    MgrClientOptions = maps:get(mgr_client_options, Opts),
+    Name = maps:get(name, Opts),
     GRPCTimeout = maps:get(grpc_timeout, Opts, ?DEFAULT_GRPC_TIMEOUT),
-    case hstreamdb_client:start(MgrClientOptions) of
-        {ok, Client} ->
-            {ok, #state{
-                stream = StreamName,
-                grpc_timeout = GRPCTimeout,
-                client_manager = hstreamdb_shard_client_mgr:start(Client, ?CLIENT_MGR_OPTS)
-            }};
-        {error, _} = Error ->
-            Error
-    end.
+    {ok, #state{
+        stream = StreamName,
+        name = Name,
+        grpc_timeout = GRPCTimeout
+    }}.
 
 handle_cast({write, #batch{shard_id = ShardId, id = BatchId} = Batch, Caller}, State) ->
     {Result, NState} = do_write(ShardId, records(Batch), Batch, State),
@@ -109,8 +94,7 @@ handle_call(stop, _From, State) ->
 handle_info(_Msg, State) ->
     {noreply, State}.
 
-terminate(_Reason, #state{client_manager = ClientMgr}) ->
-    ok = hstreamdb_shard_client_mgr:stop(ClientMgr),
+terminate(_Reason, _State) ->
     ok.
 
 code_change(_OldVsn, State, _Extra) ->
@@ -153,13 +137,13 @@ do_write(
     {Resps, Records},
     #batch{compression_type = CompressionType},
     State = #state{
-        client_manager = ClientMgr0,
+        name = Name,
         stream = Stream,
         grpc_timeout = GRPCTimeout
     }
 ) ->
-    case hstreamdb_shard_client_mgr:lookup_shard_client(ClientMgr0, ShardId) of
-        {ok, Client, ClientMgr1} ->
+    case hstreamdb_discovery:shard_client(Name, ShardId) of
+        {ok, Client} ->
             Req = #{
                 stream_name => Stream,
                 records => Records,
@@ -172,13 +156,14 @@ do_write(
             case hstreamdb_client:append(Client, Req, Options) of
                 {ok, #{recordIds := RecordsIds}} ->
                     Res = fill_responses(Resps, RecordsIds),
-                    {{ok, Res}, State#state{client_manager = ClientMgr1}};
+                    {{ok, Res}, State};
                 {error, _} = Error ->
-                    ClientMgr2 = hstreamdb_shard_client_mgr:bad_shard_client(ClientMgr1, Client),
-                    {Error, State#state{client_manager = ClientMgr2}}
+                    %% TODO
+                    %% report node unavail
+                    {Error, State}
             end;
-        {error, _} = Error ->
-            {Error, State}
+        not_found ->
+            {{error, cannot_resolve_shard_id}, State}
     end.
 
 fill_responses(KnownResps, Ids) ->

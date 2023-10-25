@@ -86,7 +86,7 @@ t_start_stop_producer(Config) ->
     _ = hstreamdb_client:create_stream(Client, "stream2", 2, ?DAY, 5),
 
     ProducerOptions = #{
-        mgr_client_options => hstreamdb_test_helpers:default_options(),
+        client_options => hstreamdb_test_helpers:default_options(),
         stream => "stream2",
         buffer_pool_size => 4,
         buffer_options => #{

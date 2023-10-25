@@ -36,23 +36,16 @@ end_per_suite(_Config) ->
 %% Test Cases
 %%--------------------------------------------------------------------
 
-t_connect_next(_Config) ->
+t_connect(_Config) ->
     ClientConfig = #{
         url => "http://10.5.0.111:6570,127.0.0.1:6570"
     },
 
-    {ok, Client0} = hstreamdb_client:create(test_c1, ClientConfig),
-    {ok, Client1} = hstreamdb_client:connect_next(Client0),
-
-    ?assertMatch(
-        {error, _},
-        hstreamdb_client:echo(Client1)
-    ),
-
-    ok = hstreamdb_client:stop(Client1),
-    {ok, Client2} = hstreamdb_client:connect_next(Client1),
-
-    ?assertMatch(
-        ok,
-        hstreamdb_client:echo(Client2)
+    lists:foreach(
+        fun(_) ->
+            {ok, Client} = hstreamdb_client:create(test_c1, ClientConfig),
+            ok = hstreamdb_client:connect(Client),
+            ok = hstreamdb_client:stop(Client)
+        end,
+        lists:seq(1, 10)
     ).
