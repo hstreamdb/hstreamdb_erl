@@ -45,7 +45,7 @@
 }.
 
 -type hstreamdb_buffer() :: #{
-    flush_interval := pos_integer(),
+    %% Incoming records
     batch_timeout := pos_integer(),
     batch_size := pos_integer(),
     batch_max_count := pos_integer(),
@@ -53,10 +53,14 @@
     batch_tab := ets:table(),
     batch_queue := queue:queue(),
     batch_count := non_neg_integer(),
-    inflight_batch_ref := reference() | undefined,
 
-    batch_timer := timer:timer_ref() | undefined,
+    %% Outgoing batches
+    flush_interval := pos_integer(),
     flush_timer := timer:timer_ref() | undefined,
+    inflight_batch_ref := reference() | undefined,
+    batch_timer := timer:timer_ref() | undefined,
+
+    %% Callbacks
     send_batch := fun((batch_message()) -> any()),
     send_after := fun((pos_integer(), term()) -> reference()),
     cancel_send := fun((reference()) -> any()),
@@ -236,18 +240,31 @@ do_add_records(Buffer0, Records) ->
     BufferNew =
         case NewBatches of
             [] ->
+                %% The records were added to the only existing batch, so
+                %% just make sure the flush timer is scheduled for it
                 maybe_schedule_flush(Buffer1);
             _ ->
+                %% After adding the records, there are more than one batch,
+                %% so we need to try to send one immediately and postpone flushing
                 Buffer2 = store_batches(Buffer1, NewBatches),
                 Buffer3 = maybe_send_batch(Buffer2),
                 reschedule_flush(Buffer3)
         end,
     {ok, BufferNew}.
 
+%% New records fit into the current buffer
+%% [xxxx    ] current
+%% + yy ->
+%% [xxxxyy  ] current
 update_current_batch(
     #{current_batch := CurrentBatch, batch_size := BatchSize} = Buffer, Records
 ) when length(CurrentBatch) + length(Records) < BatchSize ->
     {[], Buffer#{current_batch := append_current_batch(Records, CurrentBatch)}};
+%% [xxxxxx  ] current
+%% + yyyyyyyyyyyy ->
+%% [xxxxxxyy]
+%% [yyyyyyyy]
+%% [yy      ] current
 update_current_batch(#{current_batch := CurrentBatch, batch_size := BatchSize} = Buffer, Records) ->
     NToCurrentBatch = BatchSize - length(CurrentBatch),
     NToNewBatches = length(Records) - NToCurrentBatch,

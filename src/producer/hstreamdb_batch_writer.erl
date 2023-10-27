@@ -26,6 +26,12 @@
 ]).
 
 -export([
+    on_shards_updated/3,
+    on_init/1,
+    on_terminate/4
+]).
+
+-export([
     init/1,
     handle_call/3,
     handle_cast/2,
@@ -55,8 +61,9 @@ write(Pid, Batch) ->
 stop(Pid) ->
     gen_server:call(Pid, stop).
 
-%% -------------------------------------------------------------------------------------------------
+%%--------------------------------------------------------------------------------------------------
 %% ecpool part
+%%--------------------------------------------------------------------------------------------------
 
 -type options() :: #{
     name := ecpool:pool_name(),
@@ -69,11 +76,55 @@ connect(PoolOptions) ->
     Options = proplists:get_value(opts, PoolOptions),
     start_link(Options).
 
-%% -------------------------------------------------------------------------------------------------
-%% gen_server part
+%%-------------------------------------------------------------------------------------------------
+%% Discovery
+%%-------------------------------------------------------------------------------------------------
+
+-define(SHARD_CLIENT_KEY(NAME, SHARD_ID), {?MODULE, NAME, SHARD_ID}).
+
+on_init(Name) -> cleanup(Name).
+on_terminate(Name, _Vsn, _KeyManager, _ShardClientMgr) -> cleanup(Name).
+
+on_shards_updated(Name, {OldVsn, _OldKeyMgr, _OldClientMgr}, {NewVsn, NewKeyMgr, NewClientMgr}) ->
+    % ct:print("on_shards_updated, name: ~p, old_vsn: ~p, new_vsn: ~p~n", [Name, OldVsn, NewVsn]),
+    % ct:print("on_shards_updated, NewClientMgr: ~p~n", [NewClientMgr]),
+    {ok, ShardIds} = hstreamdb_key_mgr:shard_ids(NewKeyMgr),
+    ok = lists:foreach(
+        fun(ShardId) ->
+            {ok, ShardClient, _ClientMgr} = hstreamdb_shard_client_mgr:lookup_shard_client(NewClientMgr, ShardId),
+            ok = set_shard_client(Name, ShardId, NewVsn, ShardClient)
+        end,
+        ShardIds
+    ),
+    true = ets:match_delete(?DISCOVERY_TAB, {?SHARD_CLIENT_KEY(Name, '_'), {OldVsn, '_'}}),
+    % ct:print("discovery tab: ~p", [ets:tab2list(?DISCOVERY_TAB)]),
+    ok.
+
+cleanup(Name) ->
+    true = ets:match_delete(?DISCOVERY_TAB, {?SHARD_CLIENT_KEY(Name, '_'), '_'}),
+    ok.
+
+shard_client(Name, ShardId) ->
+    case ets:lookup(?DISCOVERY_TAB, ?SHARD_CLIENT_KEY(Name, ShardId)) of
+        [] ->
+            not_found;
+        [{_, {Version, ShardClient}}] ->
+            {ok, Version, ShardClient}
+    end.
+
+set_shard_client(Name, ShardId, Version, ShardClient) ->
+    true = ets:insert(?DISCOVERY_TAB, {
+        ?SHARD_CLIENT_KEY(Name, ShardId), {Version, ShardClient}
+    }),
+    ok.
+
+%%-------------------------------------------------------------------------------------------------
+%% gen_server
+%%-------------------------------------------------------------------------------------------------
 
 init([Opts]) ->
     process_flag(trap_exit, true),
+
     StreamName = maps:get(stream, Opts),
     Name = maps:get(name, Opts),
     GRPCTimeout = maps:get(grpc_timeout, Opts, ?DEFAULT_GRPC_TIMEOUT),
@@ -142,8 +193,9 @@ do_write(
         grpc_timeout = GRPCTimeout
     }
 ) ->
-    case hstreamdb_discovery:shard_client(Name, ShardId) of
-        {ok, Client} ->
+    case shard_client(Name, ShardId) of
+        {ok, Version, Client} ->
+            % ct:print("do_write, version: ~p, records: ~p~n", [Version, Records]),
             Req = #{
                 stream_name => Stream,
                 records => Records,
@@ -157,12 +209,13 @@ do_write(
                 {ok, #{recordIds := RecordsIds}} ->
                     Res = fill_responses(Resps, RecordsIds),
                     {{ok, Res}, State};
-                {error, _} = Error ->
-                    %% TODO
-                    %% report node unavail
+                {error, Reason} = Error ->
+                    %% Different error types?
+                    hstreamdb_discovery:report_shard_unavailable(Name, Version, ShardId, Reason),
                     {Error, State}
             end;
         not_found ->
+            % ct:print("do_write, not_found, records: ~p~n", [Records]),
             {{error, cannot_resolve_shard_id}, State}
     end.
 

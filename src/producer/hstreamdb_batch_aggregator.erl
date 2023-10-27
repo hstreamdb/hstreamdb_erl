@@ -37,6 +37,12 @@
 ]).
 
 -export([
+    on_stream_updated/3,
+    on_init/1,
+    on_terminate/4
+]).
+
+-export([
     init/1,
     callback_mode/0,
     handle_event/4,
@@ -117,7 +123,42 @@ append_flush(Producer, {PartitioningKey, _Record} = PKeyRecord, Timeout) ->
     sync_request({Producer, bin(PartitioningKey)}, {append_flush, PKeyRecord}, Timeout).
 
 %%-------------------------------------------------------------------------------------------------
-%% ecpool callbacks
+%% Discovery
+%%-------------------------------------------------------------------------------------------------
+
+-define(DISCOVERY_KEY(Name), {?MODULE, Name}).
+
+on_init(Name) -> cleanup(Name).
+on_terminate(Name, _Vsn, _KeyManager, _ShardClientMgr) -> cleanup(Name).
+
+on_stream_updated(_Name, {_OldVsn, KeyManager}, {_NewVsn, KeyManager}) ->
+    ok;
+on_stream_updated(Name, {_OldVsn, _OldKeyManager}, {NewVsn, NewKeyManager}) ->
+    % ct:print("aggregator on_stream_updated: ~p~n", [Name]),
+    ok = set_key_manager(Name, NewVsn, NewKeyManager),
+    foreach_worker(
+        fun(Pid) -> gen_server:cast(Pid, stream_updated) end,
+        Name
+    ).
+
+cleanup(Name) ->
+    true = ets:match_delete(?DISCOVERY_TAB, {?DISCOVERY_KEY(Name), '_'}),
+    ok.
+
+key_manager(Name) ->
+    case ets:lookup(?DISCOVERY_TAB, ?DISCOVERY_KEY(Name)) of
+        [{_, {Vsn, KeyManager}}] ->
+            {ok, Vsn, KeyManager};
+        [] ->
+            not_found
+    end.
+
+set_key_manager(Name, Vsn, KeyManager) ->
+    true = ets:insert(?DISCOVERY_TAB, {?DISCOVERY_KEY(Name), {Vsn, KeyManager}}),
+    ok.
+
+%%-------------------------------------------------------------------------------------------------
+%% Internal API: ecpool callbacks
 %%-------------------------------------------------------------------------------------------------
 
 -type pool_opts() :: list(any() | {opts, options()}).
@@ -184,16 +225,19 @@ init([Options]) ->
 %% Discovering
 
 handle_event(state_timeout, discover, ?discovering(Backoff0), #data{name = Name} = Data0) ->
-    case hstreamdb_discovery:key_manager(Name) of
-        {ok, KeyManager} ->
+    case key_manager(Name) of
+        {ok, _Vsn, KeyManager} ->
             Data1 = Data0#data{key_manager = KeyManager},
             Data2 = pour_queue_to_buffers(Data1),
+            % ct:print("aggregator discovered: ~p~n", [Name]),
             ?tp(batch_aggregator_discovered, #{name => Name}),
             {next_state, ?active, Data2};
         not_found ->
             {Delay, Backoff1} = hstreamdb_backoff:next_delay(Backoff0),
             {next_state, ?discovering(Backoff1), Data0, [{state_timeout, Delay, discover}]}
     end;
+handle_event(cast, stream_updated, ?discovering(_Backoff), _Data) ->
+    {keep_state_and_data, [{state_timeout, 0, discover}]};
 handle_event(cast, {stop, _Terminator}, ?discovering(_Backoff), _Data) ->
     {keep_state_and_data, postpone};
 handle_event({call, From}, flush, ?discovering(_Backoff), _Data) ->

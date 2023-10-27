@@ -48,9 +48,27 @@
 
 -define(DISCOVERY_TAB, hstreamdb_discovery_tab).
 
--define(DEFAULT_MIN_ACTIVE_TIME, 5000).
-
 -define(DEFAULT_MAX_QUEUE_SIZE, 10000).
+
+-define(VIA_GPROC(ID), {via, gproc, {n, l, ID}}).
+
+-define(SAFE_CAST_VIA_GPROC(ID, MESSAGE), ?SAFE_CAST_VIA_GPROC(ID, MESSAGE, noproc)).
+
+-define(SAFE_CAST_VIA_GPROC(ID, MESSAGE, NO_PROC_ERROR),
+    try gen_statem:cast(?VIA_GPROC(ID), MESSAGE) of
+        __RESULT__ -> __RESULT__
+    catch
+        exit:{noproc, _} -> {error, NO_PROC_ERROR}
+    end
+).
+
+-define(SAFE_CALL_VIA_GPROC(ID, MESSAGE, TIMEOUT, NO_PROC_ERROR),
+    try gen_statem:call(?VIA_GPROC(ID), MESSAGE, TIMEOUT) of
+        __RESULT__ -> __RESULT__
+    catch
+        exit:{noproc, _} -> {error, NO_PROC_ERROR}
+    end
+).
 
 -record(batch, {
     id :: reference(),

@@ -87,14 +87,25 @@ init([
     DiscoveryOptions = DiscoveryOptions0#{
         stream => Stream,
         name => Producer,
-        client_options => ClientOptions
+        client_options => ClientOptions,
+
+        on_init => [
+            fun hstreamdb_batch_writer:on_init/1,
+            fun hstreamdb_batch_aggregator:on_init/1
+        ],
+        on_stream_updated => [fun hstreamdb_batch_aggregator:on_stream_updated/3],
+        on_shards_updated => [fun hstreamdb_batch_writer:on_shards_updated/3],
+        on_terminate => [
+            fun hstreamdb_batch_writer:on_terminate/4,
+            fun hstreamdb_batch_aggregator:on_terminate/4
+        ]
     },
     StopTimeout = maps:get(stop_timeout, Opts, ?DEFAULT_STOP_TIMEOUT),
 
     ChildSpecs = [
-        discovery_spec(DiscoveryOptions),
         batch_aggregator_pool_spec(Producer, BufferPoolSize, BufferOptions),
         batch_writer_pool_spec(Producer, WriterPoolSize, WriterOptions),
+        discovery_spec(DiscoveryOptions),
         terminator_spec(Producer, StopTimeout)
     ],
     {ok, {#{strategy => one_for_one, intensity => 5, period => 30}, ChildSpecs}}.

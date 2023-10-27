@@ -21,7 +21,8 @@
     choose_shard/2,
     update_shards/2,
     shard_ids/1,
-    set_shards/2
+    set_shards/2,
+    are_shards_same/2
 ]).
 
 %% For benchmarks/tests
@@ -85,6 +86,15 @@ shard_ids(#{
     shards := Shards
 }) ->
     {ok, [ShardId || {_, _, ShardId} <- tuple_to_list(Shards)]}.
+
+
+-spec are_shards_same(t(), t()) -> boolean().
+are_shards_same(#{
+    shards := Shards1
+}, #{
+    shards := Shards2
+}) ->
+    Shards1 =:= Shards2.
 
 %%--------------------------------------------------------------------
 %% Internal functions
