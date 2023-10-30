@@ -128,7 +128,7 @@ init([Options]) ->
     %% the pool size to 1
     RPCOptions = maps:get(rpc_options, ClientOptions0, #{}),
     ClientOptions1 = ClientOptions0#{rpc_options => RPCOptions#{pool_size => 1}},
-    BackoffOptions = maps:get(backoff_options, Options, ?DEFAULT_BATCH_BACKOFF_OPTIONS),
+    BackoffOptions = maps:get(backoff_options, Options, ?DEFAULT_DISOVERY_BACKOFF_OPTIONS),
 
     OnInit = maps:get(on_init, Options),
     OnStreamUpdated = maps:get(on_stream_updated, Options),

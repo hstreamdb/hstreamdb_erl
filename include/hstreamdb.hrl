@@ -43,7 +43,9 @@
 -define(RES_QUERY, 5).
 -define(RES_VIEW, 6).
 
--define(DEFAULT_BATCH_BACKOFF_OPTIONS, {1000, 30000, 2}).
+-define(DEFAULT_BATCH_BACKOFF_OPTIONS, {100, 1000, 2}).
+-define(DEFAULT_BATCH_MAX_RETRIES, 5).
+
 -define(DEFAULT_DISOVERY_BACKOFF_OPTIONS, {100, 5000, 1.5}).
 
 -define(DISCOVERY_TAB, hstreamdb_discovery_tab).
@@ -71,9 +73,10 @@
 ).
 
 -record(batch, {
-    id :: reference(),
+    batch_ref :: reference(),
     shard_id :: integer(),
     tab :: ets:table(),
+    req_ref :: reference(),
     compression_type :: hstreamdb_client:compression_type()
 }).
 

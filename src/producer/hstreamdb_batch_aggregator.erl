@@ -261,11 +261,11 @@ handle_event({call, From}, _Req, ?terminating, _Data) ->
     {keep_state_and_data, [{reply, From, {error, terminating}}]};
 handle_event(
     info,
-    {write_result, ShardId, BatchRef, Result},
+    {write_result, #batch{shard_id = ShardId} = Batch, Result},
     ?terminating,
     Data
 ) ->
-    {keep_state, maybe_report_empty(handle_write_result(Data, ShardId, BatchRef, Result))};
+    {keep_state, maybe_report_empty(handle_write_result(Data, ShardId, Batch, Result))};
 handle_event(info, {shard_buffer_event, ShardId, Message}, ?terminating, Data) ->
     {keep_state, maybe_report_empty(handle_shard_buffer_event(Data, ShardId, Message))};
 %% Active
@@ -291,11 +291,11 @@ handle_event(cast, {stop, Terminator}, ?active, Data0) ->
     {next_state, ?terminating, maybe_report_empty(Data1#data{terminator = Terminator})};
 handle_event(
     info,
-    {write_result, ShardId, BatchRef, Result},
+    {write_result, #batch{shard_id = ShardId} = Batch, Result},
     ?active,
     Data
 ) ->
-    {keep_state, maybe_report_empty(handle_write_result(Data, ShardId, BatchRef, Result))};
+    {keep_state, maybe_report_empty(handle_write_result(Data, ShardId, Batch, Result))};
 handle_event(info, {shard_buffer_event, ShardId, Message}, ?active, Data) ->
     {keep_state, maybe_report_empty(handle_shard_buffer_event(Data, ShardId, Message))};
 %% Fallbacks
@@ -466,18 +466,21 @@ maybe_flush(_NeedFlush, Result) -> Result.
 write(ShardId, #{batch_ref := Ref, tab := Tab}, #data{
     writer_name = WriterName, compression_type = CompressionType
 }) ->
+    ReqRef = make_ref(),
     Batch = #batch{
-        id = Ref,
+        batch_ref = Ref,
         shard_id = ShardId,
         tab = Tab,
+        req_ref = ReqRef,
         compression_type = CompressionType
     },
-    ecpool:with_client(
+    ok = ecpool:with_client(
         WriterName,
         fun(WriterPid) ->
             ok = hstreamdb_batch_writer:write(WriterPid, Batch)
         end
-    ).
+    ),
+    ReqRef.
 
 do_flush(
     Data = #data{
@@ -497,11 +500,11 @@ do_flush(
 handle_write_result(
     Data0,
     ShardId,
-    BatchRef,
+    #batch{batch_ref = BatchRef, req_ref = ReqRef},
     Result
 ) ->
     {Buffer0, Data1} = get_shard_buffer(ShardId, Data0),
-    Buffer1 = hstreamdb_buffer:handle_batch_response(Buffer0, BatchRef, Result),
+    Buffer1 = hstreamdb_buffer:handle_batch_response(Buffer0, BatchRef, ReqRef, Result),
     set_shard_buffer(ShardId, Buffer1, Data1).
 
 handle_shard_buffer_event(Data0, ShardId, Event) ->
@@ -572,7 +575,7 @@ bin(B) when is_binary(B) ->
     B.
 
 buffer_opts(Options) ->
-    #{
+    Options#{
         flush_interval => maps:get(interval, Options, ?DEFAULT_INTERVAL),
         batch_timeout => maps:get(
             batch_reap_timeout, Options, ?DEFAULT_BATCH_REAP_TIMEOUT

@@ -94,14 +94,16 @@ handle_cast(flush, #st{buffer = Buffer} = St) ->
 handle_info({buffer_event, Event}, #st{buffer = Buffer} = St) ->
     NewBuffer = hstreamdb_buffer:handle_event(Buffer, Event),
     {noreply, St#st{buffer = NewBuffer}};
-handle_info({send_batch, #{batch_ref := Ref}}, #st{buffer = Buffer, tab = Tab} = St) ->
+handle_info({send_batch, ReqRef, #{batch_ref := Ref}}, #st{buffer = Buffer, tab = Tab} = St) ->
     case need_lose_batch() of
         true ->
             {noreply, St};
         false ->
             [{_, Batch}] = ets:lookup(Tab, Ref),
             Responses = lists:map(fun(_) -> ok end, Batch),
-            NewBuffer = hstreamdb_buffer:handle_batch_response(Buffer, Ref, {ok, Responses}),
+            NewBuffer = hstreamdb_buffer:handle_batch_response(
+                Buffer, Ref, ReqRef, {ok, Responses}
+            ),
             {noreply, St#st{buffer = NewBuffer}}
     end.
 
@@ -120,11 +122,15 @@ new_buffer(BatchTab) ->
         batch_size => ?DEFAULT_BATCH_SIZE,
         batch_max_count => ?DEFAULT_BATCH_MAX_COUNT,
 
+        max_retries => 3,
+        backoff_options => {5, 10, 1.5},
+
         batch_tab => BatchTab,
 
         send_batch => fun(Batch) ->
-            self() ! {send_batch, Batch},
-            ok
+            ReqRef = make_ref(),
+            self() ! {send_batch, ReqRef, Batch},
+            ReqRef
         end,
         send_after => fun(Timeout, Message) ->
             erlang:send_after(Timeout, self(), {buffer_event, Message})

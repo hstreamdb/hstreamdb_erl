@@ -84,8 +84,8 @@ t_append_batch(Config) ->
 
     ?refuteReceive({send_after, ?DEFAULT_FLUSH_INTERVAL, flush}),
 
-    ?assertReceive({send_after, ?DEFAULT_BATCH_TIMEOUT, {batch_timeout, _}}),
-    ?assertReceive({send_batch, #{batch_ref := _, tab := _}}).
+    ?assertReceive({send_after, ?DEFAULT_BATCH_TIMEOUT, {batch_timeout, _, _}}),
+    ?assertReceive({send_batch, _ReqRef, #{batch_ref := _, tab := _}}).
 
 t_flush_by_timer(Config) ->
     Buffer0 = new_buffer(Config),
@@ -97,8 +97,8 @@ t_flush_by_timer(Config) ->
     ?assertReceive({send_after, ?DEFAULT_FLUSH_INTERVAL, flush}),
 
     Buffer2 = hstreamdb_buffer:handle_event(Buffer1, flush),
-    ?assertReceive({send_after, ?DEFAULT_BATCH_TIMEOUT, {batch_timeout, _}}),
-    ?assertReceive({send_batch, #{batch_ref := _, tab := _}}),
+    ?assertReceive({send_after, ?DEFAULT_BATCH_TIMEOUT, {batch_timeout, _, _}}),
+    ?assertReceive({send_batch, _ReqRef, #{batch_ref := _, tab := _}}),
     ?refuteReceive({send_after, ?DEFAULT_FLUSH_INTERVAL, flush}),
 
     {ok, _Buffer3} = append(Buffer2, from, Recs, infinity),
@@ -114,13 +114,13 @@ t_explicit_flush(Config) ->
     Buffer2 = hstreamdb_buffer:flush(Buffer1),
 
     ?refuteReceive({send_after, ?DEFAULT_FLUSH_INTERVAL, flush}),
-    ?assertReceive({send_after, ?DEFAULT_BATCH_TIMEOUT, {batch_timeout, _}}),
-    ?assertReceive({send_batch, #{batch_ref := _, tab := _}}),
+    ?assertReceive({send_after, ?DEFAULT_BATCH_TIMEOUT, {batch_timeout, _, _}}),
+    ?assertReceive({send_batch, _ReqRef, #{batch_ref := _, tab := _}}),
 
     Buffer3 = hstreamdb_buffer:flush(Buffer2),
 
-    ?refuteReceive({send_after, ?DEFAULT_BATCH_TIMEOUT, {batch_timeout, _}}),
-    ?refuteReceive({send_batch, #{batch_ref := _, tab := _}}),
+    ?refuteReceive({send_after, ?DEFAULT_BATCH_TIMEOUT, {batch_timeout, _, _}}),
+    ?refuteReceive({send_batch, _, #{batch_ref := _, tab := _}}),
 
     {ok, Buffer4} = append(Buffer3, from, Recs, infinity),
 
@@ -131,8 +131,8 @@ t_explicit_flush(Config) ->
     %% There is an inflight batch, so new batch is not sent and
     %% we should not receive batch_timeout message
 
-    ?refuteReceive({send_after, ?DEFAULT_BATCH_TIMEOUT, {batch_timeout, _}}),
-    ?refuteReceive({send_batch, _}).
+    ?refuteReceive({send_after, ?DEFAULT_BATCH_TIMEOUT, {batch_timeout, _, _}}),
+    ?refuteReceive({send_batch, _, _}).
 
 t_batches_with_responses(Config) ->
     Buffer0 = new_buffer(Config),
@@ -144,9 +144,9 @@ t_batches_with_responses(Config) ->
     lists:foldl(
         fun(_, Buffer) ->
             receive
-                {send_batch, #{batch_ref := Ref, tab := _Tab}} ->
+                {send_batch, ReqRef, #{batch_ref := BatchRef, tab := _Tab}} ->
                     NewBuffer = hstreamdb_buffer:handle_batch_response(
-                        Buffer, Ref, ok_replies_for_batch(Config, Ref)
+                        Buffer, BatchRef, ReqRef, ok_replies_for_batch(Config, BatchRef)
                     ),
                     lists:foreach(
                         fun(_) ->
@@ -173,8 +173,8 @@ t_batches_with_timeouts(Config) ->
     lists:foldl(
         fun(_, Buffer) ->
             receive
-                {send_batch, #{batch_ref := Ref, tab := _Tab}} ->
-                    NewBuffer = hstreamdb_buffer:handle_event(Buffer, {batch_timeout, Ref}),
+                {send_batch, ReqRef, #{batch_ref := Ref, tab := _Tab}} ->
+                    NewBuffer = hstreamdb_buffer:handle_event(Buffer, {batch_timeout, Ref, ReqRef}),
                     lists:foreach(
                         fun(_) ->
                             ?assertReceive({send_reply, from, {error, timeout}})
@@ -202,9 +202,9 @@ t_reply_callback_exception(Config) ->
     Buffer4 = hstreamdb_buffer:flush(Buffer3),
 
     receive
-        {send_batch, #{batch_ref := Ref, tab := _Tab}} ->
+        {send_batch, ReqRef, #{batch_ref := Ref, tab := _Tab}} ->
             _ = hstreamdb_buffer:handle_batch_response(
-                Buffer4, Ref, ok_replies_for_batch(Config, Ref)
+                Buffer4, Ref, ReqRef, ok_replies_for_batch(Config, Ref)
             ),
             ?assertReceive({send_reply, from0, ok}),
             ?assertReceive({send_reply, from1, ok})
@@ -220,9 +220,9 @@ t_response_after_deadline(Config) ->
     Buffer3 = hstreamdb_buffer:flush(Buffer2),
     ok = timer:sleep(2),
     receive
-        {send_batch, #{batch_ref := Ref, tab := _Tab}} ->
+        {send_batch, ReqRef, #{batch_ref := Ref, tab := _Tab}} ->
             _ = hstreamdb_buffer:handle_batch_response(
-                Buffer3, Ref, ok_replies_for_batch(Config, Ref)
+                Buffer3, Ref, ReqRef, ok_replies_for_batch(Config, Ref)
             ),
             ?refuteReceive({send_reply, from1, _}),
             ?assertReceive({send_reply, from2, ok})
@@ -282,9 +282,12 @@ new_buffer(Config, Opts) ->
 
         batch_tab => BatchTab,
 
+        max_retries => 1,
+
         send_batch => fun(Message) ->
-            self() ! {send_batch, Message},
-            ok
+            ReqRef = make_ref(),
+            self() ! {send_batch, ReqRef, Message},
+            ReqRef
         end,
         send_after => fun(Timeout, Message) ->
             self() ! {send_after, Timeout, Message},

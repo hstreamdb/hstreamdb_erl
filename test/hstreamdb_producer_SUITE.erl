@@ -419,7 +419,8 @@ t_nonexistent_stream(Config) ->
         buffer_pool_size => 1,
         buffer_options => #{
             max_records => 10000,
-            interval => 10000
+            interval => 10000,
+            max_retries => 1
         }
     },
 
@@ -437,7 +438,9 @@ t_removed_stream(Config) ->
         buffer_options => #{
             max_records => 10,
             max_batches => 10,
-            interval => 500
+            interval => 500,
+            max_retries => 2,
+            backoff_options => {100, 200, 1.1}
         }
     },
 
@@ -450,10 +453,8 @@ t_removed_stream(Config) ->
     Client = ?config(client, Config),
     _ = hstreamdb_client:delete_stream(Client, ?STREAM),
 
-    %% TODO:
-    %% This should be retried
     ?assertMatch(
-        {error, {unavailable, <<"\"NOTFOUND: requested identifier does not exist\"">>}},
+        {error, cannot_resolve_shard_id},
         hstreamdb:append_sync(producer(Config), sample_record(), 1000)
     ).
 

@@ -16,6 +16,8 @@
 
 -module(hstreamdb_buffer).
 
+-include("hstreamdb.hrl").
+
 -export([
     new/1,
     append/2,
@@ -29,7 +31,7 @@
 
 -export([
     handle_event/2,
-    handle_batch_response/3
+    handle_batch_response/4
 ]).
 
 -export_type([hstreamdb_buffer/0, options/0]).
@@ -41,8 +43,10 @@
     batch_max_count := pos_integer(),
     batch_tab := ets:tab(),
 
-    send_batch := fun((batch_message()) -> any()),
+    backoff_options => hstreamdb_backoff:options(),
+    max_retries => non_neg_integer(),
 
+    send_batch := fun((batch_message()) -> reference()),
     send_after := fun((pos_integer(), term()) -> reference()),
     cancel_send := fun((reference()) -> any()),
     send_reply := fun((term(), ok | {error, term()}) -> any())
@@ -60,12 +64,16 @@
 
     %% Outgoing batches
     flush_interval := pos_integer(),
-    flush_timer := timer:timer_ref() | undefined,
-    inflight_batch_ref := reference() | undefined,
-    batch_timer := timer:timer_ref() | undefined,
+    flush_timer := reference() | undefined,
+    inflight_batch := {_BatchRef :: reference(), _ReqRef :: reference()} | undefined,
+    batch_timer := reference() | undefined,
+
+    backoff_options := hstreamdb_backoff:options(),
+    max_retries := non_neg_integer(),
+    retry_state := undefined | {hstreamdb_backoff:t(), non_neg_integer()},
 
     %% Callbacks
-    send_batch := fun((batch_message()) -> any()),
+    send_batch := fun((batch_message()) -> reference()),
     send_after := fun((pos_integer(), term()) -> reference()),
     cancel_send := fun((reference()) -> any()),
     send_reply := fun((from(), ok | {error, term()}) -> any())
@@ -93,32 +101,49 @@
 %%--------------------------------------------------------------------
 
 -spec new(options()) -> hstreamdb_buffer().
-new(#{
-    flush_interval := FlushInterval,
-    batch_timeout := BatchTimeout,
-    batch_tab := BatchTab,
-    batch_size := BatchSize,
-    batch_max_count := BatchMaxCount,
+new(
+    #{
+        flush_interval := FlushInterval,
+        batch_timeout := BatchTimeout,
+        batch_tab := BatchTab,
+        batch_size := BatchSize,
+        batch_max_count := BatchMaxCount,
 
-    send_batch := SendBatch,
-    send_after := SendAfter,
-    cancel_send := CancelSend,
-    send_reply := SendReply
-}) ->
+        send_batch := SendBatch,
+        send_after := SendAfter,
+        cancel_send := CancelSend,
+        send_reply := SendReply
+    } = Options
+) ->
+    % ct:print("new: ~p~n", [Options]),
     #{
         flush_interval => FlushInterval,
         batch_timeout => BatchTimeout,
-        current_batch => [],
         batch_tab => BatchTab,
         batch_size => BatchSize,
         batch_max_count => BatchMaxCount,
 
         batch_queue => queue:new(),
         batch_count => 0,
-        inflight_batch_ref => undefined,
-        flush_timer => undefined,
-        batch_timer => undefined,
 
+        current_batch => [],
+
+        %% Input states
+        %% * empty (flush_timer =/= undefined)
+        %% * waiting for flush (flush_timer =/= undefined)
+        flush_timer => undefined,
+
+        %% Output states
+        %% * waiting for batch response (inflight_batch =/= undefined, batch_timer =/= undefined)
+        %% * waiting for batch retry (inflight_req == undefined, batch_timer =/= undefined)
+        %% * idle (inflight_batch == undefined, batch_timer === undefined)
+        inflight_batch => undefined,
+        batch_timer => undefined,
+        backoff_options => maps:get(backoff_options, Options, ?DEFAULT_BATCH_BACKOFF_OPTIONS),
+        max_retries => maps:get(max_retries, Options, ?DEFAULT_BATCH_MAX_RETRIES),
+        retry_state => undefined,
+
+        %% Callbacks
         send_batch => SendBatch,
         send_after => SendAfter,
         cancel_send => CancelSend,
@@ -153,23 +178,41 @@ flush(Buffer0) ->
 handle_event(Buffer, flush) ->
     flush(Buffer);
 %% Batch timeout event
-handle_event(#{inflight_batch_ref := BatchRef} = Buffer0, {batch_timeout, BatchRef}) ->
-    Buffer1 = send_timeout_responses(Buffer0, BatchRef),
-    maybe_send_batch(Buffer1#{inflight_batch_ref => undefined});
+handle_event(#{inflight_batch := {BatchRef, ReqRef}} = Buffer0, {batch_timeout, BatchRef, ReqRef}) ->
+    handle_batch_response(Buffer0, BatchRef, ReqRef, {error, timeout});
 %% May happen due to concurrency
-handle_event(Buffer, {batch_timeout, _BatchRef}) ->
+handle_event(Buffer, {batch_timeout, _BatchRef, _ReqRef}) ->
+    Buffer;
+%% Batch Retry event
+handle_event(#{inflight_batch := {_BatchRef, ReqRef}} = Buffer, {retry, ReqRef}) ->
+    resend_batch(Buffer);
+%% May happen due to concurrency
+handle_event(Buffer, {retry, _ReqRef}) ->
     Buffer.
 
--spec handle_batch_response(hstreamdb_buffer(), reference(), term()) -> hstreamdb_buffer().
-handle_batch_response(#{inflight_batch_ref := BatchRef} = Buffer0, BatchRef, Response) ->
-    Buffer1 = send_responses(Buffer0, BatchRef, Response),
-    maybe_send_batch(Buffer1#{inflight_batch_ref => undefined});
-%% Late response, the batch has been reaped by timeout timer
-handle_batch_response(Buffer, _BatchRef, _Response) ->
+-spec handle_batch_response(hstreamdb_buffer(), reference(), reference(), term()) ->
+    hstreamdb_buffer().
+%% TODO Pass may retry
+%% TODO no BatchRef
+handle_batch_response(
+    #{inflight_batch := {BatchRef, ReqRef}} = Buffer0, BatchRef, ReqRef, Response
+) ->
+    case need_retry(Buffer0, Response) of
+        true ->
+            % ct:print("need_retry true: ~p~n", [Buffer0]),
+            wait_for_retry(Buffer0);
+        false ->
+            % ct:print("need_retry false: ~p~n", [Buffer0]),
+            Buffer1 = send_responses(Buffer0, BatchRef, Response),
+            Buffer2 = retry_deinit(Buffer1),
+            maybe_send_batch(Buffer2#{inflight_batch => undefined})
+    end;
+%% Late response, the batch has been reaped or resent
+handle_batch_response(Buffer, _BatchRef, _ReqRef, _Response) ->
     Buffer.
 
 -spec is_empty(hstreamdb_buffer()) -> boolean().
-is_empty(#{current_batch := [], inflight_batch_ref := undefined, batch_count := 0}) ->
+is_empty(#{current_batch := [], inflight_batch := undefined, batch_count := 0}) ->
     true;
 is_empty(_Buffer) ->
     false.
@@ -204,8 +247,61 @@ data(#{data := Data}) ->
 %% Internal functions
 %%--------------------------------------------------------------------
 
-send_timeout_responses(Buffer, BatchRef) ->
-    send_responses(Buffer, BatchRef, {error, timeout}).
+%% Retries
+
+is_transient_error({error, _}) -> true;
+is_transient_error(_) -> false.
+
+need_retry(#{retry_state := undefined, max_retries := MaxRetries}, {error, _}) ->
+    MaxRetries > 1;
+need_retry(#{retry_state := {_Backoff, RetriesLeft}} = _Buffer, {error, _}) when RetriesLeft =< 0 ->
+    false;
+need_retry(_Buffer, {error, _} = Error) ->
+    is_transient_error(Error);
+need_retry(_Buffer, {ok, _}) ->
+    false.
+
+wait_for_retry(#{retry_state := undefined} = Buffer) ->
+    wait_for_retry(retry_init(Buffer));
+wait_for_retry(
+    #{
+        retry_state := {Backoff0, RetriesLeft},
+        inflight_batch := {BatchRef, _ReqRef}
+    } = Buffer0
+) ->
+    {Delay, Backoff1} = hstreamdb_backoff:next_delay(Backoff0),
+    Buffer1 = cancel_timer(batch_timer, Buffer0),
+    ReqRef = make_ref(),
+    Buffer2 = send_after(batch_timer, Buffer1, Delay, {retry, ReqRef}),
+    Buffer2#{
+        inflight_batch := {BatchRef, ReqRef},
+        retry_state := {Backoff1, RetriesLeft - 1}
+    }.
+
+retry_init(#{backoff_options := BackoffOptions, max_retries := MaxRetries} = Buffer) ->
+    Backoff = hstreamdb_backoff:new(BackoffOptions),
+    Buffer#{retry_state => {Backoff, MaxRetries - 1}}.
+
+retry_deinit(Buffer) ->
+    Buffer#{retry_state => undefined}.
+
+%% Timers
+
+cancel_timer(TimerName, #{cancel_send := CancelSendFun} = Buffer) ->
+    case maps:get(TimerName, Buffer) of
+        undefined ->
+            Buffer;
+        Timer ->
+            _ = CancelSendFun(Timer),
+            maps:put(TimerName, undefined, Buffer)
+    end.
+
+send_after(TimerName, #{send_after := SendAfterFun} = Buffer, Timeout, Message) ->
+    undefined = maps:get(TimerName, Buffer),
+    Ref = SendAfterFun(Timeout, Message),
+    maps:put(TimerName, Ref, Buffer).
+
+%%
 
 send_responses(#{batch_tab := BatchTab} = Buffer, BatchRef, Response) ->
     Now = erlang:monotonic_time(millisecond),
@@ -334,37 +430,21 @@ maybe_schedule_flush(#{flush_timer := undefined} = Buffer) ->
 maybe_schedule_flush(Buffer) ->
     Buffer.
 
-maybe_send_batch(#{inflight_batch_ref := undefined, batch_count := 0} = Buffer0) ->
+maybe_send_batch(#{inflight_batch := undefined, batch_count := 0} = Buffer0) ->
     cancel_timer(batch_timer, Buffer0);
 maybe_send_batch(
-    #{inflight_batch_ref := undefined, batch_count := BatchCount, batch_timeout := BatchTimeout} =
+    #{inflight_batch := undefined, batch_count := BatchCount, batch_timeout := BatchTimeout} =
         Buffer0
 ) when BatchCount > 0 ->
     Buffer1 = cancel_timer(batch_timer, Buffer0),
-    {BatchRef, Buffer2} = send_batch(Buffer1),
-    send_after(batch_timer, Buffer2, BatchTimeout, {batch_timeout, BatchRef});
-maybe_send_batch(#{inflight_batch_ref := _BatchRef} = Buffer) ->
+    {BatchRef, ReqRef, Buffer2} = send_batch(Buffer1),
+    send_after(batch_timer, Buffer2, BatchTimeout, {batch_timeout, BatchRef, ReqRef});
+maybe_send_batch(#{inflight_batch := {_BatchRef, _ReqRef}} = Buffer) ->
     Buffer.
-
-%% Timers
-
-cancel_timer(TimerName, #{cancel_send := CancelSendFun} = Buffer) ->
-    case maps:get(TimerName, Buffer) of
-        undefined ->
-            Buffer;
-        Timer ->
-            _ = CancelSendFun(Timer),
-            maps:put(TimerName, undefined, Buffer)
-    end.
-
-send_after(TimerName, #{send_after := SendAfterFun} = Buffer, Timeout, Message) ->
-    undefined = maps:get(TimerName, Buffer),
-    Ref = SendAfterFun(Timeout, Message),
-    maps:put(TimerName, Ref, Buffer).
 
 send_batch(
     #{
-        inflight_batch_ref := undefined,
+        inflight_batch := undefined,
         batch_tab := BatchTab,
         send_batch := SendBatchFun,
         batch_queue := BatchQueue,
@@ -376,10 +456,31 @@ send_batch(
         batch_ref => BatchRef,
         tab => BatchTab
     },
-    ok = SendBatchFun(Message),
-    {BatchRef, Buffer#{
-        inflight_batch_ref => BatchRef, batch_queue => NewBatchQueue, batch_count => BatchCount - 1
+    ReqRef = SendBatchFun(Message),
+    {BatchRef, ReqRef, Buffer#{
+        inflight_batch => {BatchRef, ReqRef},
+        batch_queue => NewBatchQueue,
+        batch_count => BatchCount - 1
     }}.
+
+resend_batch(
+    #{
+        inflight_batch := {BatchRef, _ReqRef},
+        batch_tab := BatchTab,
+        batch_timeout := BatchTimeout,
+        send_batch := SendBatchFun
+    } = Buffer0
+) ->
+    Buffer1 = cancel_timer(batch_timer, Buffer0),
+    Message = #{
+        batch_ref => BatchRef,
+        tab => BatchTab
+    },
+    ReqRef = SendBatchFun(Message),
+    Buffer2 = send_after(batch_timer, Buffer1, BatchTimeout, {batch_timeout, BatchRef, ReqRef}),
+    Buffer2#{
+        inflight_batch := {BatchRef, ReqRef}
+    }.
 
 to_batches([], _, Batches) ->
     lists:reverse(Batches);

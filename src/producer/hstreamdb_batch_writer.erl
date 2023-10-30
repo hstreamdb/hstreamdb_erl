@@ -134,9 +134,9 @@ init([Opts]) ->
         grpc_timeout = GRPCTimeout
     }}.
 
-handle_cast({write, #batch{shard_id = ShardId, id = BatchId} = Batch, Caller}, State) ->
+handle_cast({write, #batch{shard_id = ShardId} = Batch, Caller}, State) ->
     {Result, NState} = do_write(ShardId, records(Batch), Batch, State),
-    _ = erlang:send(Caller, {write_result, ShardId, BatchId, Result}),
+    _ = erlang:send(Caller, {write_result, Batch, Result}),
     {noreply, NState}.
 
 handle_call(stop, _From, State) ->
@@ -154,7 +154,7 @@ code_change(_OldVsn, State, _Extra) ->
 %% -------------------------------------------------------------------------------------------------
 %% internal functions
 
-records(#batch{id = BatchId, tab = Tab}) ->
+records(#batch{batch_ref = BatchId, tab = Tab}) ->
     case ets:lookup(Tab, BatchId) of
         [{_, Records}] ->
             prepare_known_resps(Records);
@@ -205,7 +205,7 @@ do_write(
             Options = #{
                 timeout => GRPCTimeout
             },
-            case hstreamdb_client:append(Client, Req, Options) of
+            try hstreamdb_client:append(Client, Req, Options) of
                 {ok, #{recordIds := RecordsIds}} ->
                     Res = fill_responses(Resps, RecordsIds),
                     {{ok, Res}, State};
@@ -213,6 +213,9 @@ do_write(
                     %% Different error types?
                     hstreamdb_discovery:report_shard_unavailable(Name, Version, ShardId, Reason),
                     {Error, State}
+            catch
+                error:badarg ->
+                    {{error, cannot_resolve_shard_id}, State}
             end;
         not_found ->
             % ct:print("do_write, not_found, records: ~p~n", [Records]),
