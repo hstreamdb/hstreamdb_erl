@@ -18,9 +18,13 @@
 
 -export([
     new/1,
-    append/4,
+    append/2,
     flush/1,
-    is_empty/1
+    is_empty/1,
+    to_buffer_records/1,
+    to_buffer_records/3,
+    deadline/1,
+    data/1
 ]).
 
 -export([
@@ -49,7 +53,7 @@
     batch_timeout := pos_integer(),
     batch_size := pos_integer(),
     batch_max_count := pos_integer(),
-    current_batch := [internal_record()],
+    current_batch := [buffer_record()],
     batch_tab := ets:table(),
     batch_queue := queue:queue(),
     batch_count := non_neg_integer(),
@@ -71,7 +75,7 @@
 
 -type record() :: term().
 
--type internal_record() :: #{
+-type buffer_record() :: #{
     from := from() | fun((ok | {error, term()}) -> any()),
     data := record(),
     deadline := timeout()
@@ -125,17 +129,14 @@ new(#{
     ((is_integer(Timeout) andalso Timeout > 0) orelse Timeout == infinity)
 ).
 
--spec append(hstreamdb_buffer(), from(), [record()], timeout()) ->
+-spec append(hstreamdb_buffer(), [buffer_record()]) ->
     {ok, hstreamdb_buffer()} | {error, {batch_count_too_large, integer()}}.
-append(#{batch_max_count := BatchMaxCount} = Buffer, From, Records, Timeout) when
-    ?IS_TIMEOUT(Timeout) andalso is_list(Records)
-->
+append(#{batch_max_count := BatchMaxCount} = Buffer, Records) ->
     case estimate_batch_count(Buffer, Records) of
         NewBatchCount when NewBatchCount > BatchMaxCount ->
             {error, {batch_count_too_large, NewBatchCount}};
         _NewBatchCount ->
-            InternalRecords = to_internal_records(Records, From, Timeout),
-            do_add_records(Buffer, InternalRecords)
+            do_add_records(Buffer, Records)
     end.
 
 -spec flush(hstreamdb_buffer()) -> hstreamdb_buffer().
@@ -172,6 +173,36 @@ is_empty(#{current_batch := [], inflight_batch_ref := undefined, batch_count := 
     true;
 is_empty(_Buffer) ->
     false.
+
+-spec to_buffer_records([record()]) -> [buffer_record()].
+to_buffer_records(Records) when is_list(Records) ->
+    to_buffer_records(Records, undefined, infinity).
+
+-spec to_buffer_records([record()], from(), timeout()) -> [buffer_record()].
+to_buffer_records(Records, From, Timeout) when ?IS_TIMEOUT(Timeout) andalso is_list(Records) ->
+    Deadline = deadline_from_timeout(Timeout),
+    lists:map(
+        fun(Record) ->
+            #{
+                data => Record,
+                from => From,
+                deadline => Deadline
+            }
+        end,
+        Records
+    ).
+
+-spec deadline(buffer_record()) -> timeout().
+deadline(#{deadline := Deadline}) ->
+    Deadline.
+
+-spec data(buffer_record()) -> record().
+data(#{data := Data}) ->
+    Data.
+
+%%--------------------------------------------------------------------
+%% Internal functions
+%%--------------------------------------------------------------------
 
 send_timeout_responses(Buffer, BatchRef) ->
     send_responses(Buffer, BatchRef, {error, timeout}).
@@ -356,22 +387,9 @@ to_batches(Records, BatchSize, Batches) ->
     {Batch, Left} = lists:split(BatchSize, Records),
     to_batches(Left, BatchSize, [Batch | Batches]).
 
-to_internal_records(Records, From, Timeout) ->
-    Deadline = deadline(Timeout),
-    lists:map(
-        fun(Record) ->
-            #{
-                data => Record,
-                from => From,
-                deadline => Deadline
-            }
-        end,
-        Records
-    ).
-
-deadline(infinity) ->
+deadline_from_timeout(infinity) ->
     infinity;
-deadline(Timeout) ->
+deadline_from_timeout(Timeout) ->
     erlang:monotonic_time(millisecond) + Timeout.
 
 append_current_batch([], CurrentBatch) ->

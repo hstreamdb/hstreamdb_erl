@@ -84,7 +84,8 @@ wait_for_empty(Pid, NSecs) when NSecs > 0 ->
 %%--------------------------------------------------------------------
 
 handle_cast({append, From, Rec}, #st{buffer = Buffer} = St) ->
-    {ok, NewBuffer} = hstreamdb_buffer:append(Buffer, From, [Rec], infinity),
+    BufferRecords = hstreamdb_buffer:to_buffer_records([Rec], From, infinity),
+    {ok, NewBuffer} = hstreamdb_buffer:append(Buffer, BufferRecords),
     {noreply, St#st{buffer = NewBuffer}};
 handle_cast(flush, #st{buffer = Buffer} = St) ->
     NewBuffer = hstreamdb_buffer:flush(Buffer),

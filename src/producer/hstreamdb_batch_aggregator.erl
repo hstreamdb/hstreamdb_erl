@@ -271,14 +271,20 @@ handle_event(info, {shard_buffer_event, ShardId, Message}, ?terminating, Data) -
 %% Active
 
 handle_event({call, From}, {append, _PartitioningKey, _Records} = Req, ?active, Data) ->
-    {Resp, NData} = handle_append_request(Data, Req),
+    {PartitioningKey, BufferRecords} = buffer_records(Req),
+    {Resp, NData} = do_append(PartitioningKey, BufferRecords, false, Data),
     {keep_state, NData, [{reply, From, Resp}]};
 handle_event({call, From}, flush, ?active, Data) ->
     {keep_state, do_flush(Data), [{reply, From, ok}]};
 handle_event(
-    {call, From}, {sync_req, _Caller, _Req, _Timeout} = Req, ?active, Data
-) ->
-    {Resp, NData} = handle_append_request(Data, Req),
+    {call, From}, {sync_req, _Caller, {append_sync, _}, _Timeout} = Req, ?active, Data) ->
+    {PartitioningKey, BufferRecords} = buffer_records(Req),
+    {Resp, NData} = do_append(PartitioningKey, BufferRecords, false, Data),
+    {keep_state, NData, [{reply, From, Resp}]};
+handle_event(
+    {call, From}, {sync_req, _Caller, {append_flush, _}, _Timeout} = Req, ?active, Data) ->
+    {PartitioningKey, BufferRecords} = buffer_records(Req),
+    {Resp, NData} = do_append(PartitioningKey, BufferRecords, true, Data),
     {keep_state, NData, [{reply, From, Resp}]};
 handle_event(cast, {stop, Terminator}, ?active, Data0) ->
     Data1 = do_flush(Data0),
@@ -359,38 +365,21 @@ append_to_queue(
         true ->
             {error, {queue_full, Req}};
         false ->
-            {ok, Data#data{queue = [Req | Queue], queue_size = Size + Length}}
+            BufferRecords = buffer_records(Req),
+            {ok, Data#data{queue = [BufferRecords | Queue], queue_size = Size + Length}}
     end.
-
-request_record_count({sync_req, _Caller, _Req, _Timeout}) -> 1;
-request_record_count({append, _PartitioningKey, Records}) -> length(Records).
 
 pour_queue_to_buffers(#data{queue = Queue} = Data) ->
     NData = lists:foldl(
-        fun(Req, Data0) ->
+        fun({PartitioningKey, BufferRecords}, Data0) ->
             %% We cannot overflow the buffers
-            {ok, Data1} = handle_append_request(Data0, Req),
+            {ok, Data1} = do_append(PartitioningKey, BufferRecords, false, Data0),
             Data1
         end,
         Data,
         lists:reverse(Queue)
     ),
     NData#data{queue = [], queue_size = 0}.
-
-handle_append_request(Data, {append, PartitioningKey, Records}) ->
-    do_append(PartitioningKey, Records, Data);
-handle_append_request(Data, {sync_req, Caller, {append_flush, PKeyRecord}, Timeout}) ->
-    with_shard_buffer(
-        PKeyRecord,
-        fun(Buffer, Record) -> do_append_flush(Buffer, Record, Caller, Timeout) end,
-        Data
-    );
-handle_append_request(Data, {sync_req, Caller, {append_sync, PKeyRecord}, Timeout}) ->
-    with_shard_buffer(
-        PKeyRecord,
-        fun(Buffer, Record) -> do_append_sync(Buffer, Record, Caller, Timeout) end,
-        Data
-    ).
 
 get_shard_buffer(ShardId, #data{buffers = Buffers, buffer_opts = BufferOpts} = Data) ->
     case maps:get(ShardId, Buffers, undefined) of
@@ -437,7 +426,7 @@ send_reply(From, Response, Callback, Stream) ->
     end.
 
 with_shard_buffer(
-    {PartitioningKey, Value},
+    PartitioningKey,
     Fun,
     Data0 = #data{
         key_manager = KeyManager
@@ -446,7 +435,7 @@ with_shard_buffer(
     case hstreamdb_key_mgr:choose_shard(KeyManager, PartitioningKey) of
         {ok, ShardId} ->
             {Buffer, Data1} = get_shard_buffer(ShardId, Data0),
-            case Fun(Buffer, Value) of
+            case Fun(Buffer) of
                 {ok, Buffer1} ->
                     Data2 = set_shard_buffer(ShardId, Buffer1, Data1),
                     {ok, Data2};
@@ -457,25 +446,22 @@ with_shard_buffer(
             {Error, Data0}
     end.
 
-do_append(PartitioningKey, Records0, Data) ->
+do_append(PartitioningKey, BufferRecords, NeedFlush, Data) ->
     with_shard_buffer(
-        {PartitioningKey, Records0},
-        fun(Buffer, Records1) ->
-            hstreamdb_buffer:append(Buffer, undefined, Records1, infinity)
+        PartitioningKey,
+        fun(Buffer) ->
+            maybe_flush(
+                NeedFlush,
+                hstreamdb_buffer:append(Buffer, BufferRecords)
+            )
         end,
         Data
     ).
 
-do_append_flush(Buffer0, Record, From, Timeout) ->
-    case hstreamdb_buffer:append(Buffer0, From, [Record], Timeout) of
-        {ok, Buffer1} ->
-            {ok, hstreamdb_buffer:flush(Buffer1)};
-        {error, _} = Error ->
-            Error
-    end.
+maybe_flush(true = _NeedFlush, {ok, Buffer}) ->
+    {ok, hstreamdb_buffer:flush(Buffer)};
+maybe_flush(_NeedFlush, Result) -> Result.
 
-do_append_sync(Buffer, Record, From, Timeout) ->
-    hstreamdb_buffer:append(Buffer, From, [Record], Timeout).
 
 write(ShardId, #{batch_ref := Ref, tab := Tab}, #data{
     writer_name = WriterName, compression_type = CompressionType
@@ -601,6 +587,16 @@ enqueue_and_reply(Data, Req, From) ->
         append_to_queue(Data, Req),
         From
     ).
+
+request_record_count({sync_req, _Caller, _Req, _Timeout}) -> 1;
+request_record_count({append, _PartitioningKey, Records}) -> length(Records).
+
+buffer_records({append, PartitioningKey, Records}) ->
+    BufferRecords = hstreamdb_buffer:to_buffer_records(Records),
+    {PartitioningKey, BufferRecords};
+buffer_records({sync_req, Caller, {_AppendKind, {PartitioningKey, Record}}, Timeout}) ->
+    BufferRecords = hstreamdb_buffer:to_buffer_records([Record], Caller, Timeout),
+    {PartitioningKey, BufferRecords}.
 
 keep_state_and_reply({ok, Data}, From) ->
         {keep_state, Data, [{reply, From, ok}]};

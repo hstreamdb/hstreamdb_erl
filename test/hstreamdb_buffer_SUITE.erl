@@ -49,7 +49,7 @@ end_per_testcase(_TestCase, _Config) ->
 t_simple_append(Config) ->
     Buffer = new_buffer(Config),
 
-    {ok, _NewBuffer} = hstreamdb_buffer:append(Buffer, from, [<<"rec">>], infinity),
+    {ok, _NewBuffer} = append(Buffer, from, [<<"rec">>], infinity),
 
     ?assertReceive({send_after, ?DEFAULT_FLUSH_INTERVAL, flush}).
 
@@ -60,19 +60,19 @@ t_batch_too_large(Config) ->
 
     ?assertMatch(
         {error, _},
-        hstreamdb_buffer:append(Buffer, from, [<<"rec">> | Recs], infinity)
+        append(Buffer, from, [<<"rec">> | Recs], infinity)
     ),
 
     ?assertMatch(
         {ok, _},
-        hstreamdb_buffer:append(Buffer, from, Recs, infinity)
+        append(Buffer, from, Recs, infinity)
     ).
 
 t_is_empty(Config) ->
     Buffer0 = new_buffer(Config),
     ?assert(hstreamdb_buffer:is_empty(Buffer0)),
 
-    Buffer1 = hstreamdb_buffer:append(Buffer0, from, [<<"rec">>], infinity),
+    Buffer1 = append(Buffer0, from, [<<"rec">>], infinity),
     ?assertNot(hstreamdb_buffer:is_empty(Buffer1)).
 
 t_append_batch(Config) ->
@@ -80,7 +80,7 @@ t_append_batch(Config) ->
 
     Recs = [<<"rec">> || _ <- lists:seq(1, ?DEFAULT_BATCH_SIZE)],
 
-    {ok, _NewBuffer} = hstreamdb_buffer:append(Buffer, from, Recs, infinity),
+    {ok, _NewBuffer} = append(Buffer, from, Recs, infinity),
 
     ?refuteReceive({send_after, ?DEFAULT_FLUSH_INTERVAL, flush}),
 
@@ -92,7 +92,7 @@ t_flush_by_timer(Config) ->
 
     Recs = [<<"rec">>],
 
-    {ok, Buffer1} = hstreamdb_buffer:append(Buffer0, from, Recs, infinity),
+    {ok, Buffer1} = append(Buffer0, from, Recs, infinity),
 
     ?assertReceive({send_after, ?DEFAULT_FLUSH_INTERVAL, flush}),
 
@@ -101,14 +101,14 @@ t_flush_by_timer(Config) ->
     ?assertReceive({send_batch, #{batch_ref := _, tab := _}}),
     ?refuteReceive({send_after, ?DEFAULT_FLUSH_INTERVAL, flush}),
 
-    {ok, _Buffer3} = hstreamdb_buffer:append(Buffer2, from, Recs, infinity),
+    {ok, _Buffer3} = append(Buffer2, from, Recs, infinity),
     ?assertReceive({send_after, ?DEFAULT_FLUSH_INTERVAL, flush}).
 
 t_explicit_flush(Config) ->
     Buffer0 = new_buffer(Config),
     Recs = [<<"rec">>],
 
-    {ok, Buffer1} = hstreamdb_buffer:append(Buffer0, from, Recs, infinity),
+    {ok, Buffer1} = append(Buffer0, from, Recs, infinity),
     ?assertReceive({send_after, ?DEFAULT_FLUSH_INTERVAL, flush}),
 
     Buffer2 = hstreamdb_buffer:flush(Buffer1),
@@ -122,7 +122,7 @@ t_explicit_flush(Config) ->
     ?refuteReceive({send_after, ?DEFAULT_BATCH_TIMEOUT, {batch_timeout, _}}),
     ?refuteReceive({send_batch, #{batch_ref := _, tab := _}}),
 
-    {ok, Buffer4} = hstreamdb_buffer:append(Buffer3, from, Recs, infinity),
+    {ok, Buffer4} = append(Buffer3, from, Recs, infinity),
 
     ?assertReceive({send_after, ?DEFAULT_FLUSH_INTERVAL, flush}),
 
@@ -139,7 +139,7 @@ t_batches_with_responses(Config) ->
 
     Recs = [<<"rec">> || _ <- lists:seq(1, ?DEFAULT_BATCH_SIZE * 3)],
 
-    {ok, Buffer1} = hstreamdb_buffer:append(Buffer0, from, Recs, infinity),
+    {ok, Buffer1} = append(Buffer0, from, Recs, infinity),
 
     lists:foldl(
         fun(_, Buffer) ->
@@ -168,7 +168,7 @@ t_batches_with_timeouts(Config) ->
 
     Recs = [<<"rec">> || _ <- lists:seq(1, ?DEFAULT_BATCH_SIZE * 3)],
 
-    {ok, Buffer1} = hstreamdb_buffer:append(Buffer0, from, Recs, infinity),
+    {ok, Buffer1} = append(Buffer0, from, Recs, infinity),
 
     lists:foldl(
         fun(_, Buffer) ->
@@ -193,11 +193,11 @@ t_batches_with_timeouts(Config) ->
 t_reply_callback_exception(Config) ->
     Buffer0 = new_buffer(Config),
 
-    {ok, Buffer1} = hstreamdb_buffer:append(Buffer0, from0, [<<"rec">>], infinity),
-    {ok, Buffer2} = hstreamdb_buffer:append(
+    {ok, Buffer1} = append(Buffer0, from0, [<<"rec">>], infinity),
+    {ok, Buffer2} = append(
         Buffer1, fun(_) -> error(oops) end, [<<"rec">>], infinity
     ),
-    {ok, Buffer3} = hstreamdb_buffer:append(Buffer2, from1, [<<"rec">>], infinity),
+    {ok, Buffer3} = append(Buffer2, from1, [<<"rec">>], infinity),
 
     Buffer4 = hstreamdb_buffer:flush(Buffer3),
 
@@ -215,8 +215,8 @@ t_reply_callback_exception(Config) ->
 t_response_after_deadline(Config) ->
     Buffer0 = new_buffer(Config),
 
-    {ok, Buffer1} = hstreamdb_buffer:append(Buffer0, from1, [<<"rec">>], 1),
-    {ok, Buffer2} = hstreamdb_buffer:append(Buffer1, from2, [<<"rec">>], 1000),
+    {ok, Buffer1} = append(Buffer0, from1, [<<"rec">>], 1),
+    {ok, Buffer2} = append(Buffer1, from2, [<<"rec">>], 1000),
     Buffer3 = hstreamdb_buffer:flush(Buffer2),
     ok = timer:sleep(2),
     receive
@@ -318,3 +318,7 @@ batch(Config, Ref) ->
 ok_replies_for_batch(Config, Ref) ->
     Batch = batch(Config, Ref),
     {ok, [ok || _ <- Batch]}.
+
+append(Buffer, From, Records, Timeout) ->
+    BufferRecords = hstreamdb_buffer:to_buffer_records(Records, From, Timeout),
+    hstreamdb_buffer:append(Buffer, BufferRecords).

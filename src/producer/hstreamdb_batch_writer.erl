@@ -166,12 +166,12 @@ prepare_known_resps(Records) ->
     Now = erlang:monotonic_time(millisecond),
     {Resps, Reqs} = lists:unzip(
         lists:map(
-            fun(#{deadline := Deadline, data := Data}) ->
-                case Deadline of
-                    T when T >= Now ->
-                        {undefined, Data};
+            fun(BufferRecord) ->
+                case hstreamdb_buffer:deadline(BufferRecord) of
                     infinity ->
-                        {undefined, Data};
+                        {undefined, hstreamdb_buffer:data(BufferRecord)};
+                    T when T >= Now ->
+                        {undefined, hstreamdb_buffer:data(BufferRecord)};
                     _ ->
                         {{error, timeout}, undefined}
                 end
