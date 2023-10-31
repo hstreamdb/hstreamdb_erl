@@ -265,9 +265,9 @@ handle_event(
     ?terminating,
     Data
 ) ->
-    {keep_state, maybe_report_empty(handle_write_result(Data, ShardId, Batch, Result))};
+    {keep_state, maybe_report_empty(handle_write_result(Data, ShardId, Batch, Result, false))};
 handle_event(info, {shard_buffer_event, ShardId, Message}, ?terminating, Data) ->
-    {keep_state, maybe_report_empty(handle_shard_buffer_event(Data, ShardId, Message))};
+    {keep_state, maybe_report_empty(handle_shard_buffer_event(Data, ShardId, Message, false))};
 %% Active
 
 handle_event({call, From}, {append, _PartitioningKey, _Records} = Req, ?active, Data) ->
@@ -295,9 +295,9 @@ handle_event(
     ?active,
     Data
 ) ->
-    {keep_state, maybe_report_empty(handle_write_result(Data, ShardId, Batch, Result))};
+    {keep_state, maybe_report_empty(handle_write_result(Data, ShardId, Batch, Result, true))};
 handle_event(info, {shard_buffer_event, ShardId, Message}, ?active, Data) ->
-    {keep_state, maybe_report_empty(handle_shard_buffer_event(Data, ShardId, Message))};
+    {keep_state, maybe_report_empty(handle_shard_buffer_event(Data, ShardId, Message, true))};
 %% Fallbacks
 
 handle_event({call, From}, Request, _State, _Data) ->
@@ -501,15 +501,16 @@ handle_write_result(
     Data0,
     ShardId,
     #batch{req_ref = ReqRef},
-    Result
+    Result,
+    MayRetry
 ) ->
     {Buffer0, Data1} = get_shard_buffer(ShardId, Data0),
-    Buffer1 = hstreamdb_buffer:handle_batch_response(Buffer0, ReqRef, Result, true  ),
+    Buffer1 = hstreamdb_buffer:handle_batch_response(Buffer0, ReqRef, Result, MayRetry),
     set_shard_buffer(ShardId, Buffer1, Data1).
 
-handle_shard_buffer_event(Data0, ShardId, Event) ->
+handle_shard_buffer_event(Data0, ShardId, Event, MayRetry) ->
     {Buffer0, Data1} = get_shard_buffer(ShardId, Data0),
-    Buffer1 = hstreamdb_buffer:handle_event(Buffer0, Event, true),
+    Buffer1 = hstreamdb_buffer:handle_event(Buffer0, Event, MayRetry),
     set_shard_buffer(ShardId, Buffer1, Data1).
 
 maybe_report_empty(#data{terminator = undefined} = Data) ->
