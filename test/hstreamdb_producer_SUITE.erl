@@ -311,38 +311,46 @@ t_append_sync(Config) ->
         hstreamdb_batch_aggregator:append_sync(producer(Config), sample_record(), 100)
     ).
 
-%% TODO: this only worked with shard_update_interval = 0
-%% We should fix the common case, and then restrore this test
+t_stream_recreate(Config) ->
+    ProducerOptions = #{
+        buffer_pool_size => 1,
+        buffer_options => #{
+            max_records => 10,
+            max_batches => 10,
+            interval => 500,
+            batch_max_retries => 1
+        }
+    },
 
-% t_stream_recreate(Config) ->
-%     ProducerOptions = #{
-%         buffer_pool_size => 1,
-%         buffer_options => #{
-%             max_records => 10,
-%             max_batches => 10,
-%             interval => 500,
-%             mgr_options => #{
-%                 shard_update_interval => 0
-%             }
-%         }
-%     },
+    Client = ?config(client, Config),
 
-%     Client = ?config(client, Config),
+    ok = start_producer(Config, ProducerOptions),
 
-%     ok = start_producer(Config, ProducerOptions),
+    ?assertMatch(
+        {ok, #{}},
+        hstreamdb_batch_aggregator:append_sync(producer(Config), sample_record(), 1000)
+    ),
 
-%     ?assertMatch(
-%         {ok, #{}},
-%         hstreamdb_batch_aggregator:append_sync(producer(Config), sample_record(), 1000)
-%     ),
+    ok = snabbkaffe:cleanup(),
 
-%     _ = hstreamdb_client:delete_stream(Client, ?STREAM),
-%     ok = hstreamdb_client:create_stream(Client, ?STREAM, 2, ?DAY, 5),
+    _ = hstreamdb_client:delete_stream(Client, ?STREAM),
 
-%     ?assertMatch(
-%         {ok, #{}},
-%         hstreamdb_batch_aggregator:append_sync(producer(Config), sample_record(), 1000)
-%     ).
+    ?assertWaitEvent(
+        begin
+            %% To initiate rediscovery
+            {error, {unavailable, _}} = hstreamdb_batch_aggregator:append_flush(
+                producer(Config), sample_record(), 100
+            ),
+            ok = hstreamdb_client:create_stream(Client, ?STREAM, 2, ?DAY, 5)
+        end,
+        #{?snk_kind := batch_aggregator_discovered},
+        5000
+    ),
+
+    ?assertMatch(
+        {ok, #{}},
+        hstreamdb_batch_aggregator:append_sync(producer(Config), sample_record(), 1000)
+    ).
 
 t_graceful_stop(Config) ->
     ProducerOptions = #{
@@ -420,7 +428,7 @@ t_nonexistent_stream(Config) ->
         buffer_options => #{
             max_records => 10000,
             interval => 10000,
-            max_retries => 1
+            batch_max_retries => 1
         }
     },
 
@@ -439,7 +447,7 @@ t_removed_stream(Config) ->
             max_records => 10,
             max_batches => 10,
             interval => 500,
-            max_retries => 2,
+            batch_max_retries => 2,
             backoff_options => {100, 200, 1.1}
         }
     },
@@ -512,7 +520,7 @@ sample_record() ->
 bad_payload_record() ->
     PartitioningKey = "PK",
     PayloadType = raw,
-    Payload = payload,
+    Payload = payload_I_am_atom,
     hstreamdb:to_record(PartitioningKey, PayloadType, Payload).
 
 callback() ->

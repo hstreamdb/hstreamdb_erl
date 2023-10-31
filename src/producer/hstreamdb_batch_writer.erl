@@ -135,9 +135,9 @@ init([Opts]) ->
     }}.
 
 handle_cast({write, #batch{shard_id = ShardId} = Batch, Caller}, State) ->
-    {Result, NState} = do_write(ShardId, records(Batch), Batch, State),
-    % ct:print("writer, caller: ~p, result ready~n", [Caller]),
-    % ct:print("writer, caller is ~p~n", [sys:get_state(Caller)]),
+    Records = records(Batch),
+    {Result, NState} = do_write(ShardId, Records, Batch, State),
+    % ct:print("writer, result: ~p~nrecords: ~p", [Result, Records]),
     _ = erlang:send(Caller, {write_result, Batch, Result}),
     {noreply, NState}.
 
@@ -169,7 +169,9 @@ prepare_known_resps(Records) ->
     {Resps, Reqs} = lists:unzip(
         lists:map(
             fun(BufferRecord) ->
-                case hstreamdb_buffer:deadline(BufferRecord) of
+                Deadline = hstreamdb_buffer:deadline(BufferRecord),
+                % ct:print("Now: ~p, BufferRecord: ~p~n", [Now, BufferRecord]),
+                case Deadline of
                     infinity ->
                         {undefined, hstreamdb_buffer:data(BufferRecord)};
                     T when T >= Now ->
@@ -211,8 +213,8 @@ do_write(
                 {ok, #{recordIds := RecordsIds}} ->
                     Res = fill_responses(Resps, RecordsIds),
                     {{ok, Res}, State};
-                {error, Reason} = Error ->
-                    hstreamdb_discovery:report_shard_unavailable(Name, Version, ShardId, Reason),
+                {error, _} = Error ->
+                    hstreamdb_discovery:report_shard_unavailable(Name, Version, ShardId, Error),
                     {Error, State}
             catch
                 error:badarg ->

@@ -90,6 +90,15 @@
 -define(discovering(BACKOFF), {discovering, BACKOFF}).
 -define(active, active).
 
+-define(next_state(STATE, DATA), begin
+    % ct:print("hstreamdb_discovery: next state: ~p", [STATE]),
+    {next_state, STATE, DATA}
+end).
+-define(next_state(STATE, DATA, ACTIONS), begin
+    % ct:print("hstreamdb_discovery: next state: ~p~nactions: ~p", [STATE, ACTIONS]),
+    {next_state, STATE, DATA, ACTIONS}
+end).
+
 -type state() :: ?discovering(hstreamdb_backoff:t()) | ?active.
 
 -define(ID(NAME), {?MODULE, NAME}).
@@ -103,11 +112,18 @@ start_link(#{name := Name} = Options) ->
     gen_statem:start_link(?VIA_GPROC(?ID(Name)), ?MODULE, [Options], []).
 
 -spec report_shard_unavailable(name(), version(), hstreamdb_client:shard_id(), term()) -> ok.
-report_shard_unavailable(Name, Version, ShardId, _Reason) ->
-    logger:error("[hstreamdb] Shard ~p is unavailable for stream ~p, version ~p", [
-        ShardId, Name, Version
+report_shard_unavailable(Name, Version, ShardId, Error) ->
+    % ct:print(
+    %     "hstreamdb_discovery: report shard unavailable, name: ~p, version: ~p, shard_id: ~p, error: ~p",
+    %     [
+    %         Name, Version, ShardId, Error
+    %     ]
+    % ),
+    logger:error("[hstreamdb] Shard ~p is unavailable for stream ~p, version ~p, error: ~p", [
+        ShardId, Name, Version, Error
     ]),
-    gen_statem:cast(?VIA_GPROC(?ID(Name)), {shard_unavailable, ShardId, Version}).
+    hstreamdb_error:requires_rediscovery(Error) andalso
+        gen_statem:cast(?VIA_GPROC(?ID(Name)), {shard_unavailable, ShardId, Version}).
 
 %%-------------------------------------------------------------------------------------------------
 %% gen_statem callbacks
@@ -182,11 +198,11 @@ handle_event(state_timeout, discover, ?discovering(Backoff0), #{stream := Stream
                 version => Version
             },
             % ct:print("hstreamdb_discovery discovery succeeded"),
-            {next_state, ?active, Data1};
+            ?next_state(?active, Data1);
         {error, Reason} ->
             logger:error("[hstreamdb] Failed to update shards for stream ~p: ~p", [Stream, Reason]),
             {Delay, Backoff1} = hstreamdb_backoff:next_delay(Backoff0),
-            {next_state, ?discovering(Backoff1), Data0, [{state_timeout, Delay, discover}]}
+            ?next_state(?discovering(Backoff1), Data0, [{state_timeout, Delay, discover}])
     end;
 handle_event(cast, {shard_unavailable, _ShardId, _Version}, ?discovering(_), _Data) ->
     keep_state_and_data;
@@ -194,7 +210,7 @@ handle_event(cast, {shard_unavailable, _ShardId, _Version}, ?discovering(_), _Da
 
 handle_event(cast, {shard_unavailable, _ShardId, Version}, ?active, #{version := Version} = Data0) ->
     Data1 = stop_shard_clients(Data0),
-    {next_state, ?discovering(backoff(Data1)), Data1, [{state_timeout, 0, discover}]};
+    ?next_state(?discovering(backoff(Data1)), Data1, [{state_timeout, 0, discover}]);
 %% Stale notifications
 handle_event(cast, {shard_unavailable, _ShardId, _Version}, ?active, _Data) ->
     keep_state_and_data;

@@ -219,10 +219,10 @@ handle_batch_response(
 ) ->
     case need_retry(Buffer0, Response, MayRetry) of
         true ->
-            % ct:print("need_retry true: ~p~n", [Buffer0]),
+            % ct:print("need_retry true~nBuffer: ~p~nResponse: ~p~nMayRetry: ~p~n", [Buffer0, Response, MayRetry]),
             wait_for_retry(Buffer0);
         false ->
-            % ct:print("need_retry false: ~p~n", [Buffer0]),
+            % ct:print("need_retry false~nBuffer: ~p~nResponse: ~p~nMayRetry: ~p~n", [Buffer0, Response, MayRetry]),
             Buffer1 = send_responses(Buffer0, BatchRef, Response),
             Buffer2 = retry_deinit(Buffer1),
             maybe_send_batch(Buffer2#{inflight_batch => undefined})
@@ -269,12 +269,16 @@ data(#{data := Data}) ->
 
 %% Retries
 
-is_transient_error({error, _}) -> true.
+is_transient_error(Error) ->
+    %% TODO: inject
+    hstreamdb_error:is_transient(Error).
 
 need_retry(_Buffer, _Response, _MayRetry = false) ->
     false;
-need_retry(#{retry_state := undefined, max_retries := MaxRetries}, {error, _}, _MayRetry = true) ->
-    MaxRetries > 1;
+need_retry(
+    #{retry_state := undefined, max_retries := MaxRetries}, {error, _}, _MayRetry = true
+) when MaxRetries =< 1 ->
+    false;
 need_retry(#{retry_state := {_Backoff, RetriesLeft}} = _Buffer, {error, _}, _MayRetry = true) when
     RetriesLeft =< 0
 ->

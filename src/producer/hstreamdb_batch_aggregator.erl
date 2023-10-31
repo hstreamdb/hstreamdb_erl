@@ -180,6 +180,17 @@ ecpool_action(Client, Req) ->
 -define(invalidating, invalidating).
 -define(terminating(Terminator), {terminating, Terminator}).
 
+-define(next_state(STATE, DATA),
+    begin
+        % ct:print("hstreamdb_batch_aggregator: next state: ~p", [STATE]),
+        {next_state, STATE, DATA}
+    end).
+-define(next_state(STATE, DATA, ACTIONS),
+    begin
+        % ct:print("hstreamdb_batch_aggregator: next state: ~p~nactions: ~p", [STATE, ACTIONS]),
+        {next_state, STATE, DATA, ACTIONS}
+    end).
+
 callback_mode() ->
     handle_event_function.
 
@@ -238,10 +249,10 @@ handle_event(state_timeout, discover, ?discovering(Backoff0), #data{name = Name}
             Data2 = pour_queue_to_buffers(Data1),
             % ct:print("aggregator discovered: ~p, ~p~n", [Name, self()]),
             ?tp(batch_aggregator_discovered, #{name => Name}),
-            {next_state, ?active, Data2};
+            ?next_state(?active, Data2);
         not_found ->
             {Delay, Backoff1} = hstreamdb_backoff:next_delay(Backoff0),
-            {next_state, ?discovering(Backoff1), Data0, [{state_timeout, Delay, discover}]}
+            ?next_state(?discovering(Backoff1), Data0, [{state_timeout, Delay, discover}])
     end;
 handle_event(cast, stream_updated, ?discovering(_Backoff), _Data) ->
     {keep_state_and_data, [{state_timeout, 0, discover}]};
@@ -298,9 +309,9 @@ handle_event(internal, check_buffers_empty, ?invalidating, #data{discovery_backo
     case are_all_buffers_empty(Data) of
         true ->
             Backoff = hstreamdb_backoff:new(BackoffOpts),
-            {next_state, ?discovering(Backoff), Data, [{state_timeout, 0, discover}]};
+            ?next_state(?discovering(Backoff), Data, [{state_timeout, 0, discover}]);
         false ->
-            {next_state, ?invalidating, Data}
+            ?next_state(?invalidating, Data)
     end;
 
 %% Active
@@ -324,7 +335,7 @@ handle_event(
 handle_event(cast, {stop, Terminator}, ?active, Data0) ->
     % ct:print("aggregator stop: ~p~n", [Terminator]),
     Data1 = flush_buffers(Data0),
-    {next_state, ?terminating(Terminator), Data1, [{next_event, internal, check_buffers_empty}]};
+    ?next_state(?terminating(Terminator), Data1, [{next_event, internal, check_buffers_empty}]);
 handle_event(
     info,
     {write_result, #batch{shard_id = ShardId} = Batch, Result},
@@ -337,7 +348,7 @@ handle_event(info, {shard_buffer_event, ShardId, Message}, ?active, Data) ->
     {keep_state, handle_shard_buffer_event(Data, ShardId, Message, true)};
 handle_event(cast, stream_updated, ?active, Data0) ->
     Data1 = drop_buffers(Data0, ?ERROR_STREAM_CHANGED),
-    {next_state, ?invalidating, Data1, [{next_event, internal, check_buffers_empty}]};
+    ?next_state(?invalidating, Data1, [{next_event, internal, check_buffers_empty}]);
 
 %% Fallbacks
 
@@ -614,13 +625,15 @@ bin(B) when is_binary(B) ->
     B.
 
 buffer_opts(Options) ->
-    Options#{
+    #{
         flush_interval => maps:get(interval, Options, ?DEFAULT_INTERVAL),
         batch_timeout => maps:get(
             batch_reap_timeout, Options, ?DEFAULT_BATCH_REAP_TIMEOUT
         ),
         batch_size => maps:get(max_records, Options, ?DEFAULT_MAX_RECORDS),
-        batch_max_count => maps:get(max_batches, Options, ?DEFAULT_MAX_BATCHES)
+        batch_max_count => maps:get(max_batches, Options, ?DEFAULT_MAX_BATCHES),
+        max_retries => maps:get(batch_max_retries, Options, ?DEFAULT_BATCH_MAX_RETRIES),
+        backoff_options => maps:get(batch_backoff_options, Options, ?DEFAULT_BATCH_BACKOFF_OPTIONS)
     }.
 
 
