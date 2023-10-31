@@ -84,7 +84,7 @@ t_append_batch(Config) ->
 
     ?refuteReceive({send_after, ?DEFAULT_FLUSH_INTERVAL, flush}),
 
-    ?assertReceive({send_after, ?DEFAULT_BATCH_TIMEOUT, {batch_timeout, _, _}}),
+    ?assertReceive({send_after, ?DEFAULT_BATCH_TIMEOUT, {batch_timeout, _}}),
     ?assertReceive({send_batch, _ReqRef, #{batch_ref := _, tab := _}}).
 
 t_flush_by_timer(Config) ->
@@ -97,7 +97,7 @@ t_flush_by_timer(Config) ->
     ?assertReceive({send_after, ?DEFAULT_FLUSH_INTERVAL, flush}),
 
     Buffer2 = hstreamdb_buffer:handle_event(Buffer1, flush),
-    ?assertReceive({send_after, ?DEFAULT_BATCH_TIMEOUT, {batch_timeout, _, _}}),
+    ?assertReceive({send_after, ?DEFAULT_BATCH_TIMEOUT, {batch_timeout, _}}),
     ?assertReceive({send_batch, _ReqRef, #{batch_ref := _, tab := _}}),
     ?refuteReceive({send_after, ?DEFAULT_FLUSH_INTERVAL, flush}),
 
@@ -114,12 +114,12 @@ t_explicit_flush(Config) ->
     Buffer2 = hstreamdb_buffer:flush(Buffer1),
 
     ?refuteReceive({send_after, ?DEFAULT_FLUSH_INTERVAL, flush}),
-    ?assertReceive({send_after, ?DEFAULT_BATCH_TIMEOUT, {batch_timeout, _, _}}),
+    ?assertReceive({send_after, ?DEFAULT_BATCH_TIMEOUT, {batch_timeout, _}}),
     ?assertReceive({send_batch, _ReqRef, #{batch_ref := _, tab := _}}),
 
     Buffer3 = hstreamdb_buffer:flush(Buffer2),
 
-    ?refuteReceive({send_after, ?DEFAULT_BATCH_TIMEOUT, {batch_timeout, _, _}}),
+    ?refuteReceive({send_after, ?DEFAULT_BATCH_TIMEOUT, {batch_timeout, _}}),
     ?refuteReceive({send_batch, _, #{batch_ref := _, tab := _}}),
 
     {ok, Buffer4} = append(Buffer3, from, Recs, infinity),
@@ -131,7 +131,7 @@ t_explicit_flush(Config) ->
     %% There is an inflight batch, so new batch is not sent and
     %% we should not receive batch_timeout message
 
-    ?refuteReceive({send_after, ?DEFAULT_BATCH_TIMEOUT, {batch_timeout, _, _}}),
+    ?refuteReceive({send_after, ?DEFAULT_BATCH_TIMEOUT, {batch_timeout, _}}),
     ?refuteReceive({send_batch, _, _}).
 
 t_batches_with_responses(Config) ->
@@ -173,8 +173,8 @@ t_batches_with_timeouts(Config) ->
     lists:foldl(
         fun(_, Buffer) ->
             receive
-                {send_batch, ReqRef, #{batch_ref := Ref, tab := _Tab}} ->
-                    NewBuffer = hstreamdb_buffer:handle_event(Buffer, {batch_timeout, Ref, ReqRef}),
+                {send_batch, ReqRef, #{tab := _Tab}} ->
+                    NewBuffer = hstreamdb_buffer:handle_event(Buffer, {batch_timeout, ReqRef}),
                     lists:foreach(
                         fun(_) ->
                             ?assertReceive({send_reply, from, {error, timeout}})

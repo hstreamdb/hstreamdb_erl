@@ -94,7 +94,7 @@
     tab => ets:tab()
 }.
 
--type timeout_event() :: {batch_timeout, reference()} | flush.
+-type timeout_event() :: {batch_timeout, reference()} | {retry, reference()} | flush.
 
 %%--------------------------------------------------------------------
 %% API
@@ -178,10 +178,10 @@ flush(Buffer0) ->
 handle_event(Buffer, flush) ->
     flush(Buffer);
 %% Batch timeout event
-handle_event(#{inflight_batch := {BatchRef, ReqRef}} = Buffer0, {batch_timeout, BatchRef, ReqRef}) ->
+handle_event(#{inflight_batch := {_BatchRef, ReqRef}} = Buffer0, {batch_timeout, ReqRef}) ->
     handle_batch_response(Buffer0, ReqRef, {error, timeout});
 %% May happen due to concurrency
-handle_event(Buffer, {batch_timeout, _BatchRef, _ReqRef}) ->
+handle_event(Buffer, {batch_timeout, _ReqRef}) ->
     Buffer;
 %% Batch Retry event
 handle_event(#{inflight_batch := {_BatchRef, ReqRef}} = Buffer, {retry, ReqRef}) ->
@@ -437,8 +437,8 @@ maybe_send_batch(
         Buffer0
 ) when BatchCount > 0 ->
     Buffer1 = cancel_timer(batch_timer, Buffer0),
-    {BatchRef, ReqRef, Buffer2} = send_batch(Buffer1),
-    send_after(batch_timer, Buffer2, BatchTimeout, {batch_timeout, BatchRef, ReqRef});
+    {ReqRef, Buffer2} = send_batch(Buffer1),
+    send_after(batch_timer, Buffer2, BatchTimeout, {batch_timeout, ReqRef});
 maybe_send_batch(#{inflight_batch := {_BatchRef, _ReqRef}} = Buffer) ->
     Buffer.
 
@@ -457,7 +457,7 @@ send_batch(
         tab => BatchTab
     },
     ReqRef = SendBatchFun(Message),
-    {BatchRef, ReqRef, Buffer#{
+    {ReqRef, Buffer#{
         inflight_batch => {BatchRef, ReqRef},
         batch_queue => NewBatchQueue,
         batch_count => BatchCount - 1
@@ -477,7 +477,7 @@ resend_batch(
         tab => BatchTab
     },
     ReqRef = SendBatchFun(Message),
-    Buffer2 = send_after(batch_timer, Buffer1, BatchTimeout, {batch_timeout, BatchRef, ReqRef}),
+    Buffer2 = send_after(batch_timer, Buffer1, BatchTimeout, {batch_timeout, ReqRef}),
     Buffer2#{
         inflight_batch := {BatchRef, ReqRef}
     }.
