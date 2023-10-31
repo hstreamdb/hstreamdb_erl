@@ -86,9 +86,7 @@
     buffer_opts,
 
     discovery_backoff_opts,
-    key_manager,
-
-    terminator = undefined
+    key_manager
 }).
 
 append(Producer, PKeyRecordOrRecords) ->
@@ -180,7 +178,7 @@ ecpool_action(Client, Req) ->
 -define(discovering(Backoff), {discovering, Backoff}).
 -define(active, active).
 -define(invalidating, invalidating).
--define(terminating, terminating).
+-define(terminating(Terminator), {terminating, Terminator}).
 
 callback_mode() ->
     handle_event_function.
@@ -265,19 +263,18 @@ handle_event(
 
 %% Terminating
 
-%% TODO Terminator to state
-handle_event({call, From}, _Req, ?terminating, _Data) ->
+handle_event({call, From}, _Req, ?terminating(_Terminator), _Data) ->
     {keep_state_and_data, [{reply, From, {error, ?ERROR_TERMINATING}}]};
 handle_event(
     info,
     {write_result, #batch{shard_id = ShardId} = Batch, Result},
-    ?terminating,
+    ?terminating(_Terminator),
     Data
 ) ->
     {keep_state, handle_write_result(Data, ShardId, Batch, Result, false), [{next_event, internal, check_buffers_empty}]};
-handle_event(info, {shard_buffer_event, ShardId, Message}, ?terminating, Data) ->
+handle_event(info, {shard_buffer_event, ShardId, Message}, ?terminating(_Terminator), Data) ->
     {keep_state, handle_shard_buffer_event(Data, ShardId, Message, false), [{next_event, internal, check_buffers_empty}]};
-handle_event(internal, check_buffers_empty, ?terminating, #data{terminator = Terminator} = Data) ->
+handle_event(internal, check_buffers_empty, ?terminating(Terminator), Data) ->
     are_all_buffers_empty(Data) andalso erlang:send(Terminator, {empty, Terminator}),
     keep_state_and_data;
 
@@ -327,7 +324,7 @@ handle_event(
 handle_event(cast, {stop, Terminator}, ?active, Data0) ->
     % ct:print("aggregator stop: ~p~n", [Terminator]),
     Data1 = flush_buffers(Data0),
-    {next_state, ?terminating, Data1#data{terminator = Terminator}, [{next_event, internal, check_buffers_empty}]};
+    {next_state, ?terminating(Terminator), Data1, [{next_event, internal, check_buffers_empty}]};
 handle_event(
     info,
     {write_result, #batch{shard_id = ShardId} = Batch, Result},
