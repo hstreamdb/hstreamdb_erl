@@ -31,7 +31,7 @@
 
 -export([
     handle_event/2,
-    handle_batch_response/4
+    handle_batch_response/3
 ]).
 
 -export_type([hstreamdb_buffer/0, options/0]).
@@ -179,7 +179,7 @@ handle_event(Buffer, flush) ->
     flush(Buffer);
 %% Batch timeout event
 handle_event(#{inflight_batch := {BatchRef, ReqRef}} = Buffer0, {batch_timeout, BatchRef, ReqRef}) ->
-    handle_batch_response(Buffer0, BatchRef, ReqRef, {error, timeout});
+    handle_batch_response(Buffer0, ReqRef, {error, timeout});
 %% May happen due to concurrency
 handle_event(Buffer, {batch_timeout, _BatchRef, _ReqRef}) ->
     Buffer;
@@ -190,12 +190,12 @@ handle_event(#{inflight_batch := {_BatchRef, ReqRef}} = Buffer, {retry, ReqRef})
 handle_event(Buffer, {retry, _ReqRef}) ->
     Buffer.
 
--spec handle_batch_response(hstreamdb_buffer(), reference(), reference(), term()) ->
+-spec handle_batch_response(hstreamdb_buffer(), reference(), term()) ->
     hstreamdb_buffer().
 %% TODO Pass may retry
 %% TODO no BatchRef
 handle_batch_response(
-    #{inflight_batch := {BatchRef, ReqRef}} = Buffer0, BatchRef, ReqRef, Response
+    #{inflight_batch := {BatchRef, ReqRef}} = Buffer0, ReqRef, Response
 ) ->
     case need_retry(Buffer0, Response) of
         true ->
@@ -208,7 +208,7 @@ handle_batch_response(
             maybe_send_batch(Buffer2#{inflight_batch => undefined})
     end;
 %% Late response, the batch has been reaped or resent
-handle_batch_response(Buffer, _BatchRef, _ReqRef, _Response) ->
+handle_batch_response(Buffer, _ReqRef, _Response) ->
     Buffer.
 
 -spec is_empty(hstreamdb_buffer()) -> boolean().

@@ -500,11 +500,11 @@ do_flush(
 handle_write_result(
     Data0,
     ShardId,
-    #batch{batch_ref = BatchRef, req_ref = ReqRef},
+    #batch{req_ref = ReqRef},
     Result
 ) ->
     {Buffer0, Data1} = get_shard_buffer(ShardId, Data0),
-    Buffer1 = hstreamdb_buffer:handle_batch_response(Buffer0, BatchRef, ReqRef, Result),
+    Buffer1 = hstreamdb_buffer:handle_batch_response(Buffer0, ReqRef, Result),
     set_shard_buffer(ShardId, Buffer1, Data1).
 
 handle_shard_buffer_event(Data0, ShardId, Event) ->

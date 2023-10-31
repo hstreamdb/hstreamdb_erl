@@ -102,7 +102,7 @@ handle_info({send_batch, ReqRef, #{batch_ref := Ref}}, #st{buffer = Buffer, tab 
             [{_, Batch}] = ets:lookup(Tab, Ref),
             Responses = lists:map(fun(_) -> ok end, Batch),
             NewBuffer = hstreamdb_buffer:handle_batch_response(
-                Buffer, Ref, ReqRef, {ok, Responses}
+                Buffer, ReqRef, {ok, Responses}
             ),
             {noreply, St#st{buffer = NewBuffer}}
     end.

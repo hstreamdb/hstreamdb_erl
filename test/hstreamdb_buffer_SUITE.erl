@@ -146,7 +146,7 @@ t_batches_with_responses(Config) ->
             receive
                 {send_batch, ReqRef, #{batch_ref := BatchRef, tab := _Tab}} ->
                     NewBuffer = hstreamdb_buffer:handle_batch_response(
-                        Buffer, BatchRef, ReqRef, ok_replies_for_batch(Config, BatchRef)
+                        Buffer, ReqRef, ok_replies_for_batch(Config, BatchRef)
                     ),
                     lists:foreach(
                         fun(_) ->
@@ -204,7 +204,7 @@ t_reply_callback_exception(Config) ->
     receive
         {send_batch, ReqRef, #{batch_ref := Ref, tab := _Tab}} ->
             _ = hstreamdb_buffer:handle_batch_response(
-                Buffer4, Ref, ReqRef, ok_replies_for_batch(Config, Ref)
+                Buffer4, ReqRef, ok_replies_for_batch(Config, Ref)
             ),
             ?assertReceive({send_reply, from0, ok}),
             ?assertReceive({send_reply, from1, ok})
@@ -222,7 +222,7 @@ t_response_after_deadline(Config) ->
     receive
         {send_batch, ReqRef, #{batch_ref := Ref, tab := _Tab}} ->
             _ = hstreamdb_buffer:handle_batch_response(
-                Buffer3, Ref, ReqRef, ok_replies_for_batch(Config, Ref)
+                Buffer3, ReqRef, ok_replies_for_batch(Config, Ref)
             ),
             ?refuteReceive({send_reply, from1, _}),
             ?assertReceive({send_reply, from2, ok})
