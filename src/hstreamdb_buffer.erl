@@ -219,7 +219,11 @@ handle_batch_response(
 ) ->
     case need_retry(Buffer0, Response, MayRetry) of
         true ->
-            % ct:print("need_retry true~nBuffer: ~p~nResponse: ~p~nMayRetry: ~p~n", [Buffer0, Response, MayRetry]),
+            ct:print("need_retry true~nBuffer: ~p~nResponse: ~p~nMayRetry: ~p~n", [
+                maps:with([retry_state, backoff_options, max_retries], Buffer0),
+                Response,
+                MayRetry
+            ]),
             wait_for_retry(Buffer0);
         false ->
             % ct:print("need_retry false~nBuffer: ~p~nResponse: ~p~nMayRetry: ~p~n", [Buffer0, Response, MayRetry]),

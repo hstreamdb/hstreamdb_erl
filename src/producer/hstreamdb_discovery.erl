@@ -58,7 +58,6 @@
     client_options := hstreamdb_client:options(),
     name := name(),
     backoff_options => hstreamdb_backoff:options(),
-    min_active_time => non_neg_integer(),
 
     on_init => init_callback(),
     on_stream_updated => stream_update_callback(),
@@ -91,11 +90,11 @@
 -define(active, active).
 
 -define(next_state(STATE, DATA), begin
-    % ct:print("hstreamdb_discovery: next state: ~p", [STATE]),
+    ct:print("hstreamdb_discovery: next state: ~p", [STATE]),
     {next_state, STATE, DATA}
 end).
 -define(next_state(STATE, DATA, ACTIONS), begin
-    % ct:print("hstreamdb_discovery: next state: ~p~nactions: ~p", [STATE, ACTIONS]),
+    ct:print("hstreamdb_discovery: next state: ~p~nactions: ~p", [STATE, ACTIONS]),
     {next_state, STATE, DATA, ACTIONS}
 end).
 

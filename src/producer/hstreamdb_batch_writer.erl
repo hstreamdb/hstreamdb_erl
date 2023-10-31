@@ -136,8 +136,9 @@ init([Opts]) ->
 
 handle_cast({write, #batch{shard_id = ShardId} = Batch, Caller}, State) ->
     Records = records(Batch),
+    ct:print("writer, records: ~p~n", [Records]),
     {Result, NState} = do_write(ShardId, Records, Batch, State),
-    % ct:print("writer, result: ~p~nrecords: ~p", [Result, Records]),
+    ct:print("writer, result: ~p", [Result]),
     _ = erlang:send(Caller, {write_result, Batch, Result}),
     {noreply, NState}.
 
@@ -199,7 +200,6 @@ do_write(
 ) ->
     case shard_client(Name, ShardId) of
         {ok, Version, Client} ->
-            % ct:print("do_write, version: ~p, records: ~p~n", [Version, Records]),
             Req = #{
                 stream_name => Stream,
                 records => Records,
@@ -218,7 +218,9 @@ do_write(
                     {Error, State}
             catch
                 error:badarg ->
-                    {{error, cannot_resolve_shard_id}, State}
+                    {{error, cannot_resolve_shard_id}, State};
+                error:Other ->
+                    {{error, Other}, State}
             end;
         not_found ->
             % ct:print("do_write, not_found, records: ~p~n", [Records]),

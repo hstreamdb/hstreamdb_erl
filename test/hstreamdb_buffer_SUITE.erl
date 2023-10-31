@@ -284,7 +284,7 @@ new_buffer(Config, Opts) ->
 
         batch_tab => BatchTab,
 
-        batch_max_retries => 1,
+        max_retries => 1,
 
         send_batch => fun(Message) ->
             ReqRef = make_ref(),

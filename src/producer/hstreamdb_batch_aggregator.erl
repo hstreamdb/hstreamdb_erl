@@ -182,12 +182,12 @@ ecpool_action(Client, Req) ->
 
 -define(next_state(STATE, DATA),
     begin
-        % ct:print("hstreamdb_batch_aggregator: next state: ~p", [STATE]),
+        ct:print("hstreamdb_batch_aggregator: next state: ~p", [STATE]),
         {next_state, STATE, DATA}
     end).
 -define(next_state(STATE, DATA, ACTIONS),
     begin
-        % ct:print("hstreamdb_batch_aggregator: next state: ~p~nactions: ~p", [STATE, ACTIONS]),
+        ct:print("hstreamdb_batch_aggregator: next state: ~p~nactions: ~p", [STATE, ACTIONS]),
         {next_state, STATE, DATA, ACTIONS}
     end).
 
