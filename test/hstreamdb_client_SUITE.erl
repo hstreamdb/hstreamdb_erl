@@ -44,8 +44,23 @@ t_connect(_Config) ->
     lists:foreach(
         fun(_) ->
             {ok, Client} = hstreamdb_client:create(test_c1, ClientConfig),
-            ok = hstreamdb_client:connect(Client),
+            ?assertEqual(
+                ok,
+                hstreamdb_client:connect(Client)
+            ),
             ok = hstreamdb_client:stop(Client)
         end,
         lists:seq(1, 10)
     ).
+
+t_connect_fail(_Config) ->
+    ClientConfig = #{
+        url => "http://10.5.0.111:6570,10.5.0.222:6570"
+    },
+
+    {ok, Client} = hstreamdb_client:create(test_c1, ClientConfig),
+    ?assertEqual(
+        {error, no_more_urls_to_connect},
+        hstreamdb_client:connect(Client)
+    ),
+    ok = hstreamdb_client:stop(Client).

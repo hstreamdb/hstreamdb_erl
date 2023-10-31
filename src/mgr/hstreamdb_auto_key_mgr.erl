@@ -53,7 +53,6 @@ start(Client, StreamName) ->
 start(Client, StreamName, Options) ->
     #{
         client => Client,
-        shards => undefined,
         shard_update_interval => maps:get(
             shard_update_interval,
             Options,

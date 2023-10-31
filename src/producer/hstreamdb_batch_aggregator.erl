@@ -442,8 +442,8 @@ with_shard_buffer(
                 {error, _} = Error ->
                     {Error, Data1}
             end;
-        {error, _} = Error ->
-            {Error, Data0}
+        not_found ->
+            {{error, shard_not_found}, Data0}
     end.
 
 do_append(PartitioningKey, BufferRecords, NeedFlush, Data) ->

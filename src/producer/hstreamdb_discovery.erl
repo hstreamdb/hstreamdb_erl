@@ -116,7 +116,7 @@ report_shard_unavailable(Name, Version, ShardId, _Reason) ->
 callback_mode() ->
     handle_event_function.
 
--spec init(options()) -> {ok, state(), data(), [gen_statem:action()]} | {error, term()}.
+-spec init([options()]) -> {ok, state(), data(), [gen_statem:action()]} | {stop, term()}.
 init([Options]) ->
     _ = process_flag(trap_exit, true),
 
@@ -156,8 +156,8 @@ init([Options]) ->
             ok = run_callbacks(on_init, [Name], Data),
             % ct:print("hstreamdb_discovery discovery started"),
             {ok, ?discovering(backoff(Data)), Data, [{state_timeout, 0, discover}]};
-        {error, _} = Error ->
-            Error
+        {error, Reason} ->
+            {stop, Reason}
     end.
 
 %% Discovering

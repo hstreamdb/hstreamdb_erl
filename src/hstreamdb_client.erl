@@ -212,7 +212,7 @@ start(Name, Options) ->
             case connect(Client) of
                 ok ->
                     {ok, Client};
-                {{error, _} = Error, _NewClient} ->
+                {error, _} = Error ->
                     Error
             end;
         {error, _} = Error ->

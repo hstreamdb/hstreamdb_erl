@@ -36,6 +36,15 @@
 
 -export_type([hstreamdb_buffer/0, options/0]).
 
+-type batch_ref() :: reference().
+-type req_ref() :: reference().
+-type timer_ref() :: reference().
+
+-type send_batch_fun() :: fun((batch_message()) -> batch_ref()).
+-type send_after_fun() :: fun((pos_integer(), term()) -> timer_ref()).
+-type cancel_send_fun() :: fun((timer_ref()) -> any()).
+-type send_reply_fun() :: fun((from(), ok | {error, term()}) -> any()).
+
 -type options() :: #{
     flush_interval := pos_integer(),
     batch_timeout := pos_integer(),
@@ -46,10 +55,10 @@
     backoff_options => hstreamdb_backoff:options(),
     max_retries => non_neg_integer(),
 
-    send_batch := fun((batch_message()) -> reference()),
-    send_after := fun((pos_integer(), term()) -> reference()),
-    cancel_send := fun((reference()) -> any()),
-    send_reply := fun((term(), ok | {error, term()}) -> any())
+    send_batch := send_batch_fun(),
+    send_after := send_after_fun(),
+    cancel_send := cancel_send_fun(),
+    send_reply := send_reply_fun()
 }.
 
 -type hstreamdb_buffer() :: #{
@@ -73,10 +82,10 @@
     retry_state := undefined | {hstreamdb_backoff:t(), non_neg_integer()},
 
     %% Callbacks
-    send_batch := fun((batch_message()) -> reference()),
-    send_after := fun((pos_integer(), term()) -> reference()),
-    cancel_send := fun((reference()) -> any()),
-    send_reply := fun((from(), ok | {error, term()}) -> any())
+    send_batch := send_batch_fun(),
+    send_after := send_after_fun(),
+    cancel_send := cancel_send_fun(),
+    send_reply := send_reply_fun()
 }.
 
 -type from() :: term().
@@ -90,11 +99,11 @@
 }.
 
 -type batch_message() :: #{
-    batch_ref => reference(),
+    batch_ref => batch_ref(),
     tab => ets:tab()
 }.
 
--type timeout_event() :: {batch_timeout, reference()} | {retry, reference()} | flush.
+-type timeout_event() :: {batch_timeout, req_ref()} | {retry, req_ref()} | flush.
 
 %%--------------------------------------------------------------------
 %% API
@@ -155,7 +164,7 @@ new(
 ).
 
 -spec append(hstreamdb_buffer(), [buffer_record()]) ->
-    {ok, hstreamdb_buffer()} | {error, {batch_count_too_large, integer()}}.
+    {ok, hstreamdb_buffer()} | {error, {batch_count_too_large, non_neg_integer()}}.
 append(#{batch_max_count := BatchMaxCount} = Buffer, Records) ->
     case estimate_batch_count(Buffer, Records) of
         NewBatchCount when NewBatchCount > BatchMaxCount ->
@@ -190,10 +199,8 @@ handle_event(#{inflight_batch := {_BatchRef, ReqRef}} = Buffer, {retry, ReqRef})
 handle_event(Buffer, {retry, _ReqRef}) ->
     Buffer.
 
--spec handle_batch_response(hstreamdb_buffer(), reference(), term()) ->
+-spec handle_batch_response(hstreamdb_buffer(), req_ref(), term()) ->
     hstreamdb_buffer().
-%% TODO Pass may retry
-%% TODO no BatchRef
 handle_batch_response(
     #{inflight_batch := {BatchRef, ReqRef}} = Buffer0, ReqRef, Response
 ) ->
@@ -249,8 +256,7 @@ data(#{data := Data}) ->
 
 %% Retries
 
-is_transient_error({error, _}) -> true;
-is_transient_error(_) -> false.
+is_transient_error({error, _}) -> true.
 
 need_retry(#{retry_state := undefined, max_retries := MaxRetries}, {error, _}) ->
     MaxRetries > 1;
