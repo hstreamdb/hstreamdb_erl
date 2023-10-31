@@ -50,7 +50,7 @@
 
 -define(DISCOVERY_TAB, hstreamdb_discovery_tab).
 
--define(DEFAULT_MAX_QUEUE_SIZE, 10000).
+-define(DEFAULT_STREAM_INVALIDATE_TIMEOUT, 60000).
 
 -define(VIA_GPROC(ID), {via, gproc, {n, l, ID}}).
 

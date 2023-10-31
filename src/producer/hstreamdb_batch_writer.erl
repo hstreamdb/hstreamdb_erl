@@ -136,6 +136,8 @@ init([Opts]) ->
 
 handle_cast({write, #batch{shard_id = ShardId} = Batch, Caller}, State) ->
     {Result, NState} = do_write(ShardId, records(Batch), Batch, State),
+    % ct:print("writer, caller: ~p, result ready~n", [Caller]),
+    % ct:print("writer, caller is ~p~n", [sys:get_state(Caller)]),
     _ = erlang:send(Caller, {write_result, Batch, Result}),
     {noreply, NState}.
 

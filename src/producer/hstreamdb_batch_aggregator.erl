@@ -17,6 +17,7 @@
 -module(hstreamdb_batch_aggregator).
 
 -include("hstreamdb.hrl").
+-include("errors.hrl").
 -include_lib("snabbkaffe/include/snabbkaffe.hrl").
 
 -behaviour(gen_statem).
@@ -59,6 +60,7 @@
     name := ecpool:pool_name(),
     interval => pos_integer(),
     batch_reap_timeout => pos_integer(),
+    stream_invalidate_timeout => pos_integer(),
     max_records => pos_integer(),
     max_batches => pos_integer(),
     compression_type => none | gzip | zstd,
@@ -73,6 +75,7 @@
     stream,
     compression_type,
     callback,
+    stream_invalidate_timeout,
 
     queue,
     queue_size,
@@ -176,6 +179,7 @@ ecpool_action(Client, Req) ->
 
 -define(discovering(Backoff), {discovering, Backoff}).
 -define(active, active).
+-define(invalidating, invalidating).
 -define(terminating, terminating).
 
 callback_mode() ->
@@ -201,12 +205,17 @@ init([Options]) ->
         discovery_backoff_opts, Options, ?DEFAULT_DISOVERY_BACKOFF_OPTIONS
     ),
 
+    StreamInvalidateTimeout = maps:get(
+        stream_invalidate_timeout, Options, ?DEFAULT_STREAM_INVALIDATE_TIMEOUT
+    ),
+
     Data = #data{
         name = Name,
         writer_name = writer_name(Name),
         stream = StreamName,
         compression_type = CompressionType,
         callback = Callback,
+        stream_invalidate_timeout = StreamInvalidateTimeout,
 
         batch_tab = BatchTab,
         buffer_opts = BufferOpts,
@@ -229,7 +238,7 @@ handle_event(state_timeout, discover, ?discovering(Backoff0), #data{name = Name}
         {ok, _Vsn, KeyManager} ->
             Data1 = Data0#data{key_manager = KeyManager},
             Data2 = pour_queue_to_buffers(Data1),
-            % ct:print("aggregator discovered: ~p~n", [Name]),
+            % ct:print("aggregator discovered: ~p, ~p~n", [Name, self()]),
             ?tp(batch_aggregator_discovered, #{name => Name}),
             {next_state, ?active, Data2};
         not_found ->
@@ -241,7 +250,6 @@ handle_event(cast, stream_updated, ?discovering(_Backoff), _Data) ->
 handle_event(cast, {stop, _Terminator}, ?discovering(_Backoff), _Data) ->
     {keep_state_and_data, postpone};
 handle_event({call, From}, flush, ?discovering(_Backoff), _Data) ->
-    %% Will flush after discovering
     {keep_state_and_data, [postpone, {reply, From, ok}]};
 handle_event(
     {call, From}, {append, _PartitioningKey, _Records} = Req, ?discovering(_Backoff), Data
@@ -257,17 +265,47 @@ handle_event(
 
 %% Terminating
 
+%% TODO Terminator to state
 handle_event({call, From}, _Req, ?terminating, _Data) ->
-    {keep_state_and_data, [{reply, From, {error, terminating}}]};
+    {keep_state_and_data, [{reply, From, {error, ?ERROR_TERMINATING}}]};
 handle_event(
     info,
     {write_result, #batch{shard_id = ShardId} = Batch, Result},
     ?terminating,
     Data
 ) ->
-    {keep_state, maybe_report_empty(handle_write_result(Data, ShardId, Batch, Result, false))};
+    {keep_state, handle_write_result(Data, ShardId, Batch, Result, false), [{next_event, internal, check_buffers_empty}]};
 handle_event(info, {shard_buffer_event, ShardId, Message}, ?terminating, Data) ->
-    {keep_state, maybe_report_empty(handle_shard_buffer_event(Data, ShardId, Message, false))};
+    {keep_state, handle_shard_buffer_event(Data, ShardId, Message, false), [{next_event, internal, check_buffers_empty}]};
+handle_event(internal, check_buffers_empty, ?terminating, #data{terminator = Terminator} = Data) ->
+    are_all_buffers_empty(Data) andalso erlang:send(Terminator, {empty, Terminator}),
+    keep_state_and_data;
+
+%% Invalidating
+handle_event({call, From}, _Req, ?invalidating, _Data) ->
+    {keep_state_and_data, [{reply, From, {error, ?ERROR_STREAM_CHANGED}}]};
+handle_event(
+    info,
+    {write_result, #batch{shard_id = ShardId} = Batch, Result},
+    ?invalidating,
+    Data
+) ->
+    {keep_state, handle_write_result(Data, ShardId, Batch, Result, false), [{next_event, internal, check_buffers_empty}]};
+handle_event(info, {shard_buffer_event, ShardId, Message}, ?invalidating, Data) ->
+    {keep_state, handle_shard_buffer_event(Data, ShardId, Message, false), [{next_event, internal, check_buffers_empty}]};
+handle_event(cast, stream_updated, ?invalidating, _Data) ->
+    keep_state_and_data;
+handle_event(cast, {stop, _Terminator}, ?invalidating, _Data) ->
+    {keep_state_and_data, postpone};
+handle_event(internal, check_buffers_empty, ?invalidating, #data{discovery_backoff_opts = BackoffOpts} = Data) ->
+    case are_all_buffers_empty(Data) of
+        true ->
+            Backoff = hstreamdb_backoff:new(BackoffOpts),
+            {next_state, ?discovering(Backoff), Data, [{state_timeout, 0, discover}]};
+        false ->
+            {next_state, ?invalidating, Data}
+    end;
+
 %% Active
 
 handle_event({call, From}, {append, _PartitioningKey, _Records} = Req, ?active, Data) ->
@@ -275,7 +313,7 @@ handle_event({call, From}, {append, _PartitioningKey, _Records} = Req, ?active, 
     {Resp, NData} = do_append(PartitioningKey, BufferRecords, false, Data),
     {keep_state, NData, [{reply, From, Resp}]};
 handle_event({call, From}, flush, ?active, Data) ->
-    {keep_state, do_flush(Data), [{reply, From, ok}]};
+    {keep_state, flush_buffers(Data), [{reply, From, ok}]};
 handle_event(
     {call, From}, {sync_req, _Caller, {append_sync, _}, _Timeout} = Req, ?active, Data) ->
     {PartitioningKey, BufferRecords} = buffer_records(Req),
@@ -287,24 +325,33 @@ handle_event(
     {Resp, NData} = do_append(PartitioningKey, BufferRecords, true, Data),
     {keep_state, NData, [{reply, From, Resp}]};
 handle_event(cast, {stop, Terminator}, ?active, Data0) ->
-    Data1 = do_flush(Data0),
-    {next_state, ?terminating, maybe_report_empty(Data1#data{terminator = Terminator})};
+    % ct:print("aggregator stop: ~p~n", [Terminator]),
+    Data1 = flush_buffers(Data0),
+    {next_state, ?terminating, Data1#data{terminator = Terminator}, [{next_event, internal, check_buffers_empty}]};
 handle_event(
     info,
     {write_result, #batch{shard_id = ShardId} = Batch, Result},
     ?active,
     Data
 ) ->
-    {keep_state, maybe_report_empty(handle_write_result(Data, ShardId, Batch, Result, true))};
+    % ct:print("aggregator write_result: ~p~n", [Result]),
+    {keep_state, handle_write_result(Data, ShardId, Batch, Result, true)};
 handle_event(info, {shard_buffer_event, ShardId, Message}, ?active, Data) ->
-    {keep_state, maybe_report_empty(handle_shard_buffer_event(Data, ShardId, Message, true))};
+    {keep_state, handle_shard_buffer_event(Data, ShardId, Message, true)};
+handle_event(cast, stream_updated, ?active, Data0) ->
+    Data1 = drop_buffers(Data0, ?ERROR_STREAM_CHANGED),
+    {next_state, ?invalidating, Data1, [{next_event, internal, check_buffers_empty}]};
+
 %% Fallbacks
 
 handle_event({call, From}, Request, _State, _Data) ->
+    % ct:print("aggregator unexpected call: ~p~n", [Request]),
     {keep_state_and_data, [{reply, From, {error, {unknown_call, Request}}}]};
 handle_event(info, _Request, _State, _Data) ->
+    % ct:print("aggregator unexpected info: ~p~n", [_Request]),
     keep_state_and_data;
 handle_event(cast, _Request, _State, _Data) ->
+    % ct:print("aggregator unexpected cast: ~p~n", [_Request]),
     keep_state_and_data.
 
 terminate(_Reason, _State, _Data) ->
@@ -446,6 +493,19 @@ with_shard_buffer(
             {{error, shard_not_found}, Data0}
     end.
 
+map_buffers(Data = #data{
+    buffers = Buffers
+}, Fun) ->
+    lists:foldl(
+        fun(ShardId, Data0) ->
+            {Buffer0, Data1} = get_shard_buffer(ShardId, Data0),
+            Buffer1 = Fun(Buffer0),
+            set_shard_buffer(ShardId, Buffer1, Data1)
+        end,
+        Data,
+        maps:keys(Buffers)
+    ).
+
 do_append(PartitioningKey, BufferRecords, NeedFlush, Data) ->
     with_shard_buffer(
         PartitioningKey,
@@ -474,6 +534,7 @@ write(ShardId, #{batch_ref := Ref, tab := Tab}, #data{
         req_ref = ReqRef,
         compression_type = CompressionType
     },
+    % ct:print("aggregator write: ~p~n", [Batch]),
     ok = ecpool:with_client(
         WriterName,
         fun(WriterPid) ->
@@ -482,20 +543,11 @@ write(ShardId, #{batch_ref := Ref, tab := Tab}, #data{
     ),
     ReqRef.
 
-do_flush(
-    Data = #data{
-        buffers = Buffers
-    }
-) ->
-    lists:foldl(
-        fun(ShardId, St0) ->
-            {Buffer0, St1} = get_shard_buffer(ShardId, St0),
-            Buffer1 = hstreamdb_buffer:flush(Buffer0),
-            set_shard_buffer(ShardId, Buffer1, St1)
-        end,
-        Data,
-        maps:keys(Buffers)
-    ).
+flush_buffers(Data) ->
+    map_buffers(Data, fun(Buffer) -> hstreamdb_buffer:flush(Buffer) end).
+
+drop_buffers(Data, Reason) ->
+    map_buffers(Data, fun(Buffer) -> hstreamdb_buffer:drop(Buffer, Reason) end).
 
 handle_write_result(
     Data0,
@@ -512,17 +564,6 @@ handle_shard_buffer_event(Data0, ShardId, Event, MayRetry) ->
     {Buffer0, Data1} = get_shard_buffer(ShardId, Data0),
     Buffer1 = hstreamdb_buffer:handle_event(Buffer0, Event, MayRetry),
     set_shard_buffer(ShardId, Buffer1, Data1).
-
-maybe_report_empty(#data{terminator = undefined} = Data) ->
-    Data;
-maybe_report_empty(#data{terminator = Terminator} = Data) ->
-    case are_all_buffers_empty(Data) of
-        true ->
-            erlang:send(Terminator, {empty, Terminator}),
-            Data;
-        false ->
-            Data
-    end.
 
 are_all_buffers_empty(#data{buffers = Buffers}) ->
     lists:all(

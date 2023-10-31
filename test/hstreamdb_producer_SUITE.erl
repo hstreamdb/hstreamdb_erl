@@ -17,7 +17,7 @@
         {producer_result, {{flush, ?STREAM, 1}, Result}} ->
             ok
     after 2000 ->
-        ct:fail("producer result not received")
+        ct:fail("producer result not received, inbox: ~p", [hstreamdb_test_helpers:drain_inbox()])
     end
 end).
 

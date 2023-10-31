@@ -22,7 +22,9 @@
     new/1,
     append/2,
     flush/1,
+    drop/2,
     is_empty/1,
+
     to_buffer_records/1,
     to_buffer_records/3,
     deadline/1,
@@ -182,6 +184,17 @@ flush(Buffer0) ->
     Buffer3 = maybe_send_batch(Buffer2),
     reschedule_flush(Buffer3).
 
+%% Drop all the batches except the inflight one
+-spec drop(hstreamdb_buffer(), term()) -> hstreamdb_buffer().
+drop(Buffer0, Reason) ->
+    Buffer1 = cancel_timer(flush_timer, Buffer0),
+    #{batch_queue := Queue} = Buffer2 = store_current_batch(Buffer1),
+    Buffer3 = send_responses_to_batches(Buffer2, queue:to_list(Queue), {error, Reason}),
+    Buffer3#{
+        batch_queue := queue:new(),
+        batch_count := 0
+    }.
+
 -spec handle_event(hstreamdb_buffer(), timeout_event(), boolean()) -> hstreamdb_buffer().
 %% Flush event
 handle_event(Buffer, flush, _MayRetry) ->
@@ -312,6 +325,12 @@ send_after(TimerName, #{send_after := SendAfterFun} = Buffer, Timeout, Message) 
     maps:put(TimerName, Ref, Buffer).
 
 %%
+
+send_responses_to_batches(Buffer, [], _Response) ->
+    Buffer;
+send_responses_to_batches(Buffer0, [BatchRef | BatchRefs], Response) ->
+    Buffer1 = send_responses(Buffer0, BatchRef, Response),
+    send_responses_to_batches(Buffer1, BatchRefs, Response).
 
 send_responses(#{batch_tab := BatchTab} = Buffer, BatchRef, Response) ->
     Now = erlang:monotonic_time(millisecond),

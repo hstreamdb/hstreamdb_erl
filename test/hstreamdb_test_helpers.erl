@@ -49,6 +49,14 @@ client(Name, Opts) ->
     {ok, Client} = hstreamdb_client:start(Name, maps:merge(?CLIENT_OPTIONS, Opts)),
     Client.
 
+drain_inbox() ->
+    receive
+        Message ->
+            drain_inbox() ++ [Message]
+    after 0 ->
+        []
+    end.
+
 %%-------------------------------------------------------------------------------
 %% Toxiproxy utils
 %%-------------------------------------------------------------------------------
