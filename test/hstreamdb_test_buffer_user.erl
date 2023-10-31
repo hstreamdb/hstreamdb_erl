@@ -92,7 +92,7 @@ handle_cast(flush, #st{buffer = Buffer} = St) ->
     {noreply, St#st{buffer = NewBuffer}}.
 
 handle_info({buffer_event, Event}, #st{buffer = Buffer} = St) ->
-    NewBuffer = hstreamdb_buffer:handle_event(Buffer, Event),
+    NewBuffer = hstreamdb_buffer:handle_event(Buffer, Event, true),
     {noreply, St#st{buffer = NewBuffer}};
 handle_info({send_batch, ReqRef, #{batch_ref := Ref}}, #st{buffer = Buffer, tab = Tab} = St) ->
     case need_lose_batch() of
@@ -102,7 +102,7 @@ handle_info({send_batch, ReqRef, #{batch_ref := Ref}}, #st{buffer = Buffer, tab 
             [{_, Batch}] = ets:lookup(Tab, Ref),
             Responses = lists:map(fun(_) -> ok end, Batch),
             NewBuffer = hstreamdb_buffer:handle_batch_response(
-                Buffer, ReqRef, {ok, Responses}
+                Buffer, ReqRef, {ok, Responses}, true
             ),
             {noreply, St#st{buffer = NewBuffer}}
     end.

@@ -30,8 +30,8 @@
 ]).
 
 -export([
-    handle_event/2,
-    handle_batch_response/3
+    handle_event/3,
+    handle_batch_response/4
 ]).
 
 -export_type([hstreamdb_buffer/0, options/0]).
@@ -182,29 +182,29 @@ flush(Buffer0) ->
     Buffer3 = maybe_send_batch(Buffer2),
     reschedule_flush(Buffer3).
 
--spec handle_event(hstreamdb_buffer(), timeout_event()) -> hstreamdb_buffer().
+-spec handle_event(hstreamdb_buffer(), timeout_event(), boolean()) -> hstreamdb_buffer().
 %% Flush event
-handle_event(Buffer, flush) ->
+handle_event(Buffer, flush, _MayRetry) ->
     flush(Buffer);
 %% Batch timeout event
-handle_event(#{inflight_batch := {_BatchRef, ReqRef}} = Buffer0, {batch_timeout, ReqRef}) ->
-    handle_batch_response(Buffer0, ReqRef, {error, timeout});
+handle_event(#{inflight_batch := {_BatchRef, ReqRef}} = Buffer0, {batch_timeout, ReqRef}, MayRetry) ->
+    handle_batch_response(Buffer0, ReqRef, {error, timeout}, MayRetry);
 %% May happen due to concurrency
-handle_event(Buffer, {batch_timeout, _ReqRef}) ->
+handle_event(Buffer, {batch_timeout, _ReqRef}, _MayRetry) ->
     Buffer;
 %% Batch Retry event
-handle_event(#{inflight_batch := {_BatchRef, ReqRef}} = Buffer, {retry, ReqRef}) ->
+handle_event(#{inflight_batch := {_BatchRef, ReqRef}} = Buffer, {retry, ReqRef}, _MayRetry) ->
     resend_batch(Buffer);
 %% May happen due to concurrency
-handle_event(Buffer, {retry, _ReqRef}) ->
+handle_event(Buffer, {retry, _ReqRef}, _MayRetry) ->
     Buffer.
 
--spec handle_batch_response(hstreamdb_buffer(), req_ref(), term()) ->
+-spec handle_batch_response(hstreamdb_buffer(), req_ref(), term(), boolean()) ->
     hstreamdb_buffer().
 handle_batch_response(
-    #{inflight_batch := {BatchRef, ReqRef}} = Buffer0, ReqRef, Response
+    #{inflight_batch := {BatchRef, ReqRef}} = Buffer0, ReqRef, Response, MayRetry
 ) ->
-    case need_retry(Buffer0, Response) of
+    case need_retry(Buffer0, Response, MayRetry) of
         true ->
             % ct:print("need_retry true: ~p~n", [Buffer0]),
             wait_for_retry(Buffer0);
@@ -215,7 +215,7 @@ handle_batch_response(
             maybe_send_batch(Buffer2#{inflight_batch => undefined})
     end;
 %% Late response, the batch has been reaped or resent
-handle_batch_response(Buffer, _ReqRef, _Response) ->
+handle_batch_response(Buffer, _ReqRef, _Response, _MayRetry) ->
     Buffer.
 
 -spec is_empty(hstreamdb_buffer()) -> boolean().
@@ -258,13 +258,17 @@ data(#{data := Data}) ->
 
 is_transient_error({error, _}) -> true.
 
-need_retry(#{retry_state := undefined, max_retries := MaxRetries}, {error, _}) ->
-    MaxRetries > 1;
-need_retry(#{retry_state := {_Backoff, RetriesLeft}} = _Buffer, {error, _}) when RetriesLeft =< 0 ->
+need_retry(_Buffer, _Response, _MayRetry = false) ->
     false;
-need_retry(_Buffer, {error, _} = Error) ->
+need_retry(#{retry_state := undefined, max_retries := MaxRetries}, {error, _}, _MayRetry = true) ->
+    MaxRetries > 1;
+need_retry(#{retry_state := {_Backoff, RetriesLeft}} = _Buffer, {error, _}, _MayRetry = true) when
+    RetriesLeft =< 0
+->
+    false;
+need_retry(_Buffer, {error, _} = Error, _MayRetry = true) ->
     is_transient_error(Error);
-need_retry(_Buffer, {ok, _}) ->
+need_retry(_Buffer, {ok, _}, _MayRetry = true) ->
     false.
 
 wait_for_retry(#{retry_state := undefined} = Buffer) ->

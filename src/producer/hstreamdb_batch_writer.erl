@@ -210,7 +210,6 @@ do_write(
                     Res = fill_responses(Resps, RecordsIds),
                     {{ok, Res}, State};
                 {error, Reason} = Error ->
-                    %% Different error types?
                     hstreamdb_discovery:report_shard_unavailable(Name, Version, ShardId, Reason),
                     {Error, State}
             catch

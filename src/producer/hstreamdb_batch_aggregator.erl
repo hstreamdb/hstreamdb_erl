@@ -504,12 +504,12 @@ handle_write_result(
     Result
 ) ->
     {Buffer0, Data1} = get_shard_buffer(ShardId, Data0),
-    Buffer1 = hstreamdb_buffer:handle_batch_response(Buffer0, ReqRef, Result),
+    Buffer1 = hstreamdb_buffer:handle_batch_response(Buffer0, ReqRef, Result, true  ),
     set_shard_buffer(ShardId, Buffer1, Data1).
 
 handle_shard_buffer_event(Data0, ShardId, Event) ->
     {Buffer0, Data1} = get_shard_buffer(ShardId, Data0),
-    Buffer1 = hstreamdb_buffer:handle_event(Buffer0, Event),
+    Buffer1 = hstreamdb_buffer:handle_event(Buffer0, Event, true),
     set_shard_buffer(ShardId, Buffer1, Data1).
 
 maybe_report_empty(#data{terminator = undefined} = Data) ->
