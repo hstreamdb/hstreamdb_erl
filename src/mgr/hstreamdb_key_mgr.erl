@@ -40,14 +40,9 @@
 }.
 
 -type compiled_shards() :: tuple().
--type shard_id() :: integer().
+-type shard_id() :: hstreamdb_client:shard_id().
 
--type shard_info() :: #{
-    isActive := _,
-    startHashRangeKey := _,
-    endHashRangeKey := _,
-    shardId := _
-}.
+-type shard_info() :: hstreamdb_client:shard().
 
 %%--------------------------------------------------------------------
 %% API
@@ -67,7 +62,9 @@ choose_shard(#{shards := Shards}, PartitioningKey) ->
 -spec update_shards(hstreamdb:client(), t()) ->
     {ok, t()} | {error, term()}.
 update_shards(Client, #{stream := StreamName} = KeyM) ->
-    case list_shards(Client, StreamName) of
+    Result = list_shards(Client, StreamName),
+    ?LOG_INFO("[hstreamdb] fetch shards for stream ~p:~n~p~n", [StreamName, Result]),
+    case Result of
         {ok, Shards} ->
             NewKeyM = set_shards(KeyM, Shards),
             {ok, NewKeyM};
@@ -141,12 +138,13 @@ bsearch(Shards, IntHash, From, To) ->
             bsearch(Shards, IntHash, Med + 1, To)
     end.
 
+-spec list_shards(hstreamdb:client(), hstreamdb:stream()) ->
+    {ok, [shard_info()]} | {error, term()}.
 list_shards(Client, StreamName) ->
     case hstreamdb_client:list_shards(Client, StreamName) of
         {ok, []} ->
-            {error, {empty_shards, StreamName}};
+            {error, {cannot_list_shards, {StreamName, no_shards}}};
         {ok, Shards} ->
-            ?LOG_INFO("[hstreamdb] fetched shards for stream ~p:~n~p~n", [StreamName, Shards]),
             {ok, Shards};
         {error, Error} ->
             {error, {cannot_list_shards, {StreamName, Error}}}

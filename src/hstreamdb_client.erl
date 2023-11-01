@@ -77,6 +77,7 @@
     stream/0,
     partitioning_key/0,
     shard_id/0,
+    shard/0,
 
     hrecord/0,
     hrecord_req/0,
@@ -118,7 +119,8 @@
 -type shard() :: #{
     shardId := shard_id(),
     startHashRangeKey := binary(),
-    endHashRangeKey := binary()
+    endHashRangeKey := binary(),
+    isActive := boolean()
 }.
 
 -type hrecord_attributes() :: #{}.
