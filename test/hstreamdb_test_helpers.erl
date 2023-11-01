@@ -16,6 +16,8 @@
 
 -module(hstreamdb_test_helpers).
 
+-include_lib("kernel/include/logger.hrl").
+
 -compile(export_all).
 -compile(nowarn_export_all).
 
@@ -39,8 +41,11 @@ test_cases(Mod) ->
         string:slice(atom_to_list(F), 0, 2) == "t_"
     ].
 
-default_options() ->
+default_client_options() ->
     ?CLIENT_OPTIONS.
+
+client_options(ClientOptions) ->
+    maps:merge(?CLIENT_OPTIONS, ClientOptions).
 
 client(Name) ->
     client(Name, #{}).
@@ -114,7 +119,7 @@ switch_proxy(Switch, Name, ProxyHost, ProxyPort) ->
             on -> #{<<"enabled">> => true}
         end,
     BodyBin = json_encode(Body),
-    ct:print("switch_proxy, url: ~p, body: ~p~n", [Url, BodyBin]),
+    ?LOG_DEBUG("[hstreamdb] switch_proxy, url: ~p, body: ~p~n", [Url, BodyBin]),
     {ok, {{_, 200, _}, _, _}} = httpc:request(
         post,
         {Url, [], "application/json", BodyBin},

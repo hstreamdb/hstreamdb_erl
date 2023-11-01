@@ -16,6 +16,8 @@
 
 -module(hstreamdb_key_mgr).
 
+-include_lib("kernel/include/logger.hrl").
+
 -export([
     create/1,
     choose_shard/2,
@@ -141,8 +143,10 @@ bsearch(Shards, IntHash, From, To) ->
 
 list_shards(Client, StreamName) ->
     case hstreamdb_client:list_shards(Client, StreamName) of
+        {ok, []} ->
+            {error, {empty_shards, StreamName}};
         {ok, Shards} ->
-            logger:info("[hstreamdb] fetched shards for stream ~p: ~p~n", [StreamName, Shards]),
+            ?LOG_INFO("[hstreamdb] fetched shards for stream ~p:~n~p~n", [StreamName, Shards]),
             {ok, Shards};
         {error, Error} ->
             {error, {cannot_list_shards, {StreamName, Error}}}

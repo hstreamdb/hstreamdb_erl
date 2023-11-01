@@ -33,15 +33,13 @@ end_per_suite(_Config) ->
     _ = application:stop(hstreamdb_erl),
     ok.
 
-init_per_testcase(TestCase, Config) ->
+init_per_testcase(_TestCase, Config) ->
     Client = hstreamdb_test_helpers:client(test_c),
     _ = hstreamdb_client:delete_stream(Client, ?STREAM),
     ok = hstreamdb_client:create_stream(Client, ?STREAM, 2, ?DAY, 5),
     _ = snabbkaffe:start_trace(),
-    reset_proxy(TestCase),
     [{producer_name, test_producer}, {client, Client} | Config].
-end_per_testcase(TestCase, Config) ->
-    reset_proxy(TestCase),
+end_per_testcase(_TestCase, Config) ->
     _ = snabbkaffe:stop(),
     try
         hstreamdb:stop_producer(?config(producer_name, Config))
@@ -53,9 +51,6 @@ end_per_testcase(TestCase, Config) ->
     _ = hstreamdb_client:delete_stream(Client, ?STREAM),
     _ = hstreamdb_client:stop(Client),
     ok.
-
-reset_proxy(t_append_with_errors) -> hstreamdb_test_helpers:reset_proxy();
-reset_proxy(_) -> ok.
 
 t_start_stop(Config) ->
     ProducerOptions = #{},
@@ -292,31 +287,8 @@ t_append_flush(Config) ->
     ).
 
 t_append_with_errors(Config) ->
-    ClientOptions0 = hstreamdb_test_helpers:default_options(),
-    ClientOptions1 = ClientOptions0#{
-        grpc_timeout => 100
-    },
-    ProducerOptions = #{
-        client_options => ClientOptions1,
-        buffer_pool_size => 1,
-        buffer_options => #{
-            max_records => 2,
-            max_batches => 100,
-            interval => 100,
-            batch_max_retries => 10,
-            backoff_options => {100, 100, 2},
-            batch_reap_timeout => 100000
-        },
-        discovery_options => #{
-            backoff_options => {100, 100, 2}
-        },
-        writer_options => #{
-            grpc_timeout => 500
-        }
-    },
-
     ?assertWaitEvent(
-        ok = start_producer(Config, ProducerOptions),
+        ok = start_producer(Config, producer_quick_recover_options()),
         #{?snk_kind := batch_aggregator_discovered},
         5000
     ),
@@ -330,13 +302,107 @@ t_append_with_errors(Config) ->
                 end,
                 lists:seq(1, 5)
             ),
-            ct:print("append done~n"),
-            timer:sleep(1000),
-            ct:print("sleep done~n")
+            timer:sleep(1000)
         end
     ),
     timer:sleep(2000),
     assert_ok_flush_result(5).
+
+t_append_sync_errors(Config) ->
+    ?assertWaitEvent(
+        ok = start_producer(Config, producer_quick_recover_options()),
+        #{?snk_kind := batch_aggregator_discovered},
+        5000
+    ),
+
+    Caller = self(),
+
+    hstreamdb_test_helpers:with_failures(
+        [{down, "hserver0"}, {down, "hserver1"}],
+        fun() ->
+            lists:foreach(
+                fun(_) ->
+                    spawn_link(fun() ->
+                        Caller ! {result, hstreamdb:append_sync(producer(Config), sample_record())}
+                    end)
+                end,
+                lists:seq(1, 5)
+            ),
+            timer:sleep(1000)
+        end
+    ),
+    timer:sleep(2000),
+    lists:foreach(
+        fun(_) ->
+            ?assertReceived({result, {ok, _}})
+        end,
+        lists:seq(1, 5)
+    ).
+
+t_append_with_timeouts(Config) ->
+    ?assertWaitEvent(
+        ok = start_producer(Config, producer_quick_recover_options()),
+        #{?snk_kind := batch_aggregator_discovered},
+        5000
+    ),
+
+    hstreamdb_test_helpers:with_failures(
+        [{timeout, "hserver0"}, {timeout, "hserver1"}],
+        fun() ->
+            lists:foreach(
+                fun(_) ->
+                    ok = hstreamdb:append(producer(Config), sample_record())
+                end,
+                lists:seq(1, 5)
+            ),
+            timer:sleep(1000)
+        end
+    ),
+    timer:sleep(2000),
+    assert_ok_flush_result(5).
+
+t_append_unavailable_from_start(Config) ->
+    hstreamdb_test_helpers:with_failures(
+        [{down, "hserver0"}, {down, "hserver1"}],
+        fun() ->
+            ok = start_producer(Config, producer_quick_recover_options()),
+            lists:foreach(
+                fun(_) ->
+                    ok = hstreamdb:append(producer(Config), sample_record())
+                end,
+                lists:seq(1, 5)
+            ),
+            timer:sleep(1000)
+        end
+    ),
+    timer:sleep(2000),
+    assert_ok_flush_result(5).
+
+t_append_sync_unavailable_from_start(Config) ->
+    Caller = self(),
+    hstreamdb_test_helpers:with_failures(
+        [{down, "hserver0"}, {down, "hserver1"}],
+        fun() ->
+            ok = start_producer(Config, producer_quick_recover_options()),
+
+            lists:foreach(
+                fun(_) ->
+                    spawn_link(fun() ->
+                        Caller ! {result, hstreamdb:append_sync(producer(Config), sample_record())}
+                    end)
+                end,
+                lists:seq(1, 5)
+            ),
+            timer:sleep(1000)
+        end
+    ),
+    timer:sleep(2000),
+    lists:foreach(
+        fun(_) ->
+            ?assertReceived({result, {ok, _}})
+        end,
+        lists:seq(1, 5)
+    ).
 
 t_append_sync(Config) ->
     ProducerOptions = #{
@@ -551,11 +617,34 @@ t_producer_start_legacy(Config) ->
 %% Helper functions
 %%--------------------------------------------------------------------
 
+producer_quick_recover_options() ->
+    ClientOptions = hstreamdb_test_helpers:client_options(#{
+        grpc_timeout => 100
+    }),
+    #{
+        client_options => ClientOptions,
+        buffer_pool_size => 1,
+        buffer_options => #{
+            max_records => 2,
+            max_batches => 100,
+            interval => 100,
+            batch_max_retries => 10,
+            backoff_options => {100, 100, 2},
+            batch_reap_timeout => 100000
+        },
+        discovery_options => #{
+            backoff_options => {100, 100, 2}
+        },
+        writer_options => #{
+            grpc_timeout => 500
+        }
+    }.
+
 start_producer(Config, Options) ->
     BufferOptions0 = maps:get(buffer_options, Options, #{}),
     BufferOptions = maps:merge(#{callback => callback()}, BufferOptions0),
     Options0 = #{
-        client_options => hstreamdb_test_helpers:default_options(),
+        client_options => hstreamdb_test_helpers:default_client_options(),
         stream => ?STREAM
     },
     Options1 = maps:merge(Options0, Options),

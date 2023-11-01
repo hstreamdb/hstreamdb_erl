@@ -17,6 +17,8 @@
 -module(hstreamdb_discovery).
 
 -include("hstreamdb.hrl").
+-include_lib("snabbkaffe/include/snabbkaffe.hrl").
+-include_lib("kernel/include/logger.hrl").
 
 -behaviour(gen_statem).
 
@@ -90,11 +92,11 @@
 -define(active, active).
 
 -define(next_state(STATE, DATA), begin
-    ct:print("hstreamdb_discovery: next state: ~p", [STATE]),
+    ?tp(debug, hstreamdb_discovery_next_state, #{state => STATE}),
     {next_state, STATE, DATA}
 end).
 -define(next_state(STATE, DATA, ACTIONS), begin
-    ct:print("hstreamdb_discovery: next state: ~p~nactions: ~p", [STATE, ACTIONS]),
+    ?tp(debug, hstreamdb_discovery_next_state, #{state => STATE, actions => ACTIONS}),
     {next_state, STATE, DATA, ACTIONS}
 end).
 
@@ -112,13 +114,7 @@ start_link(#{name := Name} = Options) ->
 
 -spec report_shard_unavailable(name(), version(), hstreamdb_client:shard_id(), term()) -> ok.
 report_shard_unavailable(Name, Version, ShardId, Error) ->
-    % ct:print(
-    %     "hstreamdb_discovery: report shard unavailable, name: ~p, version: ~p, shard_id: ~p, error: ~p",
-    %     [
-    %         Name, Version, ShardId, Error
-    %     ]
-    % ),
-    logger:error("[hstreamdb] Shard ~p is unavailable for stream ~p, version ~p, error: ~p", [
+    ?LOG_ERROR("[hstreamdb] discovery, shard ~p is unavailable for stream ~p, version ~p,~nerror: ~p", [
         ShardId, Name, Version, Error
     ]),
     hstreamdb_error:requires_rediscovery(Error) andalso
@@ -169,7 +165,6 @@ init([Options]) ->
                 on_terminate => OnTerminate
             },
             ok = run_callbacks(on_init, [Name], Data),
-            % ct:print("hstreamdb_discovery discovery started"),
             {ok, ?discovering(backoff(Data)), Data, [{state_timeout, 0, discover}]};
         {error, Reason} ->
             {stop, Reason}
@@ -196,10 +191,9 @@ handle_event(state_timeout, discover, ?discovering(Backoff0), #{stream := Stream
                 shard_client_manager => ShardClientManager,
                 version => Version
             },
-            % ct:print("hstreamdb_discovery discovery succeeded"),
             ?next_state(?active, Data1);
         {error, Reason} ->
-            logger:error("[hstreamdb] Failed to update shards for stream ~p: ~p", [Stream, Reason]),
+            ?LOG_ERROR("[hstreamdb] discovery, failed to update shards for stream ~p: ~p", [Stream, Reason]),
             {Delay, Backoff1} = hstreamdb_backoff:next_delay(Backoff0),
             ?next_state(?discovering(Backoff1), Data0, [{state_timeout, Delay, discover}])
     end;
@@ -358,10 +352,7 @@ safe_call(Name, Fun, Args) ->
         apply(Fun, Args)
     catch
         Error:Reason:Stacktrace ->
-            % ct:print("hstreamdb_discovery callback ~p failed: ~p", [
-            %     Name, {Error, Reason, Stacktrace}
-            % ]),
-            logger:error("[hstreamdb] Failed to call discovery callback ~p: ~p", [
+            ?LOG_ERROR("[hstreamdb] discovery, failed to call discovery callback ~p: ~p", [
                 Name, {Error, Reason, Stacktrace}
             ])
     end,

@@ -17,6 +17,8 @@
 -module(hstreamdb_buffer).
 
 -include("hstreamdb.hrl").
+-include("errors.hrl").
+-include_lib("kernel/include/logger.hrl").
 
 -export([
     new/1,
@@ -126,7 +128,6 @@ new(
         send_reply := SendReply
     } = Options
 ) ->
-    % ct:print("new: ~p~n", [Options]),
     #{
         flush_interval => FlushInterval,
         batch_timeout => BatchTimeout,
@@ -201,7 +202,7 @@ handle_event(Buffer, flush, _MayRetry) ->
     flush(Buffer);
 %% Batch timeout event
 handle_event(#{inflight_batch := {_BatchRef, ReqRef}} = Buffer0, {batch_timeout, ReqRef}, MayRetry) ->
-    handle_batch_response(Buffer0, ReqRef, {error, timeout}, MayRetry);
+    handle_batch_response(Buffer0, ReqRef, {error, ?ERROR_TIMEOUT}, MayRetry);
 %% May happen due to concurrency
 handle_event(Buffer, {batch_timeout, _ReqRef}, _MayRetry) ->
     Buffer;
@@ -219,14 +220,18 @@ handle_batch_response(
 ) ->
     case need_retry(Buffer0, Response, MayRetry) of
         true ->
-            ct:print("need_retry true~nBuffer: ~p~nResponse: ~p~nMayRetry: ~p~n", [
-                maps:with([retry_state, backoff_options, max_retries], Buffer0),
-                Response,
-                MayRetry
-            ]),
+            ?LOG_DEBUG(
+                "[hstreamdb] buffer, handle_batch_response, need_retry=true,~n"
+                "response: ~p,~nmay_retry: ~p, retry context: ~p",
+                [Response, MayRetry, retry_context(Buffer0)]
+            ),
             wait_for_retry(Buffer0);
         false ->
-            % ct:print("need_retry false~nBuffer: ~p~nResponse: ~p~nMayRetry: ~p~n", [Buffer0, Response, MayRetry]),
+            ?LOG_DEBUG(
+                "[hstreamdb] buffer, handle_batch_response, need_retry=false,~n"
+                "response: ~p,~nmay_retry: ~p, retry context: ~p",
+                [Response, MayRetry, retry_context(Buffer0)]
+            ),
             Buffer1 = send_responses(Buffer0, BatchRef, Response),
             Buffer2 = retry_deinit(Buffer1),
             maybe_send_batch(Buffer2#{inflight_batch => undefined})
@@ -540,5 +545,15 @@ apply_reply_fun(Fun, Args) ->
         apply(Fun, Args)
     catch
         Error:Reason ->
-            logger:warning("[hstreamdb]: Error in reply function: ~p:~p, ~p", [Error, Reason])
+            ?LOG_WARNING("[hstreamdb]: Error in reply function: ~p:~p", [Error, Reason])
     end.
+
+retry_context(Buffer) ->
+    maps:with(
+        [
+            retry_state,
+            max_retries,
+            backoff_options
+        ],
+        Buffer
+    ).

@@ -35,7 +35,7 @@ t_stop_client_by_name(_Config) ->
     ).
 
 t_start_client_error(_Config) ->
-    ClientOptions = hstreamdb_test_helpers:default_options(),
+    ClientOptions = hstreamdb_test_helpers:default_client_options(),
 
     ?assertMatch(
         {error, _},
@@ -86,7 +86,7 @@ t_start_stop_producer(Config) ->
     _ = hstreamdb_client:create_stream(Client, "stream2", 2, ?DAY, 5),
 
     ProducerOptions = #{
-        client_options => hstreamdb_test_helpers:default_options(),
+        client_options => hstreamdb_test_helpers:default_client_options(),
         stream => "stream2",
         buffer_pool_size => 4,
         buffer_options => #{

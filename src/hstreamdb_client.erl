@@ -272,16 +272,16 @@ connect(
                     ok ->
                         ok;
                     {error, Reason} ->
-                        logger:error(
-                            "[hstreamdb] ping new connection failed: ~p, url: ~p, channel: ~p~n",
+                        ?LOG_ERROR(
+                            "[hstreamdb] ping new connection failed: ~p,~nurl: ~p, channel: ~p~n",
                             [Reason, uri_string:recompose(URLMap), ChannelName]
                         ),
                         _ = stop(Client),
                         connect(Client, Rest)
                 end;
             {error, Reason} ->
-                logger:error(
-                    "[hstreamdb] start new connection failed: ~p, url: ~p, channel: ~p~n",
+                ?LOG_ERROR(
+                    "[hstreamdb] start new connection failed: ~p,~nurl: ~p, channel: ~p~n",
                     [Reason, uri_string:recompose(URLMap), ChannelName]
                 ),
                 _ = stop(Client),
@@ -289,8 +289,8 @@ connect(
         end
     catch
         Class:CrashReason ->
-            logger:error(
-                "[hstreamdb] start new connection crashed: ~p, url: ~p, channel: ~p~n",
+            ?LOG_ERROR(
+                "[hstreamdb] start new connection crashed: ~p,~nurl: ~p, channel: ~p~n",
                 [Class, CrashReason, uri_string:recompose(URLMap), ChannelName]
             ),
             _ = stop(Client),
@@ -519,7 +519,7 @@ do_list_shards(#{channel := Channel, grpc_timeout := Timeout}, StreamName) ->
     Options = #{channel => Channel, timeout => Timeout},
     case ?HSTREAMDB_GEN_CLIENT:list_shards(Req, Options) of
         {ok, #{shards := Shards}, _} ->
-            logger:info("[hstreamdb] fetched shards for stream ~p: ~p~n", [StreamName, Shards]),
+            ?LOG_INFO("[hstreamdb] fetched shards for stream ~p:~n~p", [StreamName, Shards]),
             {ok, Shards};
         {error, _} = Error ->
             Error
@@ -546,20 +546,20 @@ do_append(
             Options = maps:merge(#{channel => Channel, timeout => Timeout}, OptionOverrides),
             case timer:tc(fun() -> ?HSTREAMDB_GEN_CLIENT:append(NReq, Options) end) of
                 {Time, {ok, Resp, _MetaData}} ->
-                    logger:info(
-                        "[hstreamdb] flush_request[~p, ~p], pid=~p, SUCCESS, ~p records in ~p ms~n",
+                    ?LOG_INFO(
+                        "[hstreamdb] flush_request[~p, ~p], pid=~p,~nSUCCESS in ~p ms, ~p records",
                         [
-                            Channel, ShardId, self(), length(Records), Time div 1000
+                            Channel, ShardId, self(), Time div 1000, length(Records)
                         ]
                     ),
                     {ok, Resp};
-                {Time, {error, R}} ->
-                    logger:error(
-                        "flush_request[~p, ~p], pid=~p, timeout=~p, ERROR: ~p, in ~p ms~n", [
-                            Channel, ShardId, self(), Timeout, R, Time div 1000
+                {Time, {error, Reason}} ->
+                    ?LOG_ERROR(
+                        "flush_request[~p, ~p], pid=~p, timeout=~p in ~p ms,~nERROR: ~p", [
+                            Channel, ShardId, self(), Timeout, Time div 1000, Reason
                         ]
                     ),
-                    {error, R}
+                    {error, Reason}
             end;
         {error, R} ->
             {error, R}
@@ -604,7 +604,7 @@ do_read_single_shard_stream(
     Limits = maps:get(limits, Opts, #{}),
     Req = maps:merge(Req0, Limits),
     Options = #{channel => Channel, timeout => Timeout},
-    logger:debug("[hstreamdb] read_single_shard: Req: ~p~nOptions: ~p~n", [Req, Options]),
+    ?LOG_DEBUG("[hstreamdb] read_single_shard: Req: ~p~nOptions: ~p~n", [Req, Options]),
     case ?HSTREAMDB_GEN_CLIENT:read_single_shard_stream(Options) of
         {ok, GStream} ->
             ok = grpc_client:send(GStream, Req, fin),
@@ -832,7 +832,6 @@ zstd(Payload) ->
 do_fold_shard_read_gstream(GStream, Fun, Acc) ->
     case grpc_client:recv(GStream) of
         {ok, Results} ->
-            logger:debug("[hstreamdb] Ok recv~n"),
             case fold_results(Results, Fun, Acc) of
                 {ok, NewAcc} ->
                     do_fold_shard_read_gstream(GStream, Fun, NewAcc);
@@ -840,7 +839,6 @@ do_fold_shard_read_gstream(GStream, Fun, Acc) ->
                     {ok, NewAcc}
             end;
         {error, _} = Error ->
-            logger:debug("[hstreamdb] Error recv~n"),
             Error
     end.
 
@@ -867,7 +865,7 @@ fold_batch_records([Record | Rest], Fun, Acc) ->
 
 fold_batch_record(#{record := _, recordIds := [#{batchId := BatchId} | _]} = BatchRecord, Fun, Acc) ->
     Records = decode_batch(BatchRecord),
-    logger:debug("[hstreamdb] BatchRecord, id: ~p, records: ~p~n", [BatchId, length(Records)]),
+    ?LOG_DEBUG("[hstreamdb] fold_batch_record, id: ~p,~nrecords: ~p~n", [BatchId, length(Records)]),
     fold_hstream_records(Records, Fun, Acc).
 
 fold_hstream_records(Records, Fun, Acc) ->

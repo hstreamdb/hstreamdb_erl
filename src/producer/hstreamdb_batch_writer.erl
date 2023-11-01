@@ -18,6 +18,10 @@
 
 -behaviour(gen_server).
 
+-include("errors.hrl").
+-include_lib("kernel/include/logger.hrl").
+-include_lib("snabbkaffe/include/snabbkaffe.hrl").
+
 -export([
     start_link/1,
     stop/1,
@@ -86,8 +90,7 @@ on_init(Name) -> cleanup(Name).
 on_terminate(Name, _Vsn, _KeyManager, _ShardClientMgr) -> cleanup(Name).
 
 on_shards_updated(Name, {OldVsn, _OldKeyMgr, _OldClientMgr}, {NewVsn, NewKeyMgr, NewClientMgr}) ->
-    % ct:print("on_shards_updated, name: ~p, old_vsn: ~p, new_vsn: ~p~n", [Name, OldVsn, NewVsn]),
-    % ct:print("on_shards_updated, NewClientMgr: ~p~n", [NewClientMgr]),
+    ?tp(hstreamdb_batch_writer_on_shards_updated, #{name => Name, old_vsn => OldVsn, new_vsn => NewVsn}),
     {ok, ShardIds} = hstreamdb_key_mgr:shard_ids(NewKeyMgr),
     ok = lists:foreach(
         fun(ShardId) ->
@@ -97,7 +100,6 @@ on_shards_updated(Name, {OldVsn, _OldKeyMgr, _OldClientMgr}, {NewVsn, NewKeyMgr,
         ShardIds
     ),
     true = ets:match_delete(?DISCOVERY_TAB, {?SHARD_CLIENT_KEY(Name, '_'), {OldVsn, '_'}}),
-    % ct:print("discovery tab: ~p", [ets:tab2list(?DISCOVERY_TAB)]),
     ok.
 
 cleanup(Name) ->
@@ -134,11 +136,10 @@ init([Opts]) ->
         grpc_timeout = GRPCTimeout
     }}.
 
-handle_cast({write, #batch{shard_id = ShardId} = Batch, Caller}, State) ->
+handle_cast({write, #batch{shard_id = ShardId, batch_ref = BatchRef} = Batch, Caller}, State) ->
     Records = records(Batch),
-    ct:print("writer, records: ~p~n", [Records]),
     {Result, NState} = do_write(ShardId, Records, Batch, State),
-    ct:print("writer, result: ~p", [Result]),
+    ?LOG_DEBUG("[hstreamdb] producer_batch_writer, batch ref: ~p,~nresult: ~p", [BatchRef, Result]),
     _ = erlang:send(Caller, {write_result, Batch, Result}),
     {noreply, NState}.
 
@@ -171,14 +172,13 @@ prepare_known_resps(Records) ->
         lists:map(
             fun(BufferRecord) ->
                 Deadline = hstreamdb_buffer:deadline(BufferRecord),
-                % ct:print("Now: ~p, BufferRecord: ~p~n", [Now, BufferRecord]),
                 case Deadline of
                     infinity ->
                         {undefined, hstreamdb_buffer:data(BufferRecord)};
                     T when T >= Now ->
                         {undefined, hstreamdb_buffer:data(BufferRecord)};
                     _ ->
-                        {{error, timeout}, undefined}
+                        {{error, ?ERROR_TIMEOUT}, undefined}
                 end
             end,
             Records
@@ -223,7 +223,6 @@ do_write(
                     {{error, Other}, State}
             end;
         not_found ->
-            % ct:print("do_write, not_found, records: ~p~n", [Records]),
             {{error, cannot_resolve_shard_id}, State}
     end.
 

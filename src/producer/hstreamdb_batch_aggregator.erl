@@ -19,6 +19,7 @@
 -include("hstreamdb.hrl").
 -include("errors.hrl").
 -include_lib("snabbkaffe/include/snabbkaffe.hrl").
+-include_lib("kernel/include/logger.hrl").
 
 -behaviour(gen_statem).
 
@@ -135,7 +136,7 @@ on_terminate(Name, _Vsn, _KeyManager, _ShardClientMgr) -> cleanup(Name).
 on_stream_updated(_Name, {_OldVsn, KeyManager}, {_NewVsn, KeyManager}) ->
     ok;
 on_stream_updated(Name, {_OldVsn, _OldKeyManager}, {NewVsn, NewKeyManager}) ->
-    % ct:print("aggregator on_stream_updated: ~p~n", [Name]),
+    ?tp(hstreamdb_batch_aggregator_on_stream_updated, #{name => Name}),
     ok = set_key_manager(Name, NewVsn, NewKeyManager),
     foreach_worker(
         fun(Pid) -> gen_server:cast(Pid, stream_updated) end,
@@ -182,12 +183,12 @@ ecpool_action(Client, Req) ->
 
 -define(next_state(STATE, DATA),
     begin
-        ct:print("hstreamdb_batch_aggregator: next state: ~p", [STATE]),
+        ?tp(debug, hstreamdb_batch_aggregator_next_state, #{state => STATE}),
         {next_state, STATE, DATA}
     end).
 -define(next_state(STATE, DATA, ACTIONS),
     begin
-        ct:print("hstreamdb_batch_aggregator: next state: ~p~nactions: ~p", [STATE, ACTIONS]),
+        ?tp(debug, hstreamdb_batch_aggregator_next_state, #{state => STATE, actions => ACTIONS}),
         {next_state, STATE, DATA, ACTIONS}
     end).
 
@@ -247,7 +248,6 @@ handle_event(state_timeout, discover, ?discovering(Backoff0), #data{name = Name}
         {ok, _Vsn, KeyManager} ->
             Data1 = Data0#data{key_manager = KeyManager},
             Data2 = pour_queue_to_buffers(Data1),
-            % ct:print("aggregator discovered: ~p, ~p~n", [Name, self()]),
             ?tp(batch_aggregator_discovered, #{name => Name}),
             ?next_state(?active, Data2);
         not_found ->
@@ -333,7 +333,6 @@ handle_event(
     {Resp, NData} = do_append(PartitioningKey, BufferRecords, true, Data),
     {keep_state, NData, [{reply, From, Resp}]};
 handle_event(cast, {stop, Terminator}, ?active, Data0) ->
-    % ct:print("aggregator stop: ~p~n", [Terminator]),
     Data1 = flush_buffers(Data0),
     ?next_state(?terminating(Terminator), Data1, [{next_event, internal, check_buffers_empty}]);
 handle_event(
@@ -342,7 +341,6 @@ handle_event(
     ?active,
     Data
 ) ->
-    % ct:print("aggregator write_result: ~p~n", [Result]),
     {keep_state, handle_write_result(Data, ShardId, Batch, Result, true)};
 handle_event(info, {shard_buffer_event, ShardId, Message}, ?active, Data) ->
     {keep_state, handle_shard_buffer_event(Data, ShardId, Message, true)};
@@ -353,13 +351,10 @@ handle_event(cast, stream_updated, ?active, Data0) ->
 %% Fallbacks
 
 handle_event({call, From}, Request, _State, _Data) ->
-    % ct:print("aggregator unexpected call: ~p~n", [Request]),
     {keep_state_and_data, [{reply, From, {error, {unknown_call, Request}}}]};
 handle_event(info, _Request, _State, _Data) ->
-    % ct:print("aggregator unexpected info: ~p~n", [_Request]),
     keep_state_and_data;
 handle_event(cast, _Request, _State, _Data) ->
-    % ct:print("aggregator unexpected cast: ~p~n", [_Request]),
     keep_state_and_data.
 
 terminate(_Reason, _State, _Data) ->
@@ -477,7 +472,7 @@ send_reply(From, Response, Callback, Stream) ->
         AliasRef when is_reference(AliasRef) ->
             erlang:send(AliasRef, {reply, AliasRef, Response});
         _ ->
-            logger:warning("[hstreamdb_batch_aggregator] Unexpected From: ~p", [From])
+            ?LOG_WARNING("[hstreamdb] producer_batch_aggregator: unexpected From: ~p", [From])
     end.
 
 with_shard_buffer(
@@ -542,7 +537,6 @@ write(ShardId, #{batch_ref := Ref, tab := Tab}, #data{
         req_ref = ReqRef,
         compression_type = CompressionType
     },
-    % ct:print("aggregator write: ~p~n", [Batch]),
     ok = ecpool:with_client(
         WriterName,
         fun(WriterPid) ->
