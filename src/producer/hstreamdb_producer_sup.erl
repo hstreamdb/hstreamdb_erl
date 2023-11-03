@@ -43,8 +43,7 @@
 }.
 
 -type discovery_options() :: #{
-    backoff_options := hstreamdb_backoff:options(),
-    min_active_time => non_neg_integer()
+    backoff_options := hstreamdb_backoff:options()
 }.
 
 -type options() :: #{

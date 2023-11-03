@@ -25,6 +25,7 @@
     append/2,
     flush/1,
     drop/2,
+    drop_inflight/2,
     is_empty/1,
 
     to_buffer_records/1,
@@ -195,6 +196,11 @@ drop(Buffer0, Reason) ->
         batch_queue := queue:new(),
         batch_count := 0
     }.
+
+%% Drop the inflight batch
+-spec drop_inflight(hstreamdb_buffer(), term()) -> hstreamdb_buffer().
+drop_inflight(#{inflight_batch := {_BatchRef, ReqRef}} = Buffer, Reason) ->
+    handle_batch_response(Buffer, ReqRef, {error, Reason}, false).
 
 -spec handle_event(hstreamdb_buffer(), timeout_event(), boolean()) -> hstreamdb_buffer().
 %% Flush event
