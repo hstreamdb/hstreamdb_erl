@@ -9,7 +9,7 @@ services:
       hstore:
         condition: service_healthy
     ports:
-      - "127.0.0.1:6570:6570"
+      - 6570:6570
     expose:
       - 6570
     networks:
@@ -45,7 +45,7 @@ services:
       hstore:
         condition: service_healthy
     ports:
-      - "127.0.0.1:6572:6572"
+      - 6572:6572
     expose:
       - 6572
     networks:
@@ -133,6 +133,29 @@ services:
     volumes:
       - data_zk_data:/data
       - data_zk_datalog:/datalog
+
+  toxiproxy:
+    container_name: toxiproxy
+    image: ghcr.io/shopify/toxiproxy:2.5.0
+    restart: always
+    networks:
+      hstream-network:
+        aliases:
+          - toxiproxy
+          - toxiproxy.emqx.net
+        ipv4_address: 10.5.0.50
+    volumes:
+      - "./toxiproxy.json:/config/toxiproxy.json"
+    ports:
+      # Toxiproxy management API
+      - 8474:8474
+      # hserver0
+      - 7570:7570
+      # hserver1
+      - 7572:7572
+    command:
+      - "-host=0.0.0.0"
+      - "-config=/config/toxiproxy.json"
 
 networks:
   hstream-network:

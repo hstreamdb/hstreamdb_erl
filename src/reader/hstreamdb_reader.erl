@@ -51,7 +51,7 @@
 
     reader_client_option_overrides => hstreamdb_client:rpc_options(),
 
-    key_manager_options => hstreamdb_key_mgr:options(),
+    key_manager_options => hstreamdb_auto_key_mgr:options(),
     shard_client_manager_options => hstreamdb_shard_client_mgr:options()
 }.
 
@@ -194,7 +194,7 @@ code_change(_OldVsn, State, _Extra) ->
 do_get_shard_gstream(
     #{key_manager := KeyManager, shard_client_manager := ShardClientManager} = State, Key, Limits
 ) ->
-    case hstreamdb_key_mgr:choose_shard(KeyManager, Key) of
+    case hstreamdb_auto_key_mgr:choose_shard(KeyManager, Key) of
         {ok, ShardId, NewKeyManager} ->
             case hstreamdb_shard_client_mgr:lookup_shard_client(ShardClientManager, ShardId) of
                 {ok, ShardClient, NewClientManager} ->

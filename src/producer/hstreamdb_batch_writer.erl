@@ -18,11 +18,21 @@
 
 -behaviour(gen_server).
 
+-include("errors.hrl").
+-include_lib("kernel/include/logger.hrl").
+-include_lib("snabbkaffe/include/snabbkaffe.hrl").
+
 -export([
     start_link/1,
     stop/1,
     write/2,
     connect/1
+]).
+
+-export([
+    on_shards_updated/3,
+    on_init/1,
+    on_terminate/4
 ]).
 
 -export([
@@ -36,24 +46,14 @@
 
 -export_type([options/0]).
 
-%% Writer need only one channel. Because it is a sync call.
--define(CLIENT_OPTS, #{
-    pool_size => 1
-}).
-
--define(CLIENT_MGR_OPTS, #{
-    cache_by_shard_id => true,
-    client_override_opts => ?CLIENT_OPTS
-}).
-
 -define(DEFAULT_GRPC_TIMEOUT, 30000).
 
 -include("hstreamdb.hrl").
 
 -record(state, {
+    name,
     stream,
-    grpc_timeout,
-    client_manager
+    grpc_timeout
 }).
 
 start_link(Opts) ->
@@ -65,11 +65,12 @@ write(Pid, Batch) ->
 stop(Pid) ->
     gen_server:call(Pid, stop).
 
-%% -------------------------------------------------------------------------------------------------
+%%--------------------------------------------------------------------------------------------------
 %% ecpool part
+%%--------------------------------------------------------------------------------------------------
 
 -type options() :: #{
-    mgr_client_options := hstreamdb_client:options(),
+    name := ecpool:pool_name(),
     stream := hstreamdb:stream(),
     grpc_timeout => non_neg_integer()
 }.
@@ -79,28 +80,67 @@ connect(PoolOptions) ->
     Options = proplists:get_value(opts, PoolOptions),
     start_link(Options).
 
-%% -------------------------------------------------------------------------------------------------
-%% gen_server part
+%%-------------------------------------------------------------------------------------------------
+%% Discovery
+%%-------------------------------------------------------------------------------------------------
+
+-define(SHARD_CLIENT_KEY(NAME, SHARD_ID), {?MODULE, NAME, SHARD_ID}).
+
+on_init(Name) -> cleanup(Name).
+on_terminate(Name, _Vsn, _KeyManager, _ShardClientMgr) -> cleanup(Name).
+
+on_shards_updated(Name, {OldVsn, _OldKeyMgr, _OldClientMgr}, {NewVsn, NewKeyMgr, NewClientMgr}) ->
+    ?tp(hstreamdb_batch_writer_on_shards_updated, #{name => Name, old_vsn => OldVsn, new_vsn => NewVsn}),
+    {ok, ShardIds} = hstreamdb_key_mgr:shard_ids(NewKeyMgr),
+    ok = lists:foreach(
+        fun(ShardId) ->
+            {ok, ShardClient, _ClientMgr} = hstreamdb_shard_client_mgr:lookup_shard_client(NewClientMgr, ShardId),
+            ok = set_shard_client(Name, ShardId, NewVsn, ShardClient)
+        end,
+        ShardIds
+    ),
+    true = ets:match_delete(?DISCOVERY_TAB, {?SHARD_CLIENT_KEY(Name, '_'), {OldVsn, '_'}}),
+    ok.
+
+cleanup(Name) ->
+    true = ets:match_delete(?DISCOVERY_TAB, {?SHARD_CLIENT_KEY(Name, '_'), '_'}),
+    ok.
+
+shard_client(Name, ShardId) ->
+    case ets:lookup(?DISCOVERY_TAB, ?SHARD_CLIENT_KEY(Name, ShardId)) of
+        [] ->
+            not_found;
+        [{_, {Version, ShardClient}}] ->
+            {ok, Version, ShardClient}
+    end.
+
+set_shard_client(Name, ShardId, Version, ShardClient) ->
+    true = ets:insert(?DISCOVERY_TAB, {
+        ?SHARD_CLIENT_KEY(Name, ShardId), {Version, ShardClient}
+    }),
+    ok.
+
+%%-------------------------------------------------------------------------------------------------
+%% gen_server
+%%-------------------------------------------------------------------------------------------------
 
 init([Opts]) ->
     process_flag(trap_exit, true),
-    StreamName = maps:get(stream, Opts),
-    MgrClientOptions = maps:get(mgr_client_options, Opts),
-    GRPCTimeout = maps:get(grpc_timeout, Opts, ?DEFAULT_GRPC_TIMEOUT),
-    case hstreamdb_client:start(MgrClientOptions) of
-        {ok, Client} ->
-            {ok, #state{
-                stream = StreamName,
-                grpc_timeout = GRPCTimeout,
-                client_manager = hstreamdb_shard_client_mgr:start(Client, ?CLIENT_MGR_OPTS)
-            }};
-        {error, _} = Error ->
-            Error
-    end.
 
-handle_cast({write, #batch{shard_id = ShardId, id = BatchId} = Batch, Caller}, State) ->
-    {Result, NState} = do_write(ShardId, records(Batch), Batch, State),
-    _ = erlang:send(Caller, {write_result, ShardId, BatchId, Result}),
+    StreamName = maps:get(stream, Opts),
+    Name = maps:get(name, Opts),
+    GRPCTimeout = maps:get(grpc_timeout, Opts, ?DEFAULT_GRPC_TIMEOUT),
+    {ok, #state{
+        stream = StreamName,
+        name = Name,
+        grpc_timeout = GRPCTimeout
+    }}.
+
+handle_cast({write, #batch{shard_id = ShardId, batch_ref = BatchRef} = Batch, Caller}, State) ->
+    Records = records(Batch),
+    {Result, NState} = do_write(ShardId, Records, Batch, State),
+    ?LOG_DEBUG("[hstreamdb] producer_batch_writer, batch ref: ~p,~nresult: ~p", [BatchRef, Result]),
+    _ = erlang:send(Caller, {write_result, Batch, Result}),
     {noreply, NState}.
 
 handle_call(stop, _From, State) ->
@@ -109,8 +149,7 @@ handle_call(stop, _From, State) ->
 handle_info(_Msg, State) ->
     {noreply, State}.
 
-terminate(_Reason, #state{client_manager = ClientMgr}) ->
-    ok = hstreamdb_shard_client_mgr:stop(ClientMgr),
+terminate(_Reason, _State) ->
     ok.
 
 code_change(_OldVsn, State, _Extra) ->
@@ -119,7 +158,7 @@ code_change(_OldVsn, State, _Extra) ->
 %% -------------------------------------------------------------------------------------------------
 %% internal functions
 
-records(#batch{id = BatchId, tab = Tab}) ->
+records(#batch{batch_ref = BatchId, tab = Tab}) ->
     case ets:lookup(Tab, BatchId) of
         [{_, Records}] ->
             prepare_known_resps(Records);
@@ -131,14 +170,15 @@ prepare_known_resps(Records) ->
     Now = erlang:monotonic_time(millisecond),
     {Resps, Reqs} = lists:unzip(
         lists:map(
-            fun(#{deadline := Deadline, data := Data}) ->
+            fun(BufferRecord) ->
+                Deadline = hstreamdb_buffer:deadline(BufferRecord),
                 case Deadline of
-                    T when T >= Now ->
-                        {undefined, Data};
                     infinity ->
-                        {undefined, Data};
+                        {undefined, hstreamdb_buffer:data(BufferRecord)};
+                    T when T >= Now ->
+                        {undefined, hstreamdb_buffer:data(BufferRecord)};
                     _ ->
-                        {{error, timeout}, undefined}
+                        {{error, ?ERROR_TIMEOUT}, undefined}
                 end
             end,
             Records
@@ -153,13 +193,13 @@ do_write(
     {Resps, Records},
     #batch{compression_type = CompressionType},
     State = #state{
-        client_manager = ClientMgr0,
+        name = Name,
         stream = Stream,
         grpc_timeout = GRPCTimeout
     }
 ) ->
-    case hstreamdb_shard_client_mgr:lookup_shard_client(ClientMgr0, ShardId) of
-        {ok, Client, ClientMgr1} ->
+    case shard_client(Name, ShardId) of
+        {ok, Version, Client} ->
             Req = #{
                 stream_name => Stream,
                 records => Records,
@@ -169,16 +209,21 @@ do_write(
             Options = #{
                 timeout => GRPCTimeout
             },
-            case hstreamdb_client:append(Client, Req, Options) of
+            try hstreamdb_client:append(Client, Req, Options) of
                 {ok, #{recordIds := RecordsIds}} ->
                     Res = fill_responses(Resps, RecordsIds),
-                    {{ok, Res}, State#state{client_manager = ClientMgr1}};
+                    {{ok, Res}, State};
                 {error, _} = Error ->
-                    ClientMgr2 = hstreamdb_shard_client_mgr:bad_shard_client(ClientMgr1, Client),
-                    {Error, State#state{client_manager = ClientMgr2}}
+                    hstreamdb_discovery:report_shard_unavailable(Name, Version, ShardId, Error),
+                    {Error, State}
+            catch
+                error:badarg ->
+                    {{error, cannot_resolve_shard_id}, State};
+                error:Other ->
+                    {{error, Other}, State}
             end;
-        {error, _} = Error ->
-            {Error, State}
+        not_found ->
+            {{error, cannot_resolve_shard_id}, State}
     end.
 
 fill_responses(KnownResps, Ids) ->

@@ -32,13 +32,13 @@ t_lookup_client(Config) ->
     _ = hstreamdb_client:delete_stream(Client, "stream1"),
     ok = hstreamdb_client:create_stream(Client, "stream1", 2, ?DAY, 5),
 
-    KeyMgr0 = hstreamdb_key_mgr:start(Client, "stream1"),
+    KeyMgr0 = hstreamdb_auto_key_mgr:start(Client, "stream1"),
 
     ShardClientMgr0 = hstreamdb_shard_client_mgr:start(Client),
 
     Key = <<"key">>,
 
-    {ok, ShardId, KeyMgr1} = hstreamdb_key_mgr:choose_shard(KeyMgr0, Key),
+    {ok, ShardId, _KeyMgr1} = hstreamdb_auto_key_mgr:choose_shard(KeyMgr0, Key),
 
     {ok, ShardClient0, ShardClientMgr1} = hstreamdb_shard_client_mgr:lookup_shard_client(
         ShardClientMgr0, ShardId
@@ -56,5 +56,4 @@ t_lookup_client(Config) ->
 
     ?assertNotEqual(ShardClient1, ShardClient2),
 
-    ok = hstreamdb_key_mgr:stop(KeyMgr1),
     ok = hstreamdb_shard_client_mgr:stop(ShardClientMgr4).

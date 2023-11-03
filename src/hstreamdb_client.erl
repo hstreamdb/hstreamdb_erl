@@ -26,6 +26,7 @@
     start/2,
     stop/1,
 
+    create/1,
     create/2,
 
     echo/1,
@@ -39,10 +40,11 @@
     append/2,
     append/3,
 
+    connect/1,
     connect/3,
     connect/4,
 
-    connect_next/1,
+    reconnect/1,
 
     lookup_resource/3,
     lookup_key/2,
@@ -75,6 +77,7 @@
     stream/0,
     partitioning_key/0,
     shard_id/0,
+    shard/0,
 
     hrecord/0,
     hrecord_req/0,
@@ -116,7 +119,8 @@
 -type shard() :: #{
     shardId := shard_id(),
     startHashRangeKey := binary(),
-    endHashRangeKey := binary()
+    endHashRangeKey := binary(),
+    isActive := boolean()
 }.
 
 -type hrecord_attributes() :: #{}.
@@ -207,15 +211,19 @@ start(Options) ->
 start(Name, Options) ->
     case create(Name, Options) of
         {ok, Client} ->
-            case connect_next(Client) of
-                {ok, NewClient} ->
-                    {ok, NewClient};
-                {{error, _} = Error, _NewClient} ->
+            case connect(Client) of
+                ok ->
+                    {ok, Client};
+                {error, _} = Error ->
                     Error
             end;
         {error, _} = Error ->
             Error
     end.
+
+-spec create(options()) -> {ok, t()} | {error, term()}.
+create(Options) ->
+    create(random_name(), Options).
 
 -spec create(name(), options()) -> {ok, t()} | {error, term()}.
 create(Name, Options) ->
@@ -240,22 +248,55 @@ create(Name, Options) ->
             Error
     end.
 
--spec connect_next(t()) -> {ok, t()} | {{error, term()}, t()}.
-connect_next(
+-spec reconnect(t()) -> ok | {error, term()}.
+reconnect(Client) ->
+    _ = stop(Client),
+    connect(Client).
+
+-spec connect(t()) -> ok | {error, term()}.
+connect(#{url_maps := UrlMaps} = Client) ->
+    connect(Client, shuffle(UrlMaps)).
+
+connect(_Client, []) ->
+    {error, no_more_urls_to_connect};
+connect(
     #{
         channel := ChannelName,
-        url_maps := [URLMap | Rest],
         rpc_options := RPCOptions,
         reap_channel := ReapChannel
-    } = Client
+    } = Client,
+    [URLMap | Rest]
 ) ->
-    NewUrlMaps = Rest ++ [URLMap],
-    NewClient = Client#{url_maps => NewUrlMaps},
-    case start_channel(ChannelName, URLMap, RPCOptions, ReapChannel) of
-        ok ->
-            {ok, NewClient};
-        {error, Reason} ->
-            {{error, Reason}, NewClient}
+    try
+        case start_channel(ChannelName, URLMap, RPCOptions, ReapChannel) of
+            ok ->
+                case echo(Client) of
+                    ok ->
+                        ok;
+                    {error, Reason} ->
+                        ?LOG_ERROR(
+                            "[hstreamdb] ping new connection failed: ~p,~nurl: ~p, channel: ~p~n",
+                            [Reason, uri_string:recompose(URLMap), ChannelName]
+                        ),
+                        _ = stop(Client),
+                        connect(Client, Rest)
+                end;
+            {error, Reason} ->
+                ?LOG_ERROR(
+                    "[hstreamdb] start new connection failed: ~p,~nurl: ~p, channel: ~p~n",
+                    [Reason, uri_string:recompose(URLMap), ChannelName]
+                ),
+                _ = stop(Client),
+                connect(Client, Rest)
+        end
+    catch
+        Class:CrashReason ->
+            ?LOG_ERROR(
+                "[hstreamdb] start new connection crashed: ~p,~nurl: ~p, channel: ~p~n",
+                [Class, CrashReason, uri_string:recompose(URLMap), ChannelName]
+            ),
+            _ = stop(Client),
+            connect(Client, Rest)
     end.
 
 -spec connect(t(), inet:hostname() | inet:ip_address(), inet:port_number()) ->
@@ -275,14 +316,14 @@ connect(
         grpc_timeout := GRPCTimeout
     } = Client,
     Host0,
-    Port,
+    Port0,
     RPCOptionsOverrides
 ) ->
-    Host1 = map_host(Client, Host0),
-    NewChannelName = new_channel_name(Client, Host1, Port),
+    {Host1, Port1} = map_host(Client, {Host0, Port0}),
+    NewChannelName = new_channel_name(Client, Host1, Port1),
     NewUrlMap = maps:merge(ServerURLMap, #{
         host => Host1,
-        port => Port
+        port => Port1
     }),
     NewRPCOptions = maps:merge(RPCOptions, RPCOptionsOverrides),
     case start_channel(NewChannelName, NewUrlMap, NewRPCOptions, ReapChannel) of
@@ -480,7 +521,7 @@ do_list_shards(#{channel := Channel, grpc_timeout := Timeout}, StreamName) ->
     Options = #{channel => Channel, timeout => Timeout},
     case ?HSTREAMDB_GEN_CLIENT:list_shards(Req, Options) of
         {ok, #{shards := Shards}, _} ->
-            logger:info("[hstreamdb] fetched shards for stream ~p: ~p~n", [StreamName, Shards]),
+            ?LOG_INFO("[hstreamdb] fetched shards for stream ~p:~n~p", [StreamName, Shards]),
             {ok, Shards};
         {error, _} = Error ->
             Error
@@ -507,20 +548,20 @@ do_append(
             Options = maps:merge(#{channel => Channel, timeout => Timeout}, OptionOverrides),
             case timer:tc(fun() -> ?HSTREAMDB_GEN_CLIENT:append(NReq, Options) end) of
                 {Time, {ok, Resp, _MetaData}} ->
-                    logger:info(
-                        "[hstreamdb] flush_request[~p, ~p], pid=~p, SUCCESS, ~p records in ~p ms~n",
+                    ?LOG_INFO(
+                        "[hstreamdb] flush_request[~p, ~p], pid=~p,~nSUCCESS in ~p ms, ~p records",
                         [
-                            Channel, ShardId, self(), length(Records), Time div 1000
+                            Channel, ShardId, self(), Time div 1000, length(Records)
                         ]
                     ),
                     {ok, Resp};
-                {Time, {error, R}} ->
-                    logger:error(
-                        "flush_request[~p, ~p], pid=~p, timeout=~p, ERROR: ~p, in ~p ms~n", [
-                            Channel, ShardId, self(), Timeout, R, Time div 1000
+                {Time, {error, Reason}} ->
+                    ?LOG_ERROR(
+                        "flush_request[~p, ~p], pid=~p, timeout=~p in ~p ms,~nERROR: ~p", [
+                            Channel, ShardId, self(), Timeout, Time div 1000, Reason
                         ]
                     ),
-                    {error, R}
+                    {error, Reason}
             end;
         {error, R} ->
             {error, R}
@@ -565,7 +606,7 @@ do_read_single_shard_stream(
     Limits = maps:get(limits, Opts, #{}),
     Req = maps:merge(Req0, Limits),
     Options = #{channel => Channel, timeout => Timeout},
-    logger:debug("[hstreamdb] read_single_shard: Req: ~p~nOptions: ~p~n", [Req, Options]),
+    ?LOG_DEBUG("[hstreamdb] read_single_shard: Req: ~p~nOptions: ~p~n", [Req, Options]),
     case ?HSTREAMDB_GEN_CLIENT:read_single_shard_stream(Options) of
         {ok, GStream} ->
             ok = grpc_client:send(GStream, Req, fin),
@@ -705,8 +746,13 @@ validate_scheme_and_opts(#{scheme := "http"} = URIMap, GunOpts) ->
 validate_scheme_and_opts(_URIMap, _GunOpts) ->
     {error, unknown_scheme}.
 
-map_host(#{host_mapping := HostMapping} = _Client, Host) ->
-    host_to_string(maps:get(Host, HostMapping, Host)).
+map_host(#{host_mapping := HostMapping} = _Client, {Host, Port}) ->
+    case maps:find({Host, Port}, HostMapping) of
+        {ok, {Host1, Port1}} ->
+            {host_to_string(Host1), Port1};
+        error ->
+            {host_to_string(Host), Port}
+    end.
 
 new_channel_name(#{channel := ChannelName}, Host, Port) ->
     lists:concat([
@@ -788,7 +834,6 @@ zstd(Payload) ->
 do_fold_shard_read_gstream(GStream, Fun, Acc) ->
     case grpc_client:recv(GStream) of
         {ok, Results} ->
-            logger:debug("[hstreamdb] Ok recv~n"),
             case fold_results(Results, Fun, Acc) of
                 {ok, NewAcc} ->
                     do_fold_shard_read_gstream(GStream, Fun, NewAcc);
@@ -796,7 +841,6 @@ do_fold_shard_read_gstream(GStream, Fun, Acc) ->
                     {ok, NewAcc}
             end;
         {error, _} = Error ->
-            logger:debug("[hstreamdb] Error recv~n"),
             Error
     end.
 
@@ -823,7 +867,7 @@ fold_batch_records([Record | Rest], Fun, Acc) ->
 
 fold_batch_record(#{record := _, recordIds := [#{batchId := BatchId} | _]} = BatchRecord, Fun, Acc) ->
     Records = decode_batch(BatchRecord),
-    logger:debug("[hstreamdb] BatchRecord, id: ~p, records: ~p~n", [BatchId, length(Records)]),
+    ?LOG_DEBUG("[hstreamdb] fold_batch_record, id: ~p,~nrecords: ~p~n", [BatchId, length(Records)]),
     fold_hstream_records(Records, Fun, Acc).
 
 fold_hstream_records(Records, Fun, Acc) ->
@@ -947,3 +991,7 @@ format_offset(#{shardId := ShardId, batchId := BatchId, batchIndex := BatchIndex
         "-",
         (integer_to_binary(BatchIndex))/binary
     >>.
+
+shuffle(List) ->
+    {_, ShuffledList} = lists:unzip(lists:sort([{rand:uniform(), X} || X <- List])),
+    ShuffledList.

@@ -1,5 +1,5 @@
 %%--------------------------------------------------------------------
-%% Copyright (c) 2020-2022 EMQ Technologies Co., Ltd. All Rights Reserved.
+%% Copyright (c) 2020-2023 EMQ Technologies Co., Ltd. All Rights Reserved.
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -84,23 +84,26 @@ wait_for_empty(Pid, NSecs) when NSecs > 0 ->
 %%--------------------------------------------------------------------
 
 handle_cast({append, From, Rec}, #st{buffer = Buffer} = St) ->
-    {ok, NewBuffer} = hstreamdb_buffer:append(Buffer, From, [Rec], infinity),
+    BufferRecords = hstreamdb_buffer:to_buffer_records([Rec], From, infinity),
+    {ok, NewBuffer} = hstreamdb_buffer:append(Buffer, BufferRecords),
     {noreply, St#st{buffer = NewBuffer}};
 handle_cast(flush, #st{buffer = Buffer} = St) ->
     NewBuffer = hstreamdb_buffer:flush(Buffer),
     {noreply, St#st{buffer = NewBuffer}}.
 
 handle_info({buffer_event, Event}, #st{buffer = Buffer} = St) ->
-    NewBuffer = hstreamdb_buffer:handle_event(Buffer, Event),
+    NewBuffer = hstreamdb_buffer:handle_event(Buffer, Event, true),
     {noreply, St#st{buffer = NewBuffer}};
-handle_info({send_batch, #{batch_ref := Ref}}, #st{buffer = Buffer, tab = Tab} = St) ->
+handle_info({send_batch, ReqRef, #{batch_ref := Ref}}, #st{buffer = Buffer, tab = Tab} = St) ->
     case need_lose_batch() of
         true ->
             {noreply, St};
         false ->
             [{_, Batch}] = ets:lookup(Tab, Ref),
             Responses = lists:map(fun(_) -> ok end, Batch),
-            NewBuffer = hstreamdb_buffer:handle_batch_response(Buffer, Ref, {ok, Responses}),
+            NewBuffer = hstreamdb_buffer:handle_batch_response(
+                Buffer, ReqRef, {ok, Responses}, true
+            ),
             {noreply, St#st{buffer = NewBuffer}}
     end.
 
@@ -119,11 +122,15 @@ new_buffer(BatchTab) ->
         batch_size => ?DEFAULT_BATCH_SIZE,
         batch_max_count => ?DEFAULT_BATCH_MAX_COUNT,
 
+        max_retries => 3,
+        backoff_options => {5, 10, 1.5},
+
         batch_tab => BatchTab,
 
         send_batch => fun(Batch) ->
-            self() ! {send_batch, Batch},
-            ok
+            ReqRef = make_ref(),
+            self() ! {send_batch, ReqRef, Batch},
+            ReqRef
         end,
         send_after => fun(Timeout, Message) ->
             erlang:send_after(Timeout, self(), {buffer_event, Message})

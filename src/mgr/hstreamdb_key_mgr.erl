@@ -16,115 +16,92 @@
 
 -module(hstreamdb_key_mgr).
 
--export([
-    start/2,
-    start/3,
-    stop/1
-]).
+-include_lib("kernel/include/logger.hrl").
 
--export([choose_shard/2]).
+-export([
+    create/1,
+    choose_shard/2,
+    update_shards/2,
+    shard_ids/1,
+    set_shards/2,
+    are_shards_same/2
+]).
 
 %% For benchmarks/tests
 -export([
-    find_shard/2,
-    index_shards/1,
-    update_shards/2
+    index_shards/1
 ]).
 
 -export_type([t/0]).
 
--define(DEFAULT_SHARD_UPDATE_INTERVAL, 3000000).
-
 -type t() :: #{
-    client := hstreamdb:client(),
-    shard_update_deadline := integer(),
-    shard_update_interval := non_neg_integer(),
     shards := compiled_shards() | undefined,
     stream := hstreamdb:stream()
 }.
 
 -type compiled_shards() :: tuple().
+-type shard_id() :: hstreamdb_client:shard_id().
 
--type options() :: #{
-    shard_update_interval => pos_integer()
-}.
+-type shard_info() :: hstreamdb_client:shard().
 
 %%--------------------------------------------------------------------
 %% API
 %%--------------------------------------------------------------------
 
--spec start(hstreamdb:client(), hstreamdb:stream()) -> t().
-start(Client, StreamName) ->
-    start(Client, StreamName, #{}).
-
--spec start(hstreamdb:client(), hstreamdb:stream(), options()) -> t().
-start(Client, StreamName, Options) ->
+-spec create(hstreamdb:stream()) -> t().
+create(StreamName) ->
     #{
-        client => Client,
         stream => StreamName,
-        shards => undefined,
-        shard_update_interval => maps:get(
-            shard_update_interval,
-            Options,
-            ?DEFAULT_SHARD_UPDATE_INTERVAL
-        ),
-        shard_update_deadline => erlang:monotonic_time(millisecond)
+        shards => undefined
     }.
 
--spec stop(t()) -> ok.
-stop(#{}) ->
-    ok.
+-spec choose_shard(t(), binary()) -> not_found | {ok, shard_id()}.
+choose_shard(#{shards := Shards}, PartitioningKey) ->
+    find_shard(Shards, PartitioningKey).
 
--spec choose_shard(t(), binary()) -> {ok, integer(), t()} | {error, term()}.
-choose_shard(KeyMgr0, PartitioningKey) ->
-    case update_shards(KeyMgr0) of
-        {ok, KeyMgr1} ->
-            #{shards := Shards} = KeyMgr1,
-            case find_shard(Shards, PartitioningKey) of
-                not_found ->
-                    {error, {cannot_find_shard, PartitioningKey}};
-                {ok, ShardId} ->
-                    {ok, ShardId, KeyMgr1}
-            end;
+-spec update_shards(hstreamdb:client(), t()) ->
+    {ok, t()} | {error, term()}.
+update_shards(Client, #{stream := StreamName} = KeyM) ->
+    Result = list_shards(Client, StreamName),
+    ?LOG_INFO("[hstreamdb] fetch shards for stream ~p:~n~p~n", [StreamName, Result]),
+    case Result of
+        {ok, Shards} ->
+            NewKeyM = set_shards(KeyM, Shards),
+            {ok, NewKeyM};
         {error, _} = Error ->
             Error
     end.
+
+-spec set_shards(t(), [shard_info()]) -> t().
+set_shards(KeyM, NewShards) ->
+    KeyM#{shards := index_shards(NewShards)}.
+
+-spec shard_ids(t()) -> not_initialized | {ok, [shard_id()]}.
+shard_ids(#{
+    shards := undefined
+}) ->
+    not_initialized;
+shard_ids(#{
+    shards := Shards
+}) ->
+    {ok, [ShardId || {_, _, ShardId} <- tuple_to_list(Shards)]}.
+
+
+-spec are_shards_same(t(), t()) -> boolean().
+are_shards_same(#{
+    shards := Shards1
+}, #{
+    shards := Shards2
+}) ->
+    Shards1 =:= Shards2.
 
 %%--------------------------------------------------------------------
 %% Internal functions
 %%--------------------------------------------------------------------
 
-update_shards(
-    #{
-        shard_update_interval := ShardUpateInterval
-    } = KeyM,
-    NewShards
-) ->
-    KeyM#{
-        shards := index_shards(NewShards),
-        shard_update_deadline := erlang:monotonic_time(millisecond) + ShardUpateInterval
-    }.
-
-update_shards(
-    #{
-        shard_update_deadline := Deadline,
-        stream := StreamName,
-        client := Client
-    } = KeyM
-) ->
-    Now = erlang:monotonic_time(millisecond),
-    case Deadline =< Now of
-        true ->
-            case list_shards(Client, StreamName) of
-                {ok, Shards} ->
-                    NewKeyM = update_shards(KeyM, Shards),
-                    {ok, NewKeyM};
-                {error, _} = Error ->
-                    Error
-            end;
-        false ->
-            {ok, KeyM}
-    end.
+find_shard(Shards, PartitioningKey) ->
+    <<IntHash:128/big-unsigned-integer>> = crypto:hash(md5, PartitioningKey),
+    bsearch(Shards, IntHash, 1, tuple_size(Shards)).
 
 index_shards(Shards) ->
     Compiled = lists:filtermap(
@@ -148,10 +125,6 @@ index_shards(Shards) ->
     ),
     list_to_tuple(lists:sort(Compiled)).
 
-find_shard(Shards, PartitioningKey) ->
-    <<IntHash:128/big-unsigned-integer>> = crypto:hash(md5, PartitioningKey),
-    bsearch(Shards, IntHash, 1, tuple_size(Shards)).
-
 bsearch(_Shards, _IntHash, From, To) when From > To ->
     not_found;
 bsearch(Shards, IntHash, From, To) ->
@@ -165,10 +138,13 @@ bsearch(Shards, IntHash, From, To) ->
             bsearch(Shards, IntHash, Med + 1, To)
     end.
 
+-spec list_shards(hstreamdb:client(), hstreamdb:stream()) ->
+    {ok, [shard_info()]} | {error, term()}.
 list_shards(Client, StreamName) ->
     case hstreamdb_client:list_shards(Client, StreamName) of
+        {ok, []} ->
+            {error, {cannot_list_shards, {StreamName, no_shards}}};
         {ok, Shards} ->
-            logger:info("[hstreamdb] fetched shards for stream ~p: ~p~n", [StreamName, Shards]),
             {ok, Shards};
         {error, Error} ->
             {error, {cannot_list_shards, {StreamName, Error}}}

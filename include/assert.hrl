@@ -39,3 +39,14 @@
         ok
     end
 ).
+
+-define(assertWaitEvent(Code, EventMatch, Timeout),
+    ?assertMatch(
+        {_, {ok, EventMatch}},
+        ?wait_async_action(
+            Code,
+            EventMatch,
+            Timeout
+        )
+    )
+).

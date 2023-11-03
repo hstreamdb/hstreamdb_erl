@@ -18,6 +18,8 @@
 
 -behaviour(gen_server).
 
+-include_lib("kernel/include/logger.hrl").
+
 -export([start_link/1]).
 
 -export([
@@ -97,7 +99,7 @@ wait_for_terminate(Self, NWorkers, Deadline) when NWorkers > 0 ->
         {empty, Self} ->
             wait_for_terminate(Self, NWorkers - 1, Deadline)
     after TimeLeft ->
-        logger:error("[hstreamdb] producer terminator timeout, still have ~p workers", [NWorkers]),
+        ?LOG_ERROR("[hstreamdb] terminator, producer timeout, still have ~p workers", [NWorkers]),
         ok
     end.
 

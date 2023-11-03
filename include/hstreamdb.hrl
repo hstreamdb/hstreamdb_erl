@@ -43,10 +43,40 @@
 -define(RES_QUERY, 5).
 -define(RES_VIEW, 6).
 
+-define(DEFAULT_BATCH_BACKOFF_OPTIONS, {100, 1000, 2}).
+-define(DEFAULT_BATCH_MAX_RETRIES, 5).
+
+-define(DEFAULT_DISOVERY_BACKOFF_OPTIONS, {100, 5000, 1.5}).
+
+-define(DISCOVERY_TAB, hstreamdb_discovery_tab).
+
+-define(DEFAULT_STREAM_INVALIDATE_TIMEOUT, 60000).
+
+-define(VIA_GPROC(ID), {via, gproc, {n, l, ID}}).
+
+-define(SAFE_CAST_VIA_GPROC(ID, MESSAGE), ?SAFE_CAST_VIA_GPROC(ID, MESSAGE, noproc)).
+
+-define(SAFE_CAST_VIA_GPROC(ID, MESSAGE, NO_PROC_ERROR),
+    try gen_statem:cast(?VIA_GPROC(ID), MESSAGE) of
+        __RESULT__ -> __RESULT__
+    catch
+        exit:{noproc, _} -> {error, NO_PROC_ERROR}
+    end
+).
+
+-define(SAFE_CALL_VIA_GPROC(ID, MESSAGE, TIMEOUT, NO_PROC_ERROR),
+    try gen_statem:call(?VIA_GPROC(ID), MESSAGE, TIMEOUT) of
+        __RESULT__ -> __RESULT__
+    catch
+        exit:{noproc, _} -> {error, NO_PROC_ERROR}
+    end
+).
+
 -record(batch, {
-    id :: reference(),
+    batch_ref :: reference(),
     shard_id :: integer(),
     tab :: ets:table(),
+    req_ref :: reference(),
     compression_type :: hstreamdb_client:compression_type()
 }).
 

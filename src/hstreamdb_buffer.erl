@@ -16,19 +16,38 @@
 
 -module(hstreamdb_buffer).
 
+-include("hstreamdb.hrl").
+-include("errors.hrl").
+-include_lib("kernel/include/logger.hrl").
+
 -export([
     new/1,
-    append/4,
+    append/2,
     flush/1,
-    is_empty/1
+    drop/2,
+    is_empty/1,
+
+    to_buffer_records/1,
+    to_buffer_records/3,
+    deadline/1,
+    data/1
 ]).
 
 -export([
-    handle_event/2,
-    handle_batch_response/3
+    handle_event/3,
+    handle_batch_response/4
 ]).
 
 -export_type([hstreamdb_buffer/0, options/0]).
+
+-type batch_ref() :: reference().
+-type req_ref() :: reference().
+-type timer_ref() :: reference().
+
+-type send_batch_fun() :: fun((batch_message()) -> batch_ref()).
+-type send_after_fun() :: fun((pos_integer(), term()) -> timer_ref()).
+-type cancel_send_fun() :: fun((timer_ref()) -> any()).
+-type send_reply_fun() :: fun((from(), ok | {error, term()}) -> any()).
 
 -type options() :: #{
     flush_interval := pos_integer(),
@@ -37,80 +56,106 @@
     batch_max_count := pos_integer(),
     batch_tab := ets:tab(),
 
-    send_batch := fun((batch_message()) -> any()),
+    backoff_options => hstreamdb_backoff:options(),
+    max_retries => non_neg_integer(),
 
-    send_after := fun((pos_integer(), term()) -> reference()),
-    cancel_send := fun((reference()) -> any()),
-    send_reply := fun((term(), ok | {error, term()}) -> any())
+    send_batch := send_batch_fun(),
+    send_after := send_after_fun(),
+    cancel_send := cancel_send_fun(),
+    send_reply := send_reply_fun()
 }.
 
 -type hstreamdb_buffer() :: #{
-    flush_interval := pos_integer(),
+    %% Incoming records
     batch_timeout := pos_integer(),
     batch_size := pos_integer(),
     batch_max_count := pos_integer(),
-    current_batch := [internal_record()],
+    current_batch := [buffer_record()],
     batch_tab := ets:table(),
     batch_queue := queue:queue(),
     batch_count := non_neg_integer(),
-    inflight_batch_ref := reference() | undefined,
 
-    batch_timer := timer:timer_ref() | undefined,
-    flush_timer := timer:timer_ref() | undefined,
-    send_batch := fun((batch_message()) -> any()),
-    send_after := fun((pos_integer(), term()) -> reference()),
-    cancel_send := fun((reference()) -> any()),
-    send_reply := fun((from(), ok | {error, term()}) -> any())
+    %% Outgoing batches
+    flush_interval := pos_integer(),
+    flush_timer := reference() | undefined,
+    inflight_batch := {_BatchRef :: reference(), _ReqRef :: reference()} | undefined,
+    batch_timer := reference() | undefined,
+
+    backoff_options := hstreamdb_backoff:options(),
+    max_retries := non_neg_integer(),
+    retry_state := undefined | {hstreamdb_backoff:t(), non_neg_integer()},
+
+    %% Callbacks
+    send_batch := send_batch_fun(),
+    send_after := send_after_fun(),
+    cancel_send := cancel_send_fun(),
+    send_reply := send_reply_fun()
 }.
 
 -type from() :: term().
 
 -type record() :: term().
 
--type internal_record() :: #{
+-type buffer_record() :: #{
     from := from() | fun((ok | {error, term()}) -> any()),
     data := record(),
     deadline := timeout()
 }.
 
 -type batch_message() :: #{
-    batch_ref => reference(),
+    batch_ref => batch_ref(),
     tab => ets:tab()
 }.
 
--type timeout_event() :: {batch_timeout, reference()} | flush.
+-type timeout_event() :: {batch_timeout, req_ref()} | {retry, req_ref()} | flush.
 
 %%--------------------------------------------------------------------
 %% API
 %%--------------------------------------------------------------------
 
 -spec new(options()) -> hstreamdb_buffer().
-new(#{
-    flush_interval := FlushInterval,
-    batch_timeout := BatchTimeout,
-    batch_tab := BatchTab,
-    batch_size := BatchSize,
-    batch_max_count := BatchMaxCount,
+new(
+    #{
+        flush_interval := FlushInterval,
+        batch_timeout := BatchTimeout,
+        batch_tab := BatchTab,
+        batch_size := BatchSize,
+        batch_max_count := BatchMaxCount,
 
-    send_batch := SendBatch,
-    send_after := SendAfter,
-    cancel_send := CancelSend,
-    send_reply := SendReply
-}) ->
+        send_batch := SendBatch,
+        send_after := SendAfter,
+        cancel_send := CancelSend,
+        send_reply := SendReply
+    } = Options
+) ->
     #{
         flush_interval => FlushInterval,
         batch_timeout => BatchTimeout,
-        current_batch => [],
         batch_tab => BatchTab,
         batch_size => BatchSize,
         batch_max_count => BatchMaxCount,
 
         batch_queue => queue:new(),
         batch_count => 0,
-        inflight_batch_ref => undefined,
-        flush_timer => undefined,
-        batch_timer => undefined,
 
+        current_batch => [],
+
+        %% Input states
+        %% * empty (flush_timer =/= undefined)
+        %% * waiting for flush (flush_timer =/= undefined)
+        flush_timer => undefined,
+
+        %% Output states
+        %% * waiting for batch response (inflight_batch =/= undefined, batch_timer =/= undefined)
+        %% * waiting for batch retry (inflight_req == undefined, batch_timer =/= undefined)
+        %% * idle (inflight_batch == undefined, batch_timer === undefined)
+        inflight_batch => undefined,
+        batch_timer => undefined,
+        backoff_options => maps:get(backoff_options, Options, ?DEFAULT_BATCH_BACKOFF_OPTIONS),
+        max_retries => maps:get(max_retries, Options, ?DEFAULT_BATCH_MAX_RETRIES),
+        retry_state => undefined,
+
+        %% Callbacks
         send_batch => SendBatch,
         send_after => SendAfter,
         cancel_send => CancelSend,
@@ -121,17 +166,14 @@ new(#{
     ((is_integer(Timeout) andalso Timeout > 0) orelse Timeout == infinity)
 ).
 
--spec append(hstreamdb_buffer(), from(), [record()], timeout()) ->
-    {ok, hstreamdb_buffer()} | {error, term()}.
-append(#{batch_max_count := BatchMaxCount} = Buffer, From, Records, Timeout) when
-    ?IS_TIMEOUT(Timeout) andalso is_list(Records)
-->
+-spec append(hstreamdb_buffer(), [buffer_record()]) ->
+    {ok, hstreamdb_buffer()} | {error, {batch_count_too_large, non_neg_integer()}}.
+append(#{batch_max_count := BatchMaxCount} = Buffer, Records) ->
     case estimate_batch_count(Buffer, Records) of
         NewBatchCount when NewBatchCount > BatchMaxCount ->
             {error, {batch_count_too_large, NewBatchCount}};
         _NewBatchCount ->
-            InternalRecords = to_internal_records(Records, From, Timeout),
-            do_add_records(Buffer, InternalRecords)
+            do_add_records(Buffer, Records)
     end.
 
 -spec flush(hstreamdb_buffer()) -> hstreamdb_buffer().
@@ -143,34 +185,165 @@ flush(Buffer0) ->
     Buffer3 = maybe_send_batch(Buffer2),
     reschedule_flush(Buffer3).
 
--spec handle_event(hstreamdb_buffer(), timeout_event()) -> hstreamdb_buffer().
+%% Drop all the batches except the inflight one
+-spec drop(hstreamdb_buffer(), term()) -> hstreamdb_buffer().
+drop(Buffer0, Reason) ->
+    Buffer1 = cancel_timer(flush_timer, Buffer0),
+    #{batch_queue := Queue} = Buffer2 = store_current_batch(Buffer1),
+    Buffer3 = send_responses_to_batches(Buffer2, queue:to_list(Queue), {error, Reason}),
+    Buffer3#{
+        batch_queue := queue:new(),
+        batch_count := 0
+    }.
+
+-spec handle_event(hstreamdb_buffer(), timeout_event(), boolean()) -> hstreamdb_buffer().
 %% Flush event
-handle_event(Buffer, flush) ->
+handle_event(Buffer, flush, _MayRetry) ->
     flush(Buffer);
 %% Batch timeout event
-handle_event(#{inflight_batch_ref := BatchRef} = Buffer0, {batch_timeout, BatchRef}) ->
-    Buffer1 = send_timeout_responses(Buffer0, BatchRef),
-    maybe_send_batch(Buffer1#{inflight_batch_ref => undefined});
+handle_event(#{inflight_batch := {_BatchRef, ReqRef}} = Buffer0, {batch_timeout, ReqRef}, MayRetry) ->
+    handle_batch_response(Buffer0, ReqRef, {error, ?ERROR_TIMEOUT}, MayRetry);
 %% May happen due to concurrency
-handle_event(Buffer, {batch_timeout, _BatchRef}) ->
+handle_event(Buffer, {batch_timeout, _ReqRef}, _MayRetry) ->
+    Buffer;
+%% Batch Retry event
+handle_event(#{inflight_batch := {_BatchRef, ReqRef}} = Buffer, {retry, ReqRef}, _MayRetry) ->
+    resend_batch(Buffer);
+%% May happen due to concurrency
+handle_event(Buffer, {retry, _ReqRef}, _MayRetry) ->
     Buffer.
 
--spec handle_batch_response(hstreamdb_buffer(), reference(), term()) -> hstreamdb_buffer().
-handle_batch_response(#{inflight_batch_ref := BatchRef} = Buffer0, BatchRef, Response) ->
-    Buffer1 = send_responses(Buffer0, BatchRef, Response),
-    maybe_send_batch(Buffer1#{inflight_batch_ref => undefined});
-%% Late response, the batch has been reaped by timeout timer
-handle_batch_response(Buffer, _BatchRef, _Response) ->
+-spec handle_batch_response(hstreamdb_buffer(), req_ref(), term(), boolean()) ->
+    hstreamdb_buffer().
+handle_batch_response(
+    #{inflight_batch := {BatchRef, ReqRef}} = Buffer0, ReqRef, Response, MayRetry
+) ->
+    case need_retry(Buffer0, Response, MayRetry) of
+        true ->
+            ?LOG_DEBUG(
+                "[hstreamdb] buffer, handle_batch_response, need_retry=true,~n"
+                "response: ~p,~nmay_retry: ~p, retry context: ~p",
+                [Response, MayRetry, retry_context(Buffer0)]
+            ),
+            wait_for_retry(Buffer0);
+        false ->
+            ?LOG_DEBUG(
+                "[hstreamdb] buffer, handle_batch_response, need_retry=false,~n"
+                "response: ~p,~nmay_retry: ~p, retry context: ~p",
+                [Response, MayRetry, retry_context(Buffer0)]
+            ),
+            Buffer1 = send_responses(Buffer0, BatchRef, Response),
+            Buffer2 = retry_deinit(Buffer1),
+            maybe_send_batch(Buffer2#{inflight_batch => undefined})
+    end;
+%% Late response, the batch has been reaped or resent
+handle_batch_response(Buffer, _ReqRef, _Response, _MayRetry) ->
     Buffer.
 
 -spec is_empty(hstreamdb_buffer()) -> boolean().
-is_empty(#{current_batch := [], inflight_batch_ref := undefined, batch_count := 0}) ->
+is_empty(#{current_batch := [], inflight_batch := undefined, batch_count := 0}) ->
     true;
 is_empty(_Buffer) ->
     false.
 
-send_timeout_responses(Buffer, BatchRef) ->
-    send_responses(Buffer, BatchRef, {error, timeout}).
+-spec to_buffer_records([record()]) -> [buffer_record()].
+to_buffer_records(Records) when is_list(Records) ->
+    to_buffer_records(Records, undefined, infinity).
+
+-spec to_buffer_records([record()], from(), timeout()) -> [buffer_record()].
+to_buffer_records(Records, From, Timeout) when ?IS_TIMEOUT(Timeout) andalso is_list(Records) ->
+    Deadline = deadline_from_timeout(Timeout),
+    lists:map(
+        fun(Record) ->
+            #{
+                data => Record,
+                from => From,
+                deadline => Deadline
+            }
+        end,
+        Records
+    ).
+
+-spec deadline(buffer_record()) -> timeout().
+deadline(#{deadline := Deadline}) ->
+    Deadline.
+
+-spec data(buffer_record()) -> record().
+data(#{data := Data}) ->
+    Data.
+
+%%--------------------------------------------------------------------
+%% Internal functions
+%%--------------------------------------------------------------------
+
+%% Retries
+
+is_transient_error(Error) ->
+    %% TODO: inject
+    hstreamdb_error:is_transient(Error).
+
+need_retry(_Buffer, _Response, _MayRetry = false) ->
+    false;
+need_retry(
+    #{retry_state := undefined, max_retries := MaxRetries}, {error, _}, _MayRetry = true
+) when MaxRetries =< 1 ->
+    false;
+need_retry(#{retry_state := {_Backoff, RetriesLeft}} = _Buffer, {error, _}, _MayRetry = true) when
+    RetriesLeft =< 0
+->
+    false;
+need_retry(_Buffer, {error, _} = Error, _MayRetry = true) ->
+    is_transient_error(Error);
+need_retry(_Buffer, {ok, _}, _MayRetry = true) ->
+    false.
+
+wait_for_retry(#{retry_state := undefined} = Buffer) ->
+    wait_for_retry(retry_init(Buffer));
+wait_for_retry(
+    #{
+        retry_state := {Backoff0, RetriesLeft},
+        inflight_batch := {BatchRef, _ReqRef}
+    } = Buffer0
+) ->
+    {Delay, Backoff1} = hstreamdb_backoff:next_delay(Backoff0),
+    Buffer1 = cancel_timer(batch_timer, Buffer0),
+    ReqRef = make_ref(),
+    Buffer2 = send_after(batch_timer, Buffer1, Delay, {retry, ReqRef}),
+    Buffer2#{
+        inflight_batch := {BatchRef, ReqRef},
+        retry_state := {Backoff1, RetriesLeft - 1}
+    }.
+
+retry_init(#{backoff_options := BackoffOptions, max_retries := MaxRetries} = Buffer) ->
+    Backoff = hstreamdb_backoff:new(BackoffOptions),
+    Buffer#{retry_state => {Backoff, MaxRetries - 1}}.
+
+retry_deinit(Buffer) ->
+    Buffer#{retry_state => undefined}.
+
+%% Timers
+
+cancel_timer(TimerName, #{cancel_send := CancelSendFun} = Buffer) ->
+    case maps:get(TimerName, Buffer) of
+        undefined ->
+            Buffer;
+        Timer ->
+            _ = CancelSendFun(Timer),
+            maps:put(TimerName, undefined, Buffer)
+    end.
+
+send_after(TimerName, #{send_after := SendAfterFun} = Buffer, Timeout, Message) ->
+    undefined = maps:get(TimerName, Buffer),
+    Ref = SendAfterFun(Timeout, Message),
+    maps:put(TimerName, Ref, Buffer).
+
+%%
+
+send_responses_to_batches(Buffer, [], _Response) ->
+    Buffer;
+send_responses_to_batches(Buffer0, [BatchRef | BatchRefs], Response) ->
+    Buffer1 = send_responses(Buffer0, BatchRef, Response),
+    send_responses_to_batches(Buffer1, BatchRefs, Response).
 
 send_responses(#{batch_tab := BatchTab} = Buffer, BatchRef, Response) ->
     Now = erlang:monotonic_time(millisecond),
@@ -236,18 +409,31 @@ do_add_records(Buffer0, Records) ->
     BufferNew =
         case NewBatches of
             [] ->
+                %% The records were added to the only existing batch, so
+                %% just make sure the flush timer is scheduled for it
                 maybe_schedule_flush(Buffer1);
             _ ->
+                %% After adding the records, there are more than one batch,
+                %% so we need to try to send one immediately and postpone flushing
                 Buffer2 = store_batches(Buffer1, NewBatches),
                 Buffer3 = maybe_send_batch(Buffer2),
                 reschedule_flush(Buffer3)
         end,
     {ok, BufferNew}.
 
+%% New records fit into the current buffer
+%% [xxxx    ] current
+%% + yy ->
+%% [xxxxyy  ] current
 update_current_batch(
     #{current_batch := CurrentBatch, batch_size := BatchSize} = Buffer, Records
 ) when length(CurrentBatch) + length(Records) < BatchSize ->
     {[], Buffer#{current_batch := append_current_batch(Records, CurrentBatch)}};
+%% [xxxxxx  ] current
+%% + yyyyyyyyyyyy ->
+%% [xxxxxxyy]
+%% [yyyyyyyy]
+%% [yy      ] current
 update_current_batch(#{current_batch := CurrentBatch, batch_size := BatchSize} = Buffer, Records) ->
     NToCurrentBatch = BatchSize - length(CurrentBatch),
     NToNewBatches = length(Records) - NToCurrentBatch,
@@ -286,37 +472,21 @@ maybe_schedule_flush(#{flush_timer := undefined} = Buffer) ->
 maybe_schedule_flush(Buffer) ->
     Buffer.
 
-maybe_send_batch(#{inflight_batch_ref := undefined, batch_count := 0} = Buffer0) ->
+maybe_send_batch(#{inflight_batch := undefined, batch_count := 0} = Buffer0) ->
     cancel_timer(batch_timer, Buffer0);
 maybe_send_batch(
-    #{inflight_batch_ref := undefined, batch_count := BatchCount, batch_timeout := BatchTimeout} =
+    #{inflight_batch := undefined, batch_count := BatchCount, batch_timeout := BatchTimeout} =
         Buffer0
 ) when BatchCount > 0 ->
     Buffer1 = cancel_timer(batch_timer, Buffer0),
-    {BatchRef, Buffer2} = send_batch(Buffer1),
-    send_after(batch_timer, Buffer2, BatchTimeout, {batch_timeout, BatchRef});
-maybe_send_batch(#{inflight_batch_ref := _BatchRef} = Buffer) ->
+    {ReqRef, Buffer2} = send_batch(Buffer1),
+    send_after(batch_timer, Buffer2, BatchTimeout, {batch_timeout, ReqRef});
+maybe_send_batch(#{inflight_batch := {_BatchRef, _ReqRef}} = Buffer) ->
     Buffer.
-
-%% Timers
-
-cancel_timer(TimerName, #{cancel_send := CancelSendFun} = Buffer) ->
-    case maps:get(TimerName, Buffer) of
-        undefined ->
-            Buffer;
-        Timer ->
-            _ = CancelSendFun(Timer),
-            maps:put(TimerName, undefined, Buffer)
-    end.
-
-send_after(TimerName, #{send_after := SendAfterFun} = Buffer, Timeout, Message) ->
-    undefined = maps:get(TimerName, Buffer),
-    Ref = SendAfterFun(Timeout, Message),
-    maps:put(TimerName, Ref, Buffer).
 
 send_batch(
     #{
-        inflight_batch_ref := undefined,
+        inflight_batch := undefined,
         batch_tab := BatchTab,
         send_batch := SendBatchFun,
         batch_queue := BatchQueue,
@@ -328,10 +498,31 @@ send_batch(
         batch_ref => BatchRef,
         tab => BatchTab
     },
-    ok = SendBatchFun(Message),
-    {BatchRef, Buffer#{
-        inflight_batch_ref => BatchRef, batch_queue => NewBatchQueue, batch_count => BatchCount - 1
+    ReqRef = SendBatchFun(Message),
+    {ReqRef, Buffer#{
+        inflight_batch => {BatchRef, ReqRef},
+        batch_queue => NewBatchQueue,
+        batch_count => BatchCount - 1
     }}.
+
+resend_batch(
+    #{
+        inflight_batch := {BatchRef, _ReqRef},
+        batch_tab := BatchTab,
+        batch_timeout := BatchTimeout,
+        send_batch := SendBatchFun
+    } = Buffer0
+) ->
+    Buffer1 = cancel_timer(batch_timer, Buffer0),
+    Message = #{
+        batch_ref => BatchRef,
+        tab => BatchTab
+    },
+    ReqRef = SendBatchFun(Message),
+    Buffer2 = send_after(batch_timer, Buffer1, BatchTimeout, {batch_timeout, ReqRef}),
+    Buffer2#{
+        inflight_batch := {BatchRef, ReqRef}
+    }.
 
 to_batches([], _, Batches) ->
     lists:reverse(Batches);
@@ -339,22 +530,9 @@ to_batches(Records, BatchSize, Batches) ->
     {Batch, Left} = lists:split(BatchSize, Records),
     to_batches(Left, BatchSize, [Batch | Batches]).
 
-to_internal_records(Records, From, Timeout) ->
-    Deadline = deadline(Timeout),
-    lists:map(
-        fun(Record) ->
-            #{
-                data => Record,
-                from => From,
-                deadline => Deadline
-            }
-        end,
-        Records
-    ).
-
-deadline(infinity) ->
+deadline_from_timeout(infinity) ->
     infinity;
-deadline(Timeout) ->
+deadline_from_timeout(Timeout) ->
     erlang:monotonic_time(millisecond) + Timeout.
 
 append_current_batch([], CurrentBatch) ->
@@ -367,5 +545,15 @@ apply_reply_fun(Fun, Args) ->
         apply(Fun, Args)
     catch
         Error:Reason ->
-            logger:warning("[hstreamdb]: Error in reply function: ~p:~p, ~p", [Error, Reason])
+            ?LOG_WARNING("[hstreamdb]: Error in reply function: ~p:~p", [Error, Reason])
     end.
+
+retry_context(Buffer) ->
+    maps:with(
+        [
+            retry_state,
+            max_retries,
+            backoff_options
+        ],
+        Buffer
+    ).

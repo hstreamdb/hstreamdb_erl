@@ -144,26 +144,10 @@ client_by_addr(
             {Host, Port} = Addr,
             case hstreamdb_client:connect(Client, Host, Port, OverrideOpts) of
                 {ok, NewClient} ->
-                    ping_new_client(NewClient, Addr, ShardClientMgr);
+                    {ok, NewClient, ShardClientMgr#{
+                        client_by_addr := Clients#{Addr => NewClient}
+                    }};
                 {error, _} = Error ->
                     Error
             end
-    end.
-
-%%--------------------------------------------------------------------
-%% Internal functions
-%%--------------------------------------------------------------------
-
-ping_new_client(Client, Addr, ShardClientMgr = #{client_by_addr := Clients}) ->
-    case hstreamdb_client:echo(Client) of
-        ok ->
-            {ok, Client, ShardClientMgr#{
-                client_by_addr := Clients#{Addr => Client}
-            }};
-        {error, Reason} ->
-            ok = hstreamdb_client:stop(Client),
-            logger:info("[hstreamdb] Echo failed for new client=~p: ~p~n", [
-                Client, Reason
-            ]),
-            {error, Reason}
     end.
