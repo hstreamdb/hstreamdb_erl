@@ -67,7 +67,6 @@
 -export_type([
     t/0,
     name/0,
-    options/0,
     rpc_options/0,
 
     replication_factor/0,
@@ -100,7 +99,8 @@
     url_maps := [map()],
     host_mapping := map(),
     reap_channel := boolean(),
-    rpc_options := map()
+    rpc_options := map(),
+    metadata := map()
 }.
 
 -type name() :: atom() | string() | binary().
@@ -185,7 +185,8 @@
     rpc_options => rpc_options(),
     host_mapping => #{binary() => binary()},
     grpc_timeout => pos_integer(),
-    reap_channel => boolean()
+    reap_channel => boolean(),
+    metadata => map()
 }.
 
 -type grpc_req_options() :: #{
@@ -233,6 +234,7 @@ create(Name, Options) ->
     ChannelName = to_channel_name(Name),
     GRPCTimeout = maps:get(grpc_timeout, Options, ?GRPC_TIMEOUT),
     ReapChannel = maps:get(reap_channel, Options, true),
+    Metadata = maps:get(metadata, Options, #{}),
     case validate_urls_and_opts(ServerURL, maps:get(gun_opts, RPCOptions, #{})) of
         {ok, ServerURLMaps, GunOpts} ->
             {ok, #{
@@ -242,7 +244,8 @@ create(Name, Options) ->
                 rpc_options => RPCOptions#{gun_opts => GunOpts},
                 host_mapping => HostMapping,
                 grpc_timeout => GRPCTimeout,
-                reap_channel => ReapChannel
+                reap_channel => ReapChannel,
+                metadata => Metadata
             }};
         {error, _} = Error ->
             Error
@@ -353,20 +356,6 @@ stop(Name) ->
 name(#{channel := Channel}) ->
     Channel.
 
--spec options(t()) -> options().
-options(#{
-    url := ServerURL,
-    rpc_options := RPCOptions,
-    host_mapping := HostMapping,
-    grpc_timeout := GRPCTimeout
-}) ->
-    #{
-        url => ServerURL,
-        rpc_options => RPCOptions,
-        host_mapping => HostMapping,
-        grpc_timeout => GRPCTimeout
-    }.
-
 -spec echo(t()) -> ok | {error, term()}.
 echo(Client) ->
     do_echo(Client).
@@ -458,8 +447,8 @@ start_channel(ChannelName, URLMap, RPCOptions, ReapChannel) ->
 
 %% GRPC methods
 
-do_echo(#{channel := Channel, grpc_timeout := Timeout}) ->
-    case ?HSTREAMDB_GEN_CLIENT:echo(#{}, #{channel => Channel, timeout => Timeout}) of
+do_echo(Client) ->
+    case ?HSTREAMDB_GEN_CLIENT:echo(metadata(Client), options(Client)) of
         {ok, #{msg := _}, _} ->
             ok;
         {error, R} ->
@@ -467,7 +456,7 @@ do_echo(#{channel := Channel, grpc_timeout := Timeout}) ->
     end.
 
 do_create_stream(
-    #{channel := Channel, grpc_timeout := Timeout},
+    Client,
     Name,
     ReplFactor,
     BacklogDuration,
@@ -479,8 +468,7 @@ do_create_stream(
         backlogDuration => BacklogDuration,
         shardCount => ShardCount
     },
-    Options = #{channel => Channel, timeout => Timeout},
-    case ?HSTREAMDB_GEN_CLIENT:create_stream(Req, Options) of
+    case ?HSTREAMDB_GEN_CLIENT:create_stream(Req, metadata(Client), options(Client)) of
         {ok, _, _} ->
             ok;
         {error, R} ->
@@ -488,7 +476,7 @@ do_create_stream(
     end.
 
 do_delete_stream(
-    #{channel := Channel, grpc_timeout := Timeout},
+    Client,
     Name,
     IgnoreNonExist,
     Force
@@ -498,28 +486,25 @@ do_delete_stream(
         ignoreNonExist => IgnoreNonExist,
         force => Force
     },
-    Options = #{channel => Channel, timeout => Timeout},
-    case ?HSTREAMDB_GEN_CLIENT:delete_stream(Req, Options) of
+    case ?HSTREAMDB_GEN_CLIENT:delete_stream(Req, metadata(Client), options(Client)) of
         {ok, _, _} ->
             ok;
         {error, R} ->
             {error, R}
     end.
 
-do_lookup_shard(#{channel := Channel, grpc_timeout := Timeout}, ShardId) ->
+do_lookup_shard(Client, ShardId) ->
     Req = #{shardId => ShardId},
-    Options = #{channel => Channel, timeout => Timeout},
-    case ?HSTREAMDB_GEN_CLIENT:lookup_shard(Req, Options) of
+    case ?HSTREAMDB_GEN_CLIENT:lookup_shard(Req, metadata(Client), options(Client)) of
         {ok, #{serverNode := #{host := Host, port := Port}}, _} ->
             {ok, {Host, Port}};
         {error, Error} ->
             {error, Error}
     end.
 
-do_list_shards(#{channel := Channel, grpc_timeout := Timeout}, StreamName) ->
+do_list_shards(Client, StreamName) ->
     Req = #{streamName => StreamName},
-    Options = #{channel => Channel, timeout => Timeout},
-    case ?HSTREAMDB_GEN_CLIENT:list_shards(Req, Options) of
+    case ?HSTREAMDB_GEN_CLIENT:list_shards(Req, metadata(Client), options(Client)) of
         {ok, #{shards := Shards}, _} ->
             ?LOG_INFO("[hstreamdb] fetched shards for stream ~p:~n~p", [StreamName, Shards]),
             {ok, Shards};
@@ -528,7 +513,7 @@ do_list_shards(#{channel := Channel, grpc_timeout := Timeout}, StreamName) ->
     end.
 
 do_append(
-    #{channel := Channel, grpc_timeout := Timeout},
+    #{channel := Channel, grpc_timeout := Timeout} = Client,
     #{
         stream_name := StreamName,
         records := Records,
@@ -545,8 +530,10 @@ do_append(
                 compressionType => compression_type_to_enum(CompressionType)
             },
             NReq = #{streamName => StreamName, shardId => ShardId, records => BatchedRecord},
-            Options = maps:merge(#{channel => Channel, timeout => Timeout}, OptionOverrides),
-            case timer:tc(fun() -> ?HSTREAMDB_GEN_CLIENT:append(NReq, Options) end) of
+            Options = maps:merge(options(Client), OptionOverrides),
+            case
+                timer:tc(fun() -> ?HSTREAMDB_GEN_CLIENT:append(NReq, metadata(Client), Options) end)
+            of
                 {Time, {ok, Resp, _MetaData}} ->
                     ?LOG_INFO(
                         "[hstreamdb] flush_request[~p, ~p], pid=~p,~nSUCCESS in ~p ms, ~p records",
@@ -568,13 +555,12 @@ do_append(
     end.
 
 do_lookup_resource(
-    #{channel := Channel, grpc_timeout := Timeout},
+    Client,
     ResourceType,
     ResourceId
 ) ->
     Req = #{resType => ResourceType, resId => ResourceId},
-    Options = #{channel => Channel, timeout => Timeout},
-    case ?HSTREAMDB_GEN_CLIENT:lookup_resource(Req, Options) of
+    case ?HSTREAMDB_GEN_CLIENT:lookup_resource(Req, metadata(Client), options(Client)) of
         {ok, #{host := Host, port := Port}, _} ->
             {ok, {Host, Port}};
         {error, Error} ->
@@ -582,12 +568,11 @@ do_lookup_resource(
     end.
 
 do_lookup_key(
-    #{channel := Channel, grpc_timeout := Timeout},
+    Client,
     Key
 ) ->
     Req = #{partitionKey => Key},
-    Options = #{channel => Channel, timeout => Timeout},
-    case ?HSTREAMDB_GEN_CLIENT:lookup_key(Req, Options) of
+    case ?HSTREAMDB_GEN_CLIENT:lookup_key(Req, metadata(Client), options(Client)) of
         {ok, #{host := Host, port := Port}, _} ->
             {ok, {Host, Port}};
         {error, Error} ->
@@ -595,7 +580,7 @@ do_lookup_key(
     end.
 
 do_read_single_shard_stream(
-    #{channel := Channel, grpc_timeout := Timeout},
+    Client,
     StreamName,
     Opts
 ) ->
@@ -605,9 +590,9 @@ do_read_single_shard_stream(
     },
     Limits = maps:get(limits, Opts, #{}),
     Req = maps:merge(Req0, Limits),
-    Options = #{channel => Channel, timeout => Timeout},
+    Options = options(Client),
     ?LOG_DEBUG("[hstreamdb] read_single_shard: Req: ~p~nOptions: ~p~n", [Req, Options]),
-    case ?HSTREAMDB_GEN_CLIENT:read_single_shard_stream(Options) of
+    case ?HSTREAMDB_GEN_CLIENT:read_single_shard_stream(metadata(Client), Options) of
         {ok, GStream} ->
             ok = grpc_client:send(GStream, Req, fin),
             {FoldFun, Acc} = maps:get(fold, Opts, {fun append_rec/2, []}),
@@ -617,7 +602,7 @@ do_read_single_shard_stream(
     end.
 
 do_read_shard_gstream(
-    #{channel := Channel, grpc_timeout := Timeout},
+    Client,
     ShardId,
     Limits
 ) ->
@@ -626,8 +611,7 @@ do_read_shard_gstream(
         readerId => integer_to_binary(erlang:unique_integer([positive]))
     },
     Req = maps:merge(Req0, Limits),
-    Options = #{channel => Channel, timeout => Timeout},
-    case ?HSTREAMDB_GEN_CLIENT:read_shard_stream(Options) of
+    case ?HSTREAMDB_GEN_CLIENT:read_shard_stream(metadata(Client), options(Client)) of
         {ok, GStream} ->
             ok = grpc_client:send(GStream, Req, fin),
             {ok, GStream};
@@ -635,11 +619,8 @@ do_read_shard_gstream(
             Error
     end.
 
-do_read_key_gstream(
-    #{channel := Channel, grpc_timeout := Timeout}
-) ->
-    Options = #{channel => Channel, timeout => Timeout},
-    case ?HSTREAMDB_GEN_CLIENT:read_stream_by_key(Options) of
+do_read_key_gstream(Client) ->
+    case ?HSTREAMDB_GEN_CLIENT:read_stream_by_key(metadata(Client), options(Client)) of
         {ok, GStream} ->
             {ok, GStream};
         {error, _} = Error ->
@@ -969,11 +950,11 @@ read_record_count(TotalLeft, StepCount) ->
     NewStepCount = min(TotalLeft, StepCount),
     {TotalLeft - NewStepCount, NewStepCount}.
 
-do_trim(#{channel := Channel}, Stream, Offsets, Timeout) ->
+do_trim(Client, Stream, Offsets, Timeout) ->
     RecordIds = format_offsets(Offsets),
     Req = #{streamName => Stream, recordIds => RecordIds},
-    Options = #{channel => Channel, timeout => Timeout},
-    case ?HSTREAMDB_GEN_CLIENT:trim_shards(Req, Options) of
+    Options = maps:put(timeout, Timeout, options(Client)),
+    case ?HSTREAMDB_GEN_CLIENT:trim_shards(Req, metadata(Client), Options) of
         {ok, #{trimPoints := TrimPoints}, _} ->
             {ok, TrimPoints};
         {error, _} = Error ->
@@ -995,3 +976,17 @@ format_offset(#{shardId := ShardId, batchId := BatchId, batchIndex := BatchIndex
 shuffle(List) ->
     {_, ShuffledList} = lists:unzip(lists:sort([{rand:uniform(), X} || X <- List])),
     ShuffledList.
+
+metadata(#{metadata := Metadata} = _Client) ->
+    maps:map(
+        fun
+            (_K, V) when is_function(V, 0) ->
+                V();
+            (_K, V) ->
+                V
+        end,
+        Metadata
+    ).
+
+options(#{channel := Channel, grpc_timeout := Timeout} = _Client) ->
+    #{channel => Channel, timeout => Timeout}.
