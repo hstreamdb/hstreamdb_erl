@@ -181,16 +181,14 @@ ecpool_action(Client, Req) ->
 -define(invalidating, invalidating).
 -define(terminating(Terminator), {terminating, Terminator}).
 
--define(next_state(STATE, DATA),
-    begin
-        ?tp(debug, hstreamdb_batch_aggregator_next_state, #{state => STATE}),
-        {next_state, STATE, DATA}
-    end).
--define(next_state(STATE, DATA, ACTIONS),
-    begin
-        ?tp(debug, hstreamdb_batch_aggregator_next_state, #{state => STATE, actions => ACTIONS}),
-        {next_state, STATE, DATA, ACTIONS}
-    end).
+-define(next_state(STATE, DATA), begin
+    ?tp(debug, hstreamdb_batch_aggregator_next_state, #{state => STATE}),
+    {next_state, STATE, DATA}
+end).
+-define(next_state(STATE, DATA, ACTIONS), begin
+    ?tp(debug, hstreamdb_batch_aggregator_next_state, #{state => STATE, actions => ACTIONS}),
+    {next_state, STATE, DATA, ACTIONS}
+end).
 
 callback_mode() ->
     handle_event_function.
@@ -271,7 +269,6 @@ handle_event(
     Data
 ) ->
     enqueue_and_reply(Data, Req, From);
-
 %% Terminating
 
 handle_event({call, From}, _Req, ?terminating(_Terminator), _Data) ->
@@ -282,14 +279,18 @@ handle_event(
     ?terminating(_Terminator),
     Data
 ) ->
-    {keep_state, handle_write_result(Data, ShardId, Batch, Result, false), [{next_event, internal, check_buffers_empty}]};
+    {keep_state, handle_write_result(Data, ShardId, Batch, Result, false), [
+        {next_event, internal, check_buffers_empty}
+    ]};
 handle_event(info, {shard_buffer_event, ShardId, Message}, ?terminating(_Terminator), Data) ->
-    {keep_state, handle_shard_buffer_event(Data, ShardId, Message, false), [{next_event, internal, check_buffers_empty}]};
+    {keep_state, handle_shard_buffer_event(Data, ShardId, Message, false), [
+        {next_event, internal, check_buffers_empty}
+    ]};
 handle_event(internal, check_buffers_empty, ?terminating(Terminator), Data) ->
     are_all_buffers_empty(Data) andalso erlang:send(Terminator, {empty, Terminator}),
     keep_state_and_data;
-
 %% Invalidating
+
 handle_event({call, From}, _Req, ?invalidating, _Data) ->
     {keep_state_and_data, [{reply, From, {error, ?ERROR_STREAM_CHANGED}}]};
 handle_event(
@@ -298,14 +299,20 @@ handle_event(
     ?invalidating,
     Data
 ) ->
-    {keep_state, handle_write_result(Data, ShardId, Batch, Result, false), [{next_event, internal, check_buffers_empty}]};
+    {keep_state, handle_write_result(Data, ShardId, Batch, Result, false), [
+        {next_event, internal, check_buffers_empty}
+    ]};
 handle_event(info, {shard_buffer_event, ShardId, Message}, ?invalidating, Data) ->
-    {keep_state, handle_shard_buffer_event(Data, ShardId, Message, false), [{next_event, internal, check_buffers_empty}]};
+    {keep_state, handle_shard_buffer_event(Data, ShardId, Message, false), [
+        {next_event, internal, check_buffers_empty}
+    ]};
 handle_event(cast, stream_updated, ?invalidating, _Data) ->
     keep_state_and_data;
 handle_event(cast, {stop, _Terminator}, ?invalidating, _Data) ->
     {keep_state_and_data, postpone};
-handle_event(internal, check_buffers_empty, ?invalidating, #data{discovery_backoff_opts = BackoffOpts} = Data) ->
+handle_event(
+    internal, check_buffers_empty, ?invalidating, #data{discovery_backoff_opts = BackoffOpts} = Data
+) ->
     case are_all_buffers_empty(Data) of
         true ->
             Backoff = hstreamdb_backoff:new(BackoffOpts),
@@ -313,7 +320,9 @@ handle_event(internal, check_buffers_empty, ?invalidating, #data{discovery_backo
         false ->
             ?next_state(?invalidating, Data)
     end;
-
+handle_event(state_timeout, stream_invalidate_finish, ?invalidating, Data) ->
+    Data1 = drop_inflight(Data, ?ERROR_STREAM_CHANGED),
+    {keep_state, Data1, [{next_event, internal, check_buffers_empty}]};
 %% Active
 
 handle_event({call, From}, {append, _PartitioningKey, _Records} = Req, ?active, Data) ->
@@ -323,12 +332,14 @@ handle_event({call, From}, {append, _PartitioningKey, _Records} = Req, ?active, 
 handle_event({call, From}, flush, ?active, Data) ->
     {keep_state, flush_buffers(Data), [{reply, From, ok}]};
 handle_event(
-    {call, From}, {sync_req, _Caller, {append_sync, _}, _Timeout} = Req, ?active, Data) ->
+    {call, From}, {sync_req, _Caller, {append_sync, _}, _Timeout} = Req, ?active, Data
+) ->
     {PartitioningKey, BufferRecords} = buffer_records(Req),
     {Resp, NData} = do_append(PartitioningKey, BufferRecords, false, Data),
     {keep_state, NData, [{reply, From, Resp}]};
 handle_event(
-    {call, From}, {sync_req, _Caller, {append_flush, _}, _Timeout} = Req, ?active, Data) ->
+    {call, From}, {sync_req, _Caller, {append_flush, _}, _Timeout} = Req, ?active, Data
+) ->
     {PartitioningKey, BufferRecords} = buffer_records(Req),
     {Resp, NData} = do_append(PartitioningKey, BufferRecords, true, Data),
     {keep_state, NData, [{reply, From, Resp}]};
@@ -344,10 +355,17 @@ handle_event(
     {keep_state, handle_write_result(Data, ShardId, Batch, Result, true)};
 handle_event(info, {shard_buffer_event, ShardId, Message}, ?active, Data) ->
     {keep_state, handle_shard_buffer_event(Data, ShardId, Message, true)};
-handle_event(cast, stream_updated, ?active, Data0) ->
+handle_event(
+    cast,
+    stream_updated,
+    ?active,
+    #data{stream_invalidate_timeout = StreamInvalidateTimeout} = Data0
+) ->
     Data1 = drop_buffers(Data0, ?ERROR_STREAM_CHANGED),
-    ?next_state(?invalidating, Data1, [{next_event, internal, check_buffers_empty}]);
-
+    ?next_state(?invalidating, Data1, [
+        {next_event, internal, check_buffers_empty},
+        {state_timeout, StreamInvalidateTimeout, stream_invalidate_finish}
+    ]);
 %% Fallbacks
 
 handle_event({call, From}, Request, _State, _Data) ->
@@ -496,9 +514,12 @@ with_shard_buffer(
             {{error, shard_not_found}, Data0}
     end.
 
-map_buffers(Data = #data{
-    buffers = Buffers
-}, Fun) ->
+map_buffers(
+    Data = #data{
+        buffers = Buffers
+    },
+    Fun
+) ->
     lists:foldl(
         fun(ShardId, Data0) ->
             {Buffer0, Data1} = get_shard_buffer(ShardId, Data0),
@@ -523,8 +544,8 @@ do_append(PartitioningKey, BufferRecords, NeedFlush, Data) ->
 
 maybe_flush(true = _NeedFlush, {ok, Buffer}) ->
     {ok, hstreamdb_buffer:flush(Buffer)};
-maybe_flush(_NeedFlush, Result) -> Result.
-
+maybe_flush(_NeedFlush, Result) ->
+    Result.
 
 write(ShardId, #{batch_ref := Ref, tab := Tab}, #data{
     writer_name = WriterName, compression_type = CompressionType
@@ -550,6 +571,9 @@ flush_buffers(Data) ->
 
 drop_buffers(Data, Reason) ->
     map_buffers(Data, fun(Buffer) -> hstreamdb_buffer:drop(Buffer, Reason) end).
+
+drop_inflight(Data, Reason) ->
+    map_buffers(Data, fun(Buffer) -> hstreamdb_buffer:drop_inflight(Buffer, Reason) end).
 
 handle_write_result(
     Data0,
@@ -630,7 +654,6 @@ buffer_opts(Options) ->
         backoff_options => maps:get(batch_backoff_options, Options, ?DEFAULT_BATCH_BACKOFF_OPTIONS)
     }.
 
-
 enqueue_and_reply(Data, Req, From) ->
     keep_state_and_reply(
         append_to_queue(Data, Req),
@@ -648,6 +671,6 @@ buffer_records({sync_req, Caller, {_AppendKind, {PartitioningKey, Record}}, Time
     {PartitioningKey, BufferRecords}.
 
 keep_state_and_reply({ok, Data}, From) ->
-        {keep_state, Data, [{reply, From, ok}]};
+    {keep_state, Data, [{reply, From, ok}]};
 keep_state_and_reply({error, _} = Error, From) ->
-        {keep_state_and_data, [{reply, From, Error}]}.
+    {keep_state_and_data, [{reply, From, Error}]}.
