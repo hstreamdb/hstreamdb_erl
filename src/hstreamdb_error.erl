@@ -16,12 +16,18 @@
 
 -module(hstreamdb_error).
 
+-include("errors.hrl").
+
 -export([
     is_transient/1,
     requires_rediscovery/1
 ]).
 
+%% Malformed messages, resenging them won't help
 is_transient({error, {encode_msg, _}}) ->
+    false;
+%% This is the final batch timeout, including all the retries
+is_transient({error, ?ERROR_TIMEOUT}) ->
     false;
 is_transient({error, _}) ->
     true.
