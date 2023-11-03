@@ -24,7 +24,6 @@
 
 -export([
     start_producer/2,
-    start_producer/3,
     stop_producer/1,
     to_record/3,
     append/2,
@@ -118,59 +117,6 @@ start_producer(Producer, ProducerOptions) ->
         {error, _} = Error ->
             Error
     end.
-
-%% Legacy API
-start_producer(Client, Producer, ProducerOptions) ->
-    BufferOptions = to_map(
-        [
-            callback,
-            interval,
-            max_records,
-            max_batches
-        ],
-        ProducerOptions
-    ),
-    WriterOptions = to_map(
-        [
-            grpc_timeout
-        ],
-        ProducerOptions
-    ),
-    ClientOptions = hstreamdb_client:options(Client),
-    BaseOptions = to_map(
-        [
-            stream,
-            {pool_size, buffer_pool_size},
-            writer_pool_size
-        ],
-        ProducerOptions
-    ),
-    Options = BaseOptions#{
-        buffer_options => BufferOptions,
-        writer_options => WriterOptions,
-        client_options => ClientOptions
-    },
-    case start_producer(Producer, Options) of
-        ok ->
-            {ok, Producer};
-        {error, _} = Error ->
-            Error
-    end.
-
-to_map(KeyMappings, Options) ->
-    to_map(KeyMappings, Options, #{}).
-
-to_map([Key | Rest], Options, Acc) when is_atom(Key) ->
-    to_map([{Key, Key} | Rest], Options, Acc);
-to_map([{KeyFrom, KeyTo} | Rest], Options, Acc) ->
-    case proplists:get_value(KeyFrom, Options, undefined) of
-        undefined ->
-            to_map(Rest, Options, Acc);
-        Value ->
-            to_map(Rest, Options, maps:put(KeyTo, Value, Acc))
-    end;
-to_map([], _Options, Acc) ->
-    Acc.
 
 stop_producer(Producer) ->
     hstreamdb_producers_sup:stop(Producer).

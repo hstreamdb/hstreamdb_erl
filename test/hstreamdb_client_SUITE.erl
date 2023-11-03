@@ -64,3 +64,38 @@ t_connect_fail(_Config) ->
         hstreamdb_client:connect(Client)
     ),
     ok = hstreamdb_client:stop(Client).
+
+t_hidden_metadata(_Config) ->
+    AuthToken = <<"dXNlcjpwYXNzd29yZA==">>,
+    ClientConfig = #{
+        url => "http://127.0.0.1:6570",
+        metadata => #{<<"authorization">> => fun() -> AuthToken end}
+    },
+
+    {ok, Client} = hstreamdb_client:create(test_c1, ClientConfig),
+    ?assertEqual(
+        ok,
+        hstreamdb_client:connect(Client)
+    ),
+    ?assertEqual(
+        ok,
+        hstreamdb_client:stop(Client)
+    ).
+
+t_metadata(_Config) ->
+    AuthToken = <<"dXNlcjpwYXNzd29yZA==">>,
+
+    ClientConfig = #{
+        url => "http://127.0.0.1:6570",
+        metadata => #{<<"authorization">> => AuthToken}
+    },
+
+    {ok, Client} = hstreamdb_client:create(test_c1, ClientConfig),
+    ?assertEqual(
+        ok,
+        hstreamdb_client:connect(Client)
+    ),
+    ?assertEqual(
+        ok,
+        hstreamdb_client:stop(Client)
+    ).
