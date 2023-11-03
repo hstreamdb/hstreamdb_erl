@@ -99,3 +99,17 @@ t_metadata(_Config) ->
         ok,
         hstreamdb_client:stop(Client)
     ).
+
+t_auth(_Config) ->
+    ClientConfig = #{
+        url => "http://127.0.0.1:6570",
+        username => <<"user">>,
+        password => <<"password">>
+    },
+
+    {ok, Client} = hstreamdb_client:create(test_c1, ClientConfig),
+
+    ?assertMatch(
+        #{<<"authorization">> := <<"Basic dXNlcjpwYXNzd29yZA==">>},
+        hstreamdb_client:metadata(Client)
+    ).

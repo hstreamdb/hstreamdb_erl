@@ -61,7 +61,8 @@
     trim/4,
 
     name/1,
-    options/1
+    options/1,
+    metadata/1
 ]).
 
 -export_type([
@@ -186,7 +187,9 @@
     host_mapping => #{binary() => binary()},
     grpc_timeout => pos_integer(),
     reap_channel => boolean(),
-    metadata => map()
+    metadata => map(),
+    username => binary() | string(),
+    password => binary() | string()
 }.
 
 -type grpc_req_options() :: #{
@@ -234,7 +237,7 @@ create(Name, Options) ->
     ChannelName = to_channel_name(Name),
     GRPCTimeout = maps:get(grpc_timeout, Options, ?GRPC_TIMEOUT),
     ReapChannel = maps:get(reap_channel, Options, true),
-    Metadata = maps:get(metadata, Options, #{}),
+    Metadata = prepare_metadata(Options),
     case validate_urls_and_opts(ServerURL, maps:get(gun_opts, RPCOptions, #{})) of
         {ok, ServerURLMaps, GunOpts} ->
             {ok, #{
@@ -990,3 +993,23 @@ metadata(#{metadata := Metadata} = _Client) ->
 
 options(#{channel := Channel, grpc_timeout := Timeout} = _Client) ->
     #{channel => Channel, timeout => Timeout}.
+
+prepare_metadata(Options) ->
+    Metadata = maps:get(metadata, Options, #{}),
+    case Options of
+        #{username := Username, password := Password} ->
+            Metadata#{<<"authorization">> => authorization(Username, Password)};
+        _ ->
+            Metadata
+    end.
+
+authorization(Username, Password) ->
+    UsernameBin = str_to_bin(Username),
+    PasswordBin = str_to_bin(Password),
+    Token = <<UsernameBin/binary, ":", PasswordBin/binary>>,
+    TokenBase64 = base64:encode(Token),
+    HeaderValue = <<"Basic ", TokenBase64/binary>>,
+    fun() -> HeaderValue end.
+
+str_to_bin(B) when is_binary(B) -> B;
+str_to_bin(L) when is_list(L) -> unicode:characters_to_binary(L).
