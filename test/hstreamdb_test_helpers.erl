@@ -196,3 +196,40 @@ latency_up_proxy(off, Name, ProxyHost, ProxyPort) ->
 
 json_encode(Json) ->
     jiffy:encode(Json).
+
+start_disruptor(Hosts, Errors, ErrorPeriodBase, OkPeriodBase) ->
+    spawn_link(
+        fun() ->
+            reset_proxy(),
+            loop_disrupt(Hosts, Errors, ErrorPeriodBase, OkPeriodBase)
+        end
+    ).
+
+stop_disruptor(Disruptor) ->
+    Disruptor ! stop.
+
+loop_disrupt(Hosts, Errors, ErrorPeriodBase, OkPeriodBase) ->
+    receive
+        stop ->
+            ok
+    after 0 ->
+        Host = random_element(Hosts),
+        Error = random_element(Errors),
+        ErrorPeriod = random_period(ErrorPeriodBase),
+        OkPeriod = random_period(OkPeriodBase),
+        ?LOG_DEBUG("disrupt: ~p, error: ~p, error_period: ~p, ok_period: ~p~n", [
+            Host,
+            Error,
+            ErrorPeriod,
+            OkPeriod
+        ]),
+        with_failure(Error, Host, fun() -> timer:sleep(ErrorPeriod) end),
+        timer:sleep(OkPeriod),
+        loop_disrupt(Hosts, Errors, ErrorPeriodBase, OkPeriodBase)
+    end.
+
+random_period(Base) ->
+    max(300, ceil(Base * rand:uniform())).
+
+random_element(List) ->
+    lists:nth(rand:uniform(length(List)), List).

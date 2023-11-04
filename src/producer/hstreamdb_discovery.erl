@@ -193,8 +193,8 @@ handle_event(state_timeout, discover, ?discovering(Backoff0), #{stream := Stream
             },
             ?next_state(?active, Data1);
         {error, Reason} ->
-            ?LOG_ERROR("[hstreamdb] discovery, failed to update shards for stream ~p: ~p", [Stream, Reason]),
             {Delay, Backoff1} = hstreamdb_backoff:next_delay(Backoff0),
+            ?LOG_ERROR("[hstreamdb] discovery, failed to update shards for stream ~p, next retry in: ~p, error: ~p", [Stream, Delay, Reason]),
             ?next_state(?discovering(Backoff1), Data0, [{state_timeout, Delay, discover}])
     end;
 handle_event(cast, {shard_unavailable, _ShardId, _Version}, ?discovering(_), _Data) ->
