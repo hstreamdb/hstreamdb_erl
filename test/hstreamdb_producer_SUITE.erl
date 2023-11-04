@@ -1,3 +1,19 @@
+%%--------------------------------------------------------------------
+%% Copyright (c) 2020-2022 EMQ Technologies Co., Ltd. All Rights Reserved.
+%%
+%% Licensed under the Apache License, Version 2.0 (the "License");
+%% you may not use this file except in compliance with the License.
+%% You may obtain a copy of the License at
+%%
+%%     http://www.apache.org/licenses/LICENSE-2.0
+%%
+%% Unless required by applicable law or agreed to in writing, software
+%% distributed under the License is distributed on an "AS IS" BASIS,
+%% WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+%% See the License for the specific language governing permissions and
+%% limitations under the License.
+%%--------------------------------------------------------------------
+
 -module(hstreamdb_producer_SUITE).
 
 -compile(export_all).
@@ -37,6 +53,7 @@ init_per_testcase(_TestCase, Config) ->
     Client = hstreamdb_test_helpers:client(test_c),
     _ = hstreamdb_client:delete_stream(Client, ?STREAM),
     ok = hstreamdb_client:create_stream(Client, ?STREAM, 2, ?DAY, 5),
+    _ = hstreamdb_test_helpers:reset_proxy(),
     _ = snabbkaffe:start_trace(),
     [{producer_name, test_producer}, {client, Client} | Config].
 end_per_testcase(_TestCase, Config) ->
@@ -361,6 +378,31 @@ t_append_with_timeouts(Config) ->
     timer:sleep(2000),
     assert_ok_flush_result(5).
 
+t_append_with_constant_errors(Config) ->
+    ?assertWaitEvent(
+        ok = start_producer(Config, producer_quick_recover_options()),
+        #{?snk_kind := batch_aggregator_discovered},
+        5000
+    ),
+
+    Pid = hstreamdb_test_helpers:start_disruptor(
+        ["hserver0", "hserver1"],
+        [down, timeout],
+        500,
+        1000
+    ),
+
+    lists:foreach(
+        fun(_) ->
+            timer:sleep(5),
+            ok = hstreamdb:append(producer(Config), sample_record())
+        end,
+        lists:seq(1, 1000)
+    ),
+    timer:sleep(2000),
+    hstreamdb_test_helpers:stop_disruptor(Pid),
+    assert_ok_flush_result(1000).
+
 t_append_unavailable_from_start(Config) ->
     hstreamdb_test_helpers:with_failures(
         [{down, "hserver0"}, {down, "hserver1"}],
@@ -402,6 +444,34 @@ t_append_sync_unavailable_from_start(Config) ->
             ?assertReceived({result, {ok, _}})
         end,
         lists:seq(1, 5)
+    ).
+
+t_append_unexisting_stream(Config) ->
+    DiscoveryOptions = #{
+        backoff_options => {100, 1000, 2}
+    },
+    ProducerOptions = maps:put(
+        discovery_options, DiscoveryOptions, producer_quick_recover_options()
+    ),
+
+    Client = ?config(client, Config),
+    _ = hstreamdb_client:delete_stream(Client, ?STREAM),
+
+    ?check_trace(
+        begin
+            ok = start_producer(Config, ProducerOptions),
+            timer:sleep(5000)
+        end,
+        fun(_, Trace) ->
+            Retries = [
+                Event
+             || #{state := {discovering, _}} = Event <- ?of_kind(
+                    hstreamdb_discovery_next_state, Trace
+                )
+            ],
+            ?assert(length(Retries) < 9),
+            ?assert(length(Retries) > 5)
+        end
     ).
 
 t_append_sync(Config) ->
@@ -597,17 +667,17 @@ producer_quick_recover_options() ->
         buffer_pool_size => 1,
         buffer_options => #{
             max_records => 2,
-            max_batches => 100,
+            max_batches => 1000,
             interval => 100,
             batch_max_retries => 10,
-            backoff_options => {100, 100, 2},
+            backoff_options => {100, 200, 2},
             batch_reap_timeout => 100000
         },
         discovery_options => #{
             backoff_options => {100, 100, 2}
         },
         writer_options => #{
-            grpc_timeout => 500
+            grpc_timeout => 200
         }
     }.
 
