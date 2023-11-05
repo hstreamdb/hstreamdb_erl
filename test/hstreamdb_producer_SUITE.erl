@@ -388,16 +388,18 @@ t_append_with_constant_errors(Config) ->
     Pid = hstreamdb_test_helpers:start_disruptor(
         ["hserver0", "hserver1"],
         [down, timeout],
-        500,
-        1000
+        1000,
+        2000
     ),
 
+    %% Append during 25 seconds, experiencing constant random tcp errors
     lists:foreach(
-        fun(_) ->
+        fun(N) ->
             timer:sleep(5),
-            ok = hstreamdb:append(producer(Config), sample_record())
+            ok = hstreamdb:append(producer(Config), sample_record()),
+            (N rem 1000 =:= 0) andalso ct:print("appended: ~p~n", [N])
         end,
-        lists:seq(1, 1000)
+        lists:seq(1, 5000)
     ),
     timer:sleep(2000),
     hstreamdb_test_helpers:stop_disruptor(Pid),
