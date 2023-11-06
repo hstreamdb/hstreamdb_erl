@@ -630,6 +630,22 @@ t_nonexistent_stream(Config) ->
         hstreamdb:append_sync(producer(Config), sample_record(), 1000)
     ).
 
+t_nonexistent_stream_stop(Config) ->
+    ProducerOptions = #{
+        stream => "nonexistent_stream",
+        buffer_pool_size => 1,
+        buffer_options => #{
+            max_records => 10000,
+            interval => 10000,
+            batch_max_retries => 1
+        }
+    },
+
+    ok = start_producer(Config, ProducerOptions),
+    ok = hstreamdb:append(producer(Config), sample_record()),
+
+    ok = hstreamdb:stop_producer(producer(Config)).
+
 t_removed_stream(Config) ->
     ProducerOptions = #{
         buffer_pool_size => 1,

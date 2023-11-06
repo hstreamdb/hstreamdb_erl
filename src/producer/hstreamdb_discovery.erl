@@ -226,8 +226,11 @@ terminate(
         version := Version
     } = Data
 ) ->
+    ?LOG_INFO("[hstreamdb] discovery ~p terminating", [Name]),
     ok = run_callbacks(on_terminate, [Name, Version, KeyManager, ShardClientManager], Data),
+    ?LOG_INFO("[hstreamdb] discovery ~p, callbacks executed", [Name]),
     _Data = stop_shard_clients(Data),
+    ?LOG_INFO("[hstreamdb] discovery ~p, shard cliends stopped", [Name]),
     ok.
 
 code_change(_OldVsn, State, Data, _Extra) ->
