@@ -375,7 +375,8 @@ handle_event(info, _Request, _State, _Data) ->
 handle_event(cast, _Request, _State, _Data) ->
     keep_state_and_data.
 
-terminate(_Reason, _State, _Data) ->
+terminate(_Reason, State, #data{name = Name}) ->
+    ?LOG_INFO("[hstreamdb] batch_aggregator ~p terminating in state ~p", [Name, State]),
     ok.
 
 code_change(_OldVsn, State, Data, _Extra) ->

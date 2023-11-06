@@ -102,33 +102,33 @@ init([
     StopTimeout = maps:get(stop_timeout, Opts, ?DEFAULT_STOP_TIMEOUT),
 
     ChildSpecs = [
-        batch_aggregator_pool_spec(Producer, BufferPoolSize, BufferOptions),
-        batch_writer_pool_spec(Producer, WriterPoolSize, WriterOptions),
-        discovery_spec(DiscoveryOptions),
+        batch_aggregator_pool_spec(Producer, BufferPoolSize, BufferOptions, StopTimeout),
+        batch_writer_pool_spec(Producer, WriterPoolSize, WriterOptions, StopTimeout),
+        discovery_spec(DiscoveryOptions, StopTimeout),
         terminator_spec(Producer, StopTimeout)
     ],
     {ok, {#{strategy => one_for_one, intensity => 5, period => 30}, ChildSpecs}}.
 
-discovery_spec(Opts) ->
+discovery_spec(Opts, StopTimeout) ->
     #{
         id => discovery,
         start => {hstreamdb_discovery, start_link, [Opts]},
         restart => permanent,
-        shutdown => infinity,
+        shutdown => timeout_with_threshold(StopTimeout),
         type => worker
     }.
 
-batch_aggregator_pool_spec(Producer, PoolSize, Opts) ->
+batch_aggregator_pool_spec(Producer, PoolSize, Opts, StopTimeout) ->
     AutoReconnect = maps:get(auto_reconnect, Opts, ?DEAULT_AUTO_RECONNECT),
     PoolOpts = [{pool_size, PoolSize}, {pool_type, hash}, {auto_reconnect, AutoReconnect}, {opts, Opts}],
-    ecpool_spec(Producer, hstreamdb_batch_aggregator, PoolOpts).
+    ecpool_spec(Producer, hstreamdb_batch_aggregator, PoolOpts, StopTimeout).
 
-batch_writer_pool_spec(Producer, PoolSize, Opts) ->
+batch_writer_pool_spec(Producer, PoolSize, Opts, StopTimeout) ->
     AutoReconnect = maps:get(auto_reconnect, Opts, ?DEAULT_AUTO_RECONNECT),
     WriterOptions = [
         {pool_size, PoolSize}, {opts, Opts}, {auto_reconnect, AutoReconnect}
     ],
-    ecpool_spec(hstreamdb_batch_aggregator:writer_name(Producer), hstreamdb_batch_writer, WriterOptions).
+    ecpool_spec(hstreamdb_batch_aggregator:writer_name(Producer), hstreamdb_batch_writer, WriterOptions, StopTimeout).
 
 terminator_spec(Producer, StopTimeout) ->
     #{
@@ -138,7 +138,7 @@ terminator_spec(Producer, StopTimeout) ->
                 #{producer => Producer, timeout => StopTimeout}
             ]},
         restart => permanent,
-        shutdown => StopTimeout + 1000,
+        shutdown => timeout_with_threshold(StopTimeout),
         type => worker
     }.
 
@@ -154,11 +154,14 @@ spec(Producer, Opts) ->
 child_id(Producer) ->
     {?MODULE, Producer}.
 
-ecpool_spec(Pool, Mod, Opts) ->
+ecpool_spec(Pool, Mod, Opts, StopTimeout) ->
     #{
         id => {pool_sup, Pool},
         start => {ecpool_pool_sup, start_link, [Pool, Mod, Opts]},
         restart => transient,
-        shutdown => infinity,
+        shutdown => timeout_with_threshold(StopTimeout),
         type => supervisor
     }.
+
+timeout_with_threshold(Timeout) ->
+    Timeout + ?STOP_TIMEOUT_THRESHOLD.

@@ -99,7 +99,7 @@ wait_for_terminate(Self, NWorkers, Deadline) when NWorkers > 0 ->
         {empty, Self} ->
             wait_for_terminate(Self, NWorkers - 1, Deadline)
     after TimeLeft ->
-        ?LOG_ERROR("[hstreamdb] terminator, producer timeout, still have ~p workers", [NWorkers]),
+        ?LOG_ERROR("[hstreamdb] terminator, producer timeout, still have ~p workers, continue shutdown", [NWorkers]),
         ok
     end.
 
