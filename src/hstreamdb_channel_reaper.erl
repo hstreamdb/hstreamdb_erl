@@ -110,8 +110,8 @@ handle_info({reap_timeout, Pid, MRef}, #{reap_timers_by_pid := ReapTimers0} = St
     State1 = State0#{reap_timers_by_pid => maps:remove(Pid, ReapTimers0)},
     {noreply, State1}.
 
-terminate(_Reason, _State) ->
-    ok.
+terminate(_Reason, #{channels_by_pid := ChannelsByPid}) ->
+    ok = do_reap_all(maps:values(ChannelsByPid)).
 
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
@@ -164,3 +164,9 @@ do_reap_channel(ChannelName, #{reap_timers_by_pid := ReapTimers0} = State0) ->
     ReapTimerRef = erlang:send_after(?REAP_TIMEOUT, self(), {reap_timeout, Pid, MRef}),
     ReapTimers1 = maps:put(Pid, ReapTimerRef, ReapTimers0),
     State0#{reap_timers_by_pid => ReapTimers1}.
+
+do_reap_all(ChannelNames) ->
+    lists:foreach(
+        fun grpc_client_sup:stop_channel_pool/1,
+        ChannelNames
+    ).

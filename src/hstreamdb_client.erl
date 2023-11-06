@@ -509,7 +509,7 @@ do_list_shards(Client, StreamName) ->
     Req = #{streamName => StreamName},
     case ?HSTREAMDB_GEN_CLIENT:list_shards(Req, metadata(Client), options(Client)) of
         {ok, #{shards := Shards}, _} ->
-            ?LOG_INFO("[hstreamdb] fetched shards for stream ~p:~n~p", [StreamName, Shards]),
+            ?LOG_DEBUG("[hstreamdb] fetched shards for stream ~p:~n~p", [StreamName, Shards]),
             {ok, Shards};
         {error, _} = Error ->
             Error
@@ -538,7 +538,7 @@ do_append(
                 timer:tc(fun() -> ?HSTREAMDB_GEN_CLIENT:append(NReq, metadata(Client), Options) end)
             of
                 {Time, {ok, Resp, _MetaData}} ->
-                    ?LOG_INFO(
+                    ?LOG_DEBUG(
                         "[hstreamdb] flush_request[~p, ~p], pid=~p,~nSUCCESS in ~p ms, ~p records",
                         [
                             Channel, ShardId, self(), Time div 1000, length(Records)

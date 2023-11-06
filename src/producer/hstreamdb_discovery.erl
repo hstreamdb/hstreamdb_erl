@@ -226,11 +226,11 @@ terminate(
         version := Version
     } = Data
 ) ->
-    ?LOG_INFO("[hstreamdb] discovery ~p terminating", [Name]),
+    ?LOG_DEBUG("[hstreamdb] discovery ~p terminating", [Name]),
     ok = run_callbacks(on_terminate, [Name, Version, KeyManager, ShardClientManager], Data),
-    ?LOG_INFO("[hstreamdb] discovery ~p, callbacks executed", [Name]),
+    ?LOG_DEBUG("[hstreamdb] discovery ~p, callbacks executed", [Name]),
     _Data = stop_shard_clients(Data),
-    ?LOG_INFO("[hstreamdb] discovery ~p, shard cliends stopped", [Name]),
+    ?LOG_DEBUG("[hstreamdb] discovery ~p, shard cliends stopped", [Name]),
     ok.
 
 code_change(_OldVsn, State, Data, _Extra) ->
@@ -241,7 +241,8 @@ code_change(_OldVsn, State, Data, _Extra) ->
 %%-------------------------------------------------------------------------------------------------
 
 %% The initial value for Ctx is data()
-reconnect([], #{client := Client} = Ctx) ->
+reconnect([], #{client := Client, name := Name} = Ctx) ->
+    ?LOG_DEBUG("[hstreamdb] discovery, reconnecting to hstreamdb: ~p", [Name]),
     case hstreamdb_client:reconnect(Client) of
         ok ->
             {ok, Ctx#{client => Client}};
@@ -249,7 +250,8 @@ reconnect([], #{client := Client} = Ctx) ->
             Error
     end.
 
-list_shards([], #{client := Client, stream := Stream} = Ctx) ->
+list_shards([], #{client := Client, stream := Stream, name := Name} = Ctx) ->
+    ?LOG_DEBUG("[hstreamdb] discovery, listing shards: ~p", [Name]),
     NewKeyManager0 = hstreamdb_key_mgr:create(Stream),
     case hstreamdb_key_mgr:update_shards(Client, NewKeyManager0) of
         {ok, NewKeyManager1} ->
@@ -262,8 +264,9 @@ list_shards([], #{client := Client, stream := Stream} = Ctx) ->
 
 create_clients(
     [],
-    #{client := Client, new_key_manager := NewKeyManager, rpc_options := OverrideRPCOptions} = Ctx
+    #{client := Client, new_key_manager := NewKeyManager, rpc_options := OverrideRPCOptions, name := Name} = Ctx
 ) ->
+    ?LOG_DEBUG("[hstreamdb] discovery, creating clients: ~p", [Name]),
     {ok, ShardIds} = hstreamdb_key_mgr:shard_ids(NewKeyManager),
     NewShardClientManager = hstreamdb_shard_client_mgr:start(Client, #{
         cache_by_shard_id => true,
@@ -341,11 +344,12 @@ pipeline([{Fun, Arg} | Rest], Result0) ->
             {error, {Error, Reason, Stacktrace}}
     end.
 
-run_callbacks(Name, Args, Data) ->
-    Funs = maps:get(Name, Data),
+run_callbacks(CallbackName, Args, #{name := Name} = Data) ->
+    ?LOG_DEBUG("[hstreamdb] discovery, running callback ~p: ~p", [CallbackName, Name]),
+    Funs = maps:get(CallbackName, Data),
     lists:foreach(
         fun(Fun) ->
-            safe_call(Name, Fun, Args)
+            safe_call(CallbackName, Fun, Args)
         end,
         Funs
     ).

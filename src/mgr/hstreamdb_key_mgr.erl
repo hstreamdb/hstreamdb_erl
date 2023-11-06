@@ -63,7 +63,7 @@ choose_shard(#{shards := Shards}, PartitioningKey) ->
     {ok, t()} | {error, term()}.
 update_shards(Client, #{stream := StreamName} = KeyM) ->
     Result = list_shards(Client, StreamName),
-    ?LOG_INFO("[hstreamdb] fetch shards for stream ~p:~n~p~n", [StreamName, Result]),
+    ?LOG_DEBUG("[hstreamdb] fetch shards for stream ~p:~n~p~n", [StreamName, Result]),
     case Result of
         {ok, Shards} ->
             NewKeyM = set_shards(KeyM, Shards),
