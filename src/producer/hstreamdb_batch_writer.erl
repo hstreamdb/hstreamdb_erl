@@ -150,7 +150,7 @@ handle_info(_Msg, State) ->
     {noreply, State}.
 
 terminate(_Reason, #state{name = Name} = _State) ->
-    ?LOG_INFO("[hstreamdb] batch_writer ~p terminating", [Name]),
+    ?LOG_DEBUG("[hstreamdb] batch_writer ~p terminating", [Name]),
     ok.
 
 code_change(_OldVsn, State, _Extra) ->

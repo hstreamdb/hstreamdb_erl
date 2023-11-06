@@ -113,3 +113,17 @@ t_auth(_Config) ->
         #{<<"authorization">> := <<"Basic dXNlcjpwYXNzd29yZA==">>},
         hstreamdb_client:metadata(Client)
     ).
+
+t_reaper(_Config) ->
+    ClientConfig = #{url => "http://127.0.0.1:6570"},
+
+    {ok, Client} = hstreamdb_client:create(test_c1, ClientConfig),
+
+    _ = application:stop(hstreamdb_erl),
+    _ = application:start(hstreamdb_erl),
+
+    %% Reaper should drop all channels on termination
+    ?assertError(
+        badarg,
+        hstreamdb_client:echo(Client)
+    ).

@@ -254,8 +254,17 @@ handle_event(state_timeout, discover, ?discovering(Backoff0), #data{name = Name}
     end;
 handle_event(cast, stream_updated, ?discovering(_Backoff), _Data) ->
     {keep_state_and_data, [{state_timeout, 0, discover}]};
-handle_event(cast, {stop, _Terminator}, ?discovering(_Backoff), _Data) ->
-    {keep_state_and_data, postpone};
+handle_event(
+    cast, {stop, Terminator}, ?discovering(_Backoff), #data{queue_size = QueueSize} = Data
+) ->
+    case QueueSize of
+        0 ->
+            ?next_state(?terminating(Terminator), Data, [
+                {next_event, internal, check_buffers_empty}
+            ]);
+        _ ->
+            {keep_state_and_data, postpone}
+    end;
 handle_event({call, From}, flush, ?discovering(_Backoff), _Data) ->
     {keep_state_and_data, [postpone, {reply, From, ok}]};
 handle_event(
@@ -376,7 +385,7 @@ handle_event(cast, _Request, _State, _Data) ->
     keep_state_and_data.
 
 terminate(_Reason, State, #data{name = Name}) ->
-    ?LOG_INFO("[hstreamdb] batch_aggregator ~p terminating in state ~p", [Name, State]),
+    ?LOG_DEBUG("[hstreamdb] batch_aggregator ~p terminating in state ~p", [Name, State]),
     ok.
 
 code_change(_OldVsn, State, Data, _Extra) ->
