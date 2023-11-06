@@ -149,7 +149,7 @@ handle_call(stop, _From, State) ->
 handle_info(_Msg, State) ->
     {noreply, State}.
 
-terminate(_Reason, #{name := Name} = _State) ->
+terminate(_Reason, #state{name = Name} = _State) ->
     ?LOG_INFO("[hstreamdb] batch_writer ~p terminating", [Name]),
     ok.
 
