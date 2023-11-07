@@ -419,7 +419,7 @@ wait_reply(Self, Timeout) ->
             {reply, Self, Resp} ->
                 Resp
         after 0 ->
-            {error, timeout}
+            {error, ?ERROR_TIMEOUT}
         end
     end.
 

@@ -21,6 +21,7 @@
 
 -include_lib("common_test/include/ct.hrl").
 -include("assert.hrl").
+-include("errors.hrl").
 
 -define(DEFAULT_FLUSH_INTERVAL, 100).
 -define(DEFAULT_BATCH_TIMEOUT, 100).
@@ -179,7 +180,7 @@ t_batches_with_timeouts(Config) ->
                     ),
                     lists:foreach(
                         fun(_) ->
-                            ?assertReceive({send_reply, from, {error, timeout}})
+                            ?assertReceive({send_reply, from, {error, ?ERROR_BATCH_TIMEOUT}})
                         end,
                         lists:seq(1, ?DEFAULT_BATCH_SIZE)
                     ),

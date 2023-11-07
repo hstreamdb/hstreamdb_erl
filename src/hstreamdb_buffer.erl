@@ -208,7 +208,7 @@ handle_event(Buffer, flush, _MayRetry) ->
     flush(Buffer);
 %% Batch timeout event
 handle_event(#{inflight_batch := {_BatchRef, ReqRef}} = Buffer0, {batch_timeout, ReqRef}, MayRetry) ->
-    handle_batch_response(Buffer0, ReqRef, {error, ?ERROR_TIMEOUT}, MayRetry);
+    handle_batch_response(Buffer0, ReqRef, {error, ?ERROR_BATCH_TIMEOUT}, MayRetry);
 %% May happen due to concurrency
 handle_event(Buffer, {batch_timeout, _ReqRef}, _MayRetry) ->
     Buffer;
