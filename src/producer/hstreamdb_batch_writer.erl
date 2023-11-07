@@ -220,10 +220,10 @@ do_write(
             catch
                 %% Discovery dropped the clients
                 error:badarg ->
-                    {{error, {cannot_resolve_shard_id, badarg}}, State};
+                    {{error, {cannot_access_shard, badarg}}, State};
                 %% Discovery dropped the clients
                 exit:{noproc, _} ->
-                    {{error, {cannot_resolve_shard_id, noproc}}, State};
+                    {{error, {cannot_access_shard, noproc}}, State};
                 error:Other ->
                     {{error, Other}, State}
             end;

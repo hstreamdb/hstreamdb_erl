@@ -38,7 +38,9 @@ end_per_suite(_Config) ->
 
 t_connect(_Config) ->
     ClientConfig = #{
-        url => "http://10.5.0.111:6570,127.0.0.1:6570"
+        url => "http://10.5.0.111:6570,127.0.0.1:6570",
+        password => <<"hstream">>,
+        username => <<"hstream">>
     },
 
     lists:foreach(
@@ -55,7 +57,9 @@ t_connect(_Config) ->
 
 t_connect_fail(_Config) ->
     ClientConfig = #{
-        url => "http://10.5.0.111:6570,10.5.0.222:6570"
+        url => "http://10.5.0.111:6570,10.5.0.222:6570",
+        password => <<"hstream">>,
+        username => <<"hstream">>
     },
 
     {ok, Client} = hstreamdb_client:create(test_c1, ClientConfig),
@@ -66,28 +70,24 @@ t_connect_fail(_Config) ->
     ok = hstreamdb_client:stop(Client).
 
 t_hidden_metadata(_Config) ->
-    AuthToken = <<"dXNlcjpwYXNzd29yZA==">>,
+    Auth = <<"Basic aHN0cmVhbTpoc3RyZWFt">>,
     ClientConfig = #{
         url => "http://127.0.0.1:6570",
-        metadata => #{<<"authorization">> => fun() -> AuthToken end}
+        metadata => #{<<"authorization">> => fun() -> Auth end}
     },
 
     {ok, Client} = hstreamdb_client:create(test_c1, ClientConfig),
-    ?assertEqual(
-        ok,
-        hstreamdb_client:connect(Client)
-    ),
-    ?assertEqual(
-        ok,
-        hstreamdb_client:stop(Client)
+    ?assertMatch(
+        #{<<"authorization">> := Auth},
+        hstreamdb_client:metadata(Client)
     ).
 
 t_metadata(_Config) ->
-    AuthToken = <<"dXNlcjpwYXNzd29yZA==">>,
+    Auth = <<"Basic aHN0cmVhbTpoc3RyZWFt">>,
 
     ClientConfig = #{
         url => "http://127.0.0.1:6570",
-        metadata => #{<<"authorization">> => AuthToken}
+        metadata => #{<<"authorization">> => Auth}
     },
 
     {ok, Client} = hstreamdb_client:create(test_c1, ClientConfig),
@@ -103,19 +103,30 @@ t_metadata(_Config) ->
 t_auth(_Config) ->
     ClientConfig = #{
         url => "http://127.0.0.1:6570",
-        username => <<"user">>,
-        password => <<"password">>
+        username => <<"hstream">>,
+        password => <<"hstream">>
     },
 
-    {ok, Client} = hstreamdb_client:create(test_c1, ClientConfig),
+    {ok, Client0} = hstreamdb_client:create(test_c1, ClientConfig),
 
     ?assertMatch(
-        #{<<"authorization">> := <<"Basic dXNlcjpwYXNzd29yZA==">>},
-        hstreamdb_client:metadata(Client)
+        #{<<"authorization">> := <<"Basic aHN0cmVhbTpoc3RyZWFt">>},
+        hstreamdb_client:metadata(Client0)
+    ),
+
+    {ok, Client1} = hstreamdb_client:connect(Client0, <<"127.0.0.1">>, 6570),
+
+    ?assertMatch(
+        #{<<"authorization">> := <<"Basic aHN0cmVhbTpoc3RyZWFt">>},
+        hstreamdb_client:metadata(Client1)
     ).
 
 t_reaper(_Config) ->
-    ClientConfig = #{url => "http://127.0.0.1:6570"},
+    ClientConfig = #{
+        url => "http://127.0.0.1:6570",
+        username => <<"hstream">>,
+        password => <<"hstream">>
+    },
 
     {ok, Client} = hstreamdb_client:create(test_c1, ClientConfig),
 

@@ -668,7 +668,7 @@ t_removed_stream(Config) ->
     _ = hstreamdb_client:delete_stream(Client, ?STREAM),
 
     ?assertMatch(
-        {error, cannot_resolve_shard_id},
+        {error, {cannot_access_shard, badarg}},
         hstreamdb:append_sync(producer(Config), sample_record(), 1000)
     ).
 
