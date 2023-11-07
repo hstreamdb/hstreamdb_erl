@@ -218,8 +218,12 @@ do_write(
                     hstreamdb_discovery:report_shard_unavailable(Name, Version, ShardId, Error),
                     {Error, State}
             catch
+                %% Discovery dropped the clients
                 error:badarg ->
-                    {{error, cannot_resolve_shard_id}, State};
+                    {{error, {cannot_resolve_shard_id, badarg}}, State};
+                %% Discovery dropped the clients
+                exit:{noproc, _} ->
+                    {{error, {cannot_resolve_shard_id, noproc}}, State};
                 error:Other ->
                     {{error, Other}, State}
             end;
