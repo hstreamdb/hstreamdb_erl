@@ -53,6 +53,8 @@
 
 -define(DEFAULT_STREAM_INVALIDATE_TIMEOUT, 60000).
 
+-define(ECHO_MESSAGE, <<"hello">>).
+
 -define(VIA_GPROC(ID), {via, gproc, {n, l, ID}}).
 
 -define(SAFE_CAST_VIA_GPROC(ID, MESSAGE), ?SAFE_CAST_VIA_GPROC(ID, MESSAGE, noproc)).

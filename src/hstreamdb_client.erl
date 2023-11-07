@@ -318,7 +318,6 @@ connect(
         url_maps := [ServerURLMap | _],
         rpc_options := RPCOptions,
         reap_channel := ReapChannel,
-        url := ServerURL,
         grpc_timeout := GRPCTimeout
     } = Client,
     Host0,
@@ -334,14 +333,25 @@ connect(
     NewRPCOptions = maps:merge(RPCOptions, RPCOptionsOverrides),
     case start_channel(NewChannelName, NewUrlMap, NewRPCOptions, ReapChannel) of
         ok ->
-            {ok, Client#{
+            NewClient = Client#{
                 channel => NewChannelName,
                 url_maps => [NewUrlMap],
-                url => ServerURL,
+                url => uri_string:recompose(NewUrlMap),
                 rpc_options => NewRPCOptions,
                 reap_channel => ReapChannel,
                 grpc_timeout => GRPCTimeout
-            }};
+            },
+            case echo(NewClient) of
+                ok ->
+                    {ok, NewClient};
+                {error, Reason} ->
+                    ?LOG_ERROR(
+                        "[hstreamdb] ping new connection failed: ~p,~nurl: ~p, channel: ~p~n",
+                        [Reason, uri_string:recompose(NewUrlMap), NewChannelName]
+                    ),
+                    _ = stop(NewClient),
+                    {error, Reason}
+            end;
         {error, _} = Error ->
             Error
     end.
@@ -451,8 +461,8 @@ start_channel(ChannelName, URLMap, RPCOptions, ReapChannel) ->
 %% GRPC methods
 
 do_echo(Client) ->
-    case ?HSTREAMDB_GEN_CLIENT:echo(metadata(Client), options(Client)) of
-        {ok, #{msg := _}, _} ->
+    case ?HSTREAMDB_GEN_CLIENT:echo(#{msg => ?ECHO_MESSAGE}, metadata(Client), options(Client)) of
+        {ok, #{msg := ?ECHO_MESSAGE}, _} ->
             ok;
         {error, R} ->
             {error, R}
