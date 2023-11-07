@@ -27,12 +27,19 @@
 is_transient({error, {encode_msg, _}}) ->
     false;
 %% This is the final batch timeout, including all the retries
-is_transient({error, ?ERROR_TIMEOUT}) ->
+is_transient({error, ?ERROR_BATCH_TIMEOUT}) ->
+    false;
+%% Bad credentials
+is_transient({error, {cancelled, _}}) ->
     false;
 is_transient({error, _}) ->
     true.
 
+%% Malformed messages
 requires_rediscovery({error, {encode_msg, _}}) ->
+    false;
+%% Bad credentials
+requires_rediscovery({error, {cancelled, _}}) ->
     false;
 requires_rediscovery({error, _}) ->
     true.

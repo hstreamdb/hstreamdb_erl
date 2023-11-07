@@ -114,7 +114,7 @@ start_link(#{name := Name} = Options) ->
 
 -spec report_shard_unavailable(name(), version(), hstreamdb_client:shard_id(), term()) -> ok.
 report_shard_unavailable(Name, Version, ShardId, Error) ->
-    ?LOG_ERROR("[hstreamdb] discovery, shard ~p is unavailable for stream ~p, version ~p,~nerror: ~p", [
+    ?LOG_ERROR("[hstreamdb] discovery, shard ~p is unavailable for producer ~p, version ~p,~nerror: ~p", [
         ShardId, Name, Version, Error
     ]),
     hstreamdb_error:requires_rediscovery(Error) andalso

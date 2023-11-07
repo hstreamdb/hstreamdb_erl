@@ -23,6 +23,7 @@
 -include_lib("common_test/include/ct.hrl").
 -include_lib("snabbkaffe/include/snabbkaffe.hrl").
 -include("assert.hrl").
+-include("errors.hrl").
 
 -define(DAY, (24 * 60 * 60)).
 
@@ -271,7 +272,7 @@ t_batch_reap(Config) ->
 
     ok = hstreamdb:flush(producer(Config)),
 
-    ?assertResult({error, timeout}).
+    ?assertResult({error, ?ERROR_BATCH_TIMEOUT}).
 
 t_append_flush(Config) ->
     ProducerOptions = #{
@@ -497,7 +498,7 @@ t_append_sync(Config) ->
     ?assert(Time > 500),
 
     ?assertEqual(
-        {error, timeout},
+        {error, ?ERROR_TIMEOUT},
         hstreamdb_batch_aggregator:append_sync(producer(Config), sample_record(), 100)
     ).
 
@@ -626,7 +627,7 @@ t_nonexistent_stream(Config) ->
 
     %% batch_aggregator is still discovering
     ?assertMatch(
-        {error, timeout},
+        {error, ?ERROR_TIMEOUT},
         hstreamdb:append_sync(producer(Config), sample_record(), 1000)
     ).
 

@@ -289,7 +289,7 @@ connect(
                 end;
             {error, Reason} ->
                 ?LOG_ERROR(
-                    "[hstreamdb] start new connection failed: ~p,~nurl: ~p, channel: ~p~n",
+                    "[hstreamdb] start new connection failed: ~p,~nurl: ~p, channel: ~p",
                     [Reason, uri_string:recompose(URLMap), ChannelName]
                 ),
                 _ = stop(Client),
@@ -298,7 +298,7 @@ connect(
     catch
         Class:CrashReason ->
             ?LOG_ERROR(
-                "[hstreamdb] start new connection crashed: ~p,~nurl: ~p, channel: ~p~n",
+                "[hstreamdb] start new connection crashed: ~p:~p,~nurl: ~p,~nchannel: ~p",
                 [Class, CrashReason, uri_string:recompose(URLMap), ChannelName]
             ),
             _ = stop(Client),
