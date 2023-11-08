@@ -45,6 +45,10 @@
 ]).
 
 -export([
+    report_result/3
+]).
+
+-export([
     init/1,
     callback_mode/0,
     handle_event/4,
@@ -171,6 +175,14 @@ connect(PoolOptions) ->
 
 ecpool_action(Client, Req) ->
     gen_statem:call(Client, Req).
+
+%%-------------------------------------------------------------------------------------------------
+%% Writer API
+%%-------------------------------------------------------------------------------------------------
+
+report_result(BatchAggregatorPid, Batch, Result) ->
+    _ = erlang:send(BatchAggregatorPid, {write_result, Batch, Result}),
+    ok.
 
 %%-------------------------------------------------------------------------------------------------
 %% gen_statem callbacks
@@ -568,12 +580,25 @@ write(ShardId, #{batch_ref := Ref, tab := Tab}, #data{
         req_ref = ReqRef,
         compression_type = CompressionType
     },
-    ok = ecpool:with_client(
-        WriterName,
-        fun(WriterPid) ->
-            ok = hstreamdb_batch_writer:write(WriterPid, Batch)
-        end
-    ),
+    try
+        ecpool:with_client(
+            WriterName,
+            fun(WriterPid) ->
+                ok = hstreamdb_batch_writer:write(WriterPid, Batch)
+            end
+        ) of
+        ok ->
+            ok;
+        {error, _} = Error ->
+            report_result(self(), Batch, Error)
+    catch
+        Error:Reason ->
+            ?LOG_ERROR(
+                "[hstreamdb] producer_batch_aggregator: unexpected error in write: ~p:~p",
+                [Error, Reason]
+            ),
+            report_result(self(), Batch, {error, {writer_error, Error, Reason}})
+    end,
     ReqRef.
 
 flush_buffers(Data) ->

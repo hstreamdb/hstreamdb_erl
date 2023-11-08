@@ -140,7 +140,7 @@ handle_cast({write, #batch{shard_id = ShardId, batch_ref = BatchRef} = Batch, Ca
     Records = records(Batch),
     {Result, NState} = do_write(ShardId, Records, Batch, State),
     ?LOG_DEBUG("[hstreamdb] producer_batch_writer, batch ref: ~p,~nresult: ~p", [BatchRef, Result]),
-    _ = erlang:send(Caller, {write_result, Batch, Result}),
+    ok = hstreamdb_batch_aggregator:report_result(Caller, Batch, Result),
     {noreply, NState}.
 
 handle_call(stop, _From, State) ->
