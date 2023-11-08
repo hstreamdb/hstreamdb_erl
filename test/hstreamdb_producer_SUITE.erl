@@ -326,6 +326,34 @@ t_append_with_errors(Config) ->
     timer:sleep(2000),
     assert_ok_flush_result(5).
 
+t_append_with_dead_writers(Config) ->
+    ok = start_producer(Config, producer_quick_recover_options(1000)),
+
+    {_, Writers} = lists:unzip(
+        ecpool:workers(hstreamdb_batch_aggregator:writer_name(producer(Config)))
+    ),
+
+    lists:foreach(
+        fun(WriterWPid) ->
+            ecpool_worker:exec(
+                WriterWPid,
+                fun(WriterPid) -> exit(WriterPid, kill) end,
+                5000
+            )
+        end,
+        Writers
+    ),
+
+    lists:foreach(
+        fun(_) ->
+            ok = hstreamdb:append(producer(Config), sample_record())
+        end,
+        lists:seq(1, 5)
+    ),
+    %% auto_reconnect interval is 5 seconds
+    timer:sleep(6000),
+    assert_ok_flush_result(5).
+
 t_append_sync_errors(Config) ->
     ?assertWaitEvent(
         ok = start_producer(Config, producer_quick_recover_options()),
@@ -678,6 +706,9 @@ t_removed_stream(Config) ->
 %%--------------------------------------------------------------------
 
 producer_quick_recover_options() ->
+    producer_quick_recover_options(10).
+
+producer_quick_recover_options(MaxRetries) ->
     ClientOptions = hstreamdb_test_helpers:client_options(#{
         grpc_timeout => 100
     }),
@@ -688,7 +719,7 @@ producer_quick_recover_options() ->
             max_records => 2,
             max_batches => 1000,
             interval => 100,
-            batch_max_retries => 10,
+            batch_max_retries => MaxRetries,
             backoff_options => {100, 200, 2},
             batch_reap_timeout => 100000
         },
