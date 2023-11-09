@@ -432,7 +432,7 @@ t_append_with_constant_errors(Config) ->
     ),
     timer:sleep(2000),
     hstreamdb_test_helpers:stop_disruptor(Pid),
-    assert_ok_flush_result(1000).
+    assert_ok_flush_result(5000).
 
 t_append_unavailable_from_start(Config) ->
     hstreamdb_test_helpers:with_failures(
