@@ -35,6 +35,15 @@
     code_change/4
 ]).
 
+-export([
+    cache_shard_client/2,
+    reconnect/2,
+    list_shards/2,
+    create_clients/2,
+    call_callbacks/2,
+    stop_old_shard_clients/2
+]).
+
 -type name() :: ecpool:pool_name().
 
 -type init_callback() :: fun((name()) -> any()).
@@ -174,11 +183,11 @@ init([Options]) ->
 
 handle_event(state_timeout, discover, ?discovering(Backoff0), #{stream := Stream} = Data0) ->
     Pipeline = [
-        {fun reconnect/2, []},
-        {fun list_shards/2, []},
-        {fun create_clients/2, []},
-        {fun call_callbacks/2, []},
-        {fun stop_old_shard_clients/2, []}
+        {reconnect, []},
+        {list_shards, []},
+        {create_clients, []},
+        {call_callbacks, []},
+        {stop_old_shard_clients, []}
     ],
     case pipeline(Pipeline, Data0) of
         {ok, #{
@@ -274,7 +283,7 @@ create_clients(
     }),
     Pipeline = lists:map(
         fun(ShardId) ->
-            {fun cache_shard_client/2, ShardId}
+            {cache_shard_client, ShardId}
         end,
         ShardIds
     ),
@@ -332,16 +341,16 @@ stop_shard_clients(#{shard_client_manager := ShardClientManager} = Data) ->
 pipeline([], Result) ->
     {ok, Result};
 pipeline([{Fun, Arg} | Rest], Result0) ->
-    try Fun(Arg, Result0) of
+    try ?MODULE:Fun(Arg, Result0) of
         ok ->
             pipeline(Rest, Result0);
         {ok, Resuslt1} ->
             pipeline(Rest, Resuslt1);
-        {error, _} = Error ->
-            Error
+        {error, Reason} ->
+            {error, {{Fun, Arg}, Reason}}
     catch
         Error:Reason:Stacktrace ->
-            {error, {Error, Reason, Stacktrace}}
+            {error, {{Fun, Arg}, {Error, Reason, Stacktrace}}}
     end.
 
 run_callbacks(CallbackName, Args, #{name := Name} = Data) ->
