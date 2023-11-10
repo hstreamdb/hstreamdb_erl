@@ -28,8 +28,10 @@
     flush/1,
     append_flush/2,
     append_flush/3,
+    append_flush/4,
     append_sync/2,
-    append_sync/3
+    append_sync/3,
+    append_sync/4
 ]).
 
 -export([
@@ -113,8 +115,12 @@ append(Producer, PartitioningKey, Records) ->
 append_sync(Producer, {_PartitioningKey, _Record} = PKeyRecord) ->
     append_sync(Producer, PKeyRecord, infinity).
 
-append_sync(Producer, {PartitioningKey, _Record} = PKeyRecord, Timeout) ->
-    sync_request({Producer, bin(PartitioningKey)}, {append_sync, PKeyRecord}, Timeout).
+
+append_sync(Producer, {_PartitioningKey, _Record} = PKeyRecord, Timeout) ->
+    append_sync(Producer, PKeyRecord, Timeout, Timeout).
+
+append_sync(Producer, {PartitioningKey, _Record} = PKeyRecord, RecordTimeout, WaitTimeout) ->
+    sync_request({Producer, bin(PartitioningKey)}, {append_sync, PKeyRecord, RecordTimeout}, WaitTimeout).
 
 flush(Producer) ->
     foreach_worker(
@@ -125,8 +131,11 @@ flush(Producer) ->
 append_flush(Producer, {_PartitioningKey, _Record} = PKeyRecord) ->
     append_flush(Producer, PKeyRecord, infinity).
 
-append_flush(Producer, {PartitioningKey, _Record} = PKeyRecord, Timeout) ->
-    sync_request({Producer, bin(PartitioningKey)}, {append_flush, PKeyRecord}, Timeout).
+append_flush(Producer, {_PartitioningKey, _Record} = PKeyRecord, Timeout) ->
+    append_flush(Producer, PKeyRecord, Timeout, Timeout).
+
+append_flush(Producer, {PartitioningKey, _Record} = PKeyRecord, RecordTimeout, WaitTimeout) ->
+    sync_request({Producer, bin(PartitioningKey)}, {append_flush, PKeyRecord, RecordTimeout}, WaitTimeout).
 
 %%-------------------------------------------------------------------------------------------------
 %% Discovery
@@ -285,7 +294,7 @@ handle_event(
     enqueue_and_reply(Data, Req, From);
 handle_event(
     {call, From},
-    {sync_req, _Caller, _Req, _Timeout} = Req,
+    {sync_req, _Caller, _Req} = Req,
     ?discovering(_Backoff),
     Data
 ) ->
@@ -353,13 +362,13 @@ handle_event({call, From}, {append, _PartitioningKey, _Records} = Req, ?active, 
 handle_event({call, From}, flush, ?active, Data) ->
     {keep_state, flush_buffers(Data), [{reply, From, ok}]};
 handle_event(
-    {call, From}, {sync_req, _Caller, {append_sync, _}, _Timeout} = Req, ?active, Data
+    {call, From}, {sync_req, _Caller, {append_sync, _, _}} = Req, ?active, Data
 ) ->
     {PartitioningKey, BufferRecords} = buffer_records(Req),
     {Resp, NData} = do_append(PartitioningKey, BufferRecords, false, Data),
     {keep_state, NData, [{reply, From, Resp}]};
 handle_event(
-    {call, From}, {sync_req, _Caller, {append_flush, _}, _Timeout} = Req, ?active, Data
+    {call, From}, {sync_req, _Caller, {append_flush, _, _}} = Req, ?active, Data
 ) ->
     {PartitioningKey, BufferRecords} = buffer_records(Req),
     {Resp, NData} = do_append(PartitioningKey, BufferRecords, true, Data),
@@ -411,7 +420,7 @@ sync_request(PoolAndKey, Req, Timeout) ->
     case
         ecpool:pick_and_do(
             PoolAndKey,
-            {?MODULE, ecpool_action, [{sync_req, Self, Req, Timeout}]},
+            {?MODULE, ecpool_action, [{sync_req, Self, Req}]},
             no_handover
         )
     of
@@ -695,13 +704,14 @@ enqueue_and_reply(Data, Req, From) ->
         From
     ).
 
-request_record_count({sync_req, _Caller, _Req, _Timeout}) -> 1;
+request_record_count({sync_req, _Caller, _Req}) -> 1;
 request_record_count({append, _PartitioningKey, Records}) -> length(Records).
 
 buffer_records({append, PartitioningKey, Records}) ->
     BufferRecords = hstreamdb_buffer:to_buffer_records(Records),
     {PartitioningKey, BufferRecords};
-buffer_records({sync_req, Caller, {_AppendKind, {PartitioningKey, Record}}, Timeout}) ->
+
+buffer_records({sync_req, Caller, {_AppendKind, {PartitioningKey, Record}, Timeout}}) ->
     BufferRecords = hstreamdb_buffer:to_buffer_records([Record], Caller, Timeout),
     {PartitioningKey, BufferRecords}.
 

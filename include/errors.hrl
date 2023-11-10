@@ -16,5 +16,6 @@
 
 -define(ERROR_TIMEOUT, timeout).
 -define(ERROR_BATCH_TIMEOUT, batch_timeout).
+-define(ERROR_RECORD_TIMEOUT, record_timeout).
 -define(ERROR_STREAM_CHANGED, stream_changed).
 -define(ERROR_TERMINATING, terminating).
