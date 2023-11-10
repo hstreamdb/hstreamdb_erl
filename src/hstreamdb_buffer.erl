@@ -200,7 +200,8 @@ drop(Buffer0, Reason) ->
 
 %% Drop the inflight batch
 -spec drop_inflight(hstreamdb_buffer(), term()) -> hstreamdb_buffer().
-drop_inflight(#{inflight_batch := {_BatchRef, ReqRef}} = Buffer, Reason) ->
+drop_inflight(#{inflight_batch := {BatchRef, ReqRef}} = Buffer, Reason) ->
+    ?LOG_DEBUG("[hstreamdb] buffer, drop_inflight, batch ref: ~p, req ref: ~p", [BatchRef, ReqRef]),
     handle_batch_response(Buffer, ReqRef, {error, Reason}, false).
 
 -spec handle_event(hstreamdb_buffer(), timeout_event(), boolean()) -> hstreamdb_buffer().
@@ -208,16 +209,23 @@ drop_inflight(#{inflight_batch := {_BatchRef, ReqRef}} = Buffer, Reason) ->
 handle_event(Buffer, flush, _MayRetry) ->
     flush(Buffer);
 %% Batch timeout event
-handle_event(#{inflight_batch := {_BatchRef, ReqRef}} = Buffer0, {batch_timeout, ReqRef}, MayRetry) ->
+handle_event(#{inflight_batch := {BatchRef, ReqRef}} = Buffer0, {batch_timeout, ReqRef}, MayRetry) ->
+    ?LOG_DEBUG("[hstreamdb] buffer, handle_event, batch timeout, batch ref: ~p, req ref: ~p", [
+        BatchRef, ReqRef
+    ]),
     handle_batch_response(Buffer0, ReqRef, {error, ?ERROR_BATCH_TIMEOUT}, MayRetry);
 %% May happen due to concurrency
 handle_event(Buffer, {batch_timeout, _ReqRef}, _MayRetry) ->
     Buffer;
 %% Batch Retry event
-handle_event(#{inflight_batch := {_BatchRef, ReqRef}} = Buffer, {retry, ReqRef}, _MayRetry) ->
+handle_event(#{inflight_batch := {BatchRef, ReqRef}} = Buffer, {retry, ReqRef}, _MayRetry) ->
+    ?LOG_DEBUG("[hstreamdb] buffer, handle_event, retry, batch ref: ~p, req ref: ~p", [
+        BatchRef, ReqRef
+    ]),
     resend_batch(Buffer);
 %% May happen due to concurrency
-handle_event(Buffer, {retry, _ReqRef}, _MayRetry) ->
+handle_event(Buffer, {retry, ReqRef}, _MayRetry) ->
+    ?LOG_DEBUG("[hstreamdb] buffer, handle_event, retry lost req ref: ~p", [ReqRef]),
     Buffer.
 
 -spec handle_batch_response(hstreamdb_buffer(), req_ref(), term(), boolean()) ->
@@ -228,16 +236,16 @@ handle_batch_response(
     case need_retry(Buffer0, Response, MayRetry) of
         true ->
             ?LOG_DEBUG(
-                "[hstreamdb] buffer, handle_batch_response, need_retry=true,~n"
+                "[hstreamdb] buffer, handle_batch_response, batch ref: ~p, req ref: ~p, need_retry=true,~n"
                 "response: ~p,~nmay_retry: ~p, retry context: ~p",
-                [Response, MayRetry, retry_context(Buffer0)]
+                [BatchRef, ReqRef, Response, MayRetry, retry_context(Buffer0)]
             ),
             wait_for_retry(Buffer0);
         false ->
             ?LOG_DEBUG(
-                "[hstreamdb] buffer, handle_batch_response, need_retry=false,~n"
+                "[hstreamdb] buffer, handle_batch_response, batch ref: ~p, req ref: ~p, need_retry=false,~n"
                 "response: ~p,~nmay_retry: ~p, retry context: ~p",
-                [Response, MayRetry, retry_context(Buffer0)]
+                [BatchRef, ReqRef, Response, MayRetry, retry_context(Buffer0)]
             ),
             Buffer1 = send_responses(Buffer0, BatchRef, Response),
             Buffer2 = retry_deinit(Buffer1),
@@ -490,6 +498,7 @@ send_batch(
         tab => BatchTab
     },
     ReqRef = SendBatchFun(Message),
+    ?LOG_DEBUG("[hstreamdb] buffer, send_batch, batch ref: ~p, req ref: ~p", [BatchRef, ReqRef]),
     {ReqRef, Buffer#{
         inflight_batch => {BatchRef, ReqRef},
         batch_queue => NewBatchQueue,
@@ -510,6 +519,7 @@ resend_batch(
         tab => BatchTab
     },
     ReqRef = SendBatchFun(Message),
+    ?LOG_DEBUG("[hstreamdb] buffer, resend_batch, batch ref: ~p, req ref: ~p", [BatchRef, ReqRef]),
     Buffer2 = send_after(batch_timer, Buffer1, BatchTimeout, {batch_timeout, ReqRef}),
     Buffer2#{
         inflight_batch := {BatchRef, ReqRef}
