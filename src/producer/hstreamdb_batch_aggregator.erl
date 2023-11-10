@@ -190,6 +190,10 @@ ecpool_action(Client, Req) ->
 %%-------------------------------------------------------------------------------------------------
 
 report_result(BatchAggregatorPid, Batch, Result) ->
+    ?LOG_DEBUG(
+        "[hstreamdb] producer_batch_aggregator: report_result, batch ref: ~p, req ref: ~p, result: ~p",
+        [Batch#batch.batch_ref, Batch#batch.req_ref, Result]
+    ),
     _ = erlang:send(BatchAggregatorPid, {write_result, Batch, Result}),
     ok.
 
@@ -599,12 +603,16 @@ write(ShardId, #{batch_ref := Ref, tab := Tab}, #data{
         ok ->
             ok;
         {error, _} = Error ->
+            ?LOG_ERROR(
+                "[hstreamdb] producer_batch_aggregator: error in write batch, batch ref: ~p, req ref: ~p, error: ~p",
+                [Ref, ReqRef, Error]
+            ),
             report_result(self(), Batch, Error)
     catch
         Error:Reason ->
             ?LOG_ERROR(
-                "[hstreamdb] producer_batch_aggregator: unexpected error in write: ~p:~p",
-                [Error, Reason]
+                "[hstreamdb] producer_batch_aggregator: exception in write batch, batch ref: ~p, req ref: ~p, error: ~p",
+                [Ref, ReqRef, {Error, Reason}]
             ),
             report_result(self(), Batch, {error, {writer_error, Error, Reason}})
     end,

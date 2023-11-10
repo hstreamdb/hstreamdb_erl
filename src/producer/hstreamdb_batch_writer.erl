@@ -90,11 +90,15 @@ on_init(Name) -> cleanup(Name).
 on_terminate(Name, _Vsn, _KeyManager, _ShardClientMgr) -> cleanup(Name).
 
 on_shards_updated(Name, {OldVsn, _OldKeyMgr, _OldClientMgr}, {NewVsn, NewKeyMgr, NewClientMgr}) ->
-    ?tp(hstreamdb_batch_writer_on_shards_updated, #{name => Name, old_vsn => OldVsn, new_vsn => NewVsn}),
+    ?tp(hstreamdb_batch_writer_on_shards_updated, #{
+        name => Name, old_vsn => OldVsn, new_vsn => NewVsn
+    }),
     {ok, ShardIds} = hstreamdb_key_mgr:shard_ids(NewKeyMgr),
     ok = lists:foreach(
         fun(ShardId) ->
-            {ok, ShardClient, _ClientMgr} = hstreamdb_shard_client_mgr:lookup_shard_client(NewClientMgr, ShardId),
+            {ok, ShardClient, _ClientMgr} = hstreamdb_shard_client_mgr:lookup_shard_client(
+                NewClientMgr, ShardId
+            ),
             ok = set_shard_client(Name, ShardId, NewVsn, ShardClient)
         end,
         ShardIds
@@ -136,10 +140,20 @@ init([Opts]) ->
         grpc_timeout = GRPCTimeout
     }}.
 
-handle_cast({write, #batch{shard_id = ShardId, batch_ref = BatchRef} = Batch, Caller}, State) ->
+handle_cast(
+    {write, #batch{shard_id = ShardId, batch_ref = BatchRef, req_ref = ReqRef} = Batch, Caller},
+    State
+) ->
+    ?LOG_DEBUG("[hstreamdb] producer_batch_writer, received, batch ref: ~p, req ref: ~p", [
+        BatchRef, ReqRef
+    ]),
     Records = records(Batch),
     {Result, NState} = do_write(ShardId, Records, Batch, State),
-    ?LOG_DEBUG("[hstreamdb] producer_batch_writer, batch ref: ~p,~nresult: ~p", [BatchRef, Result]),
+    ?LOG_DEBUG(
+        "[hstreamdb] producer_batch_writer, handled, batch ref: ~p, req ref: ~p, result: ~p", [
+            BatchRef, ReqRef, Result
+        ]
+    ),
     ok = hstreamdb_batch_aggregator:report_result(Caller, Batch, Result),
     {noreply, NState}.
 
@@ -187,18 +201,28 @@ prepare_known_resps(Records) ->
     ),
     {Resps, lists:filter(fun(X) -> X =/= undefined end, Reqs)}.
 
-do_write(_ShardId, {Resps, []}, _Batch, State) ->
+do_write(_ShardId, {Resps, []}, #batch{batch_ref = BatchRef, req_ref = ReqRef}, State) ->
+    ?LOG_DEBUG(
+        "[hstreamdb] producer_batch_writer, do_write, batch ref: ~p, req ref: ~p,~n"
+        "premature resps: ~p, records: 0",
+        [BatchRef, ReqRef, length(Resps)]
+    ),
     {{ok, Resps}, State};
 do_write(
     ShardId,
     {Resps, Records},
-    #batch{compression_type = CompressionType},
+    #batch{compression_type = CompressionType, batch_ref = BatchRef, req_ref = ReqRef},
     State = #state{
         name = Name,
         stream = Stream,
         grpc_timeout = GRPCTimeout
     }
 ) ->
+    ?LOG_DEBUG(
+        "[hstreamdb] producer_batch_writer, do_write, batch ref: ~p, req ref: ~p,~n"
+        "premature resps: ~p, records: ~p",
+        [BatchRef, ReqRef, length(Resps), length(Records)]
+    ),
     case shard_client(Name, ShardId) of
         {ok, Version, Client} ->
             Req = #{
@@ -215,6 +239,11 @@ do_write(
                     Res = fill_responses(Resps, RecordsIds),
                     {{ok, Res}, State};
                 {error, _} = Error ->
+                    ?LOG_WARNING(
+                        "[hstreamdb] producer_batch_writer, do_write, batch ref: ~p, req ref: ~p,~n"
+                        "append failed, error: ~p",
+                        [BatchRef, ReqRef, Error]
+                    ),
                     hstreamdb_discovery:report_shard_unavailable(Name, Version, ShardId, Error),
                     {Error, State}
             catch
