@@ -47,6 +47,7 @@
 -export_type([options/0]).
 
 -define(DEFAULT_GRPC_TIMEOUT, 30000).
+-define(TIMEOUT_THRESHOLD, 1000).
 
 -include("hstreamdb.hrl").
 
@@ -147,15 +148,14 @@ handle_cast(
     ?LOG_DEBUG("[hstreamdb] producer_batch_writer, received, batch ref: ~p, req ref: ~p", [
         BatchRef, ReqRef
     ]),
-    Records = records(Batch),
-    {Result, NState} = do_write(ShardId, Records, Batch, State),
+    Result = do_write(ShardId, Batch, State),
     ?LOG_DEBUG(
         "[hstreamdb] producer_batch_writer, handled, batch ref: ~p, req ref: ~p, result: ~p", [
             BatchRef, ReqRef, Result
         ]
     ),
     ok = hstreamdb_batch_aggregator:report_result(Caller, Batch, Result),
-    {noreply, NState}.
+    {noreply, State}.
 
 handle_call(stop, _From, State) ->
     {stop, normal, ok, State}.
@@ -201,18 +201,48 @@ prepare_known_resps(Records) ->
     ),
     {Resps, lists:filter(fun(X) -> X =/= undefined end, Reqs)}.
 
-do_write(_ShardId, {Resps, []}, #batch{batch_ref = BatchRef, req_ref = ReqRef}, State) ->
+
+do_write(ShardId, Batch, #state{name = Name} = State) ->
+    do_write_with_client(shard_client(Name, ShardId), ShardId, Batch, State).
+
+do_write_with_client(not_found, _ShardId, _Batch, _State) ->
+    {{error, cannot_resolve_shard_id}, not_found};
+do_write_with_client({ok, Version, Client}, ShardId, Batch, #state{name = Name} = State) ->
+    case do_write_with_timeout(ShardId, Batch, Version, Client, State) of
+        {error, ?ERROR_UNEXPECTED_WRITE_TIMEOUT} = Error ->
+            hstreamdb_discovery:report_shard_unavailable(Name, Version, ShardId, Error),
+            Error;
+        Other ->
+            Other
+    end.
+
+do_write_with_timeout(ShardId, Batch, Version, Client, State) ->
+    Timeout = timeout(State),
+    safe_exec(
+        fun() ->
+            exit(do_write(ShardId, Batch, Version, Client, State))
+        end,
+        Timeout
+    ).
+
+do_write(ShardId, Batch, Version, Client, State) ->
+    Records = records(Batch),
+    do_write(ShardId, Records, Batch, Version, Client, State).
+
+do_write(_ShardId, {Resps, []}, #batch{batch_ref = BatchRef, req_ref = ReqRef}, _Version, _Client, _State) ->
     ?LOG_DEBUG(
         "[hstreamdb] producer_batch_writer, do_write, batch ref: ~p, req ref: ~p,~n"
-        "premature resps: ~p, records: 0",
+        "original records: ~p, records to save: 0",
         [BatchRef, ReqRef, length(Resps)]
     ),
-    {{ok, Resps}, State};
+    {ok, Resps};
 do_write(
     ShardId,
     {Resps, Records},
     #batch{compression_type = CompressionType, batch_ref = BatchRef, req_ref = ReqRef},
-    State = #state{
+    Version,
+    Client,
+    _State = #state{
         name = Name,
         stream = Stream,
         grpc_timeout = GRPCTimeout
@@ -220,44 +250,39 @@ do_write(
 ) ->
     ?LOG_DEBUG(
         "[hstreamdb] producer_batch_writer, do_write, batch ref: ~p, req ref: ~p,~n"
-        "premature resps: ~p, records: ~p",
+        "original records: ~p, records to save: ~p",
         [BatchRef, ReqRef, length(Resps), length(Records)]
     ),
-    case shard_client(Name, ShardId) of
-        {ok, Version, Client} ->
-            Req = #{
-                stream_name => Stream,
-                records => Records,
-                shard_id => ShardId,
-                compression_type => CompressionType
-            },
-            Options = #{
-                timeout => GRPCTimeout
-            },
-            try hstreamdb_client:append(Client, Req, Options) of
-                {ok, #{recordIds := RecordsIds}} ->
-                    Res = fill_responses(Resps, RecordsIds),
-                    {{ok, Res}, State};
-                {error, _} = Error ->
-                    ?LOG_WARNING(
-                        "[hstreamdb] producer_batch_writer, do_write, batch ref: ~p, req ref: ~p,~n"
-                        "append failed, error: ~p",
-                        [BatchRef, ReqRef, Error]
-                    ),
-                    hstreamdb_discovery:report_shard_unavailable(Name, Version, ShardId, Error),
-                    {Error, State}
-            catch
-                %% Discovery dropped the clients
-                error:badarg ->
-                    {{error, {cannot_access_shard, badarg}}, State};
-                %% Discovery dropped the clients
-                exit:{noproc, _} ->
-                    {{error, {cannot_access_shard, noproc}}, State};
-                error:Other ->
-                    {{error, Other}, State}
-            end;
-        not_found ->
-            {{error, cannot_resolve_shard_id}, State}
+    Req = #{
+        stream_name => Stream,
+        records => Records,
+        shard_id => ShardId,
+        compression_type => CompressionType
+    },
+    Options = #{
+        timeout => GRPCTimeout
+    },
+    try hstreamdb_client:append(Client, Req, Options) of
+        {ok, #{recordIds := RecordsIds}} ->
+            Res = fill_responses(Resps, RecordsIds),
+            {ok, Res};
+        {error, _} = Error ->
+            ?LOG_WARNING(
+                "[hstreamdb] producer_batch_writer, do_write, batch ref: ~p, req ref: ~p,~n"
+                "append failed, error: ~p",
+                [BatchRef, ReqRef, Error]
+            ),
+            _ = hstreamdb_discovery:report_shard_unavailable(Name, Version, ShardId, Error),
+            Error
+    catch
+        %% Discovery dropped the clients
+        error:badarg ->
+            {error, {cannot_access_shard, badarg}};
+        %% Discovery dropped the clients
+        exit:{noproc, _} ->
+            {error, {cannot_access_shard, noproc}};
+        error:Other ->
+            {error, Other}
     end.
 
 fill_responses(KnownResps, Ids) ->
@@ -269,3 +294,17 @@ fill_responses([undefined | Rest], [Id | Ids], Acc) ->
     fill_responses(Rest, Ids, [{ok, Id} | Acc]);
 fill_responses([Resp | Rest], Ids, Acc) ->
     fill_responses(Rest, Ids, [Resp | Acc]).
+
+safe_exec(Fun, Timeout) ->
+    {Pid, Ref} = erlang:spawn_monitor(Fun),
+    receive
+        {'DOWN', Ref, process, Pid, Reason} ->
+            Reason
+    after Timeout ->
+        erlang:demonitor(Ref, [flush]),
+        exit(Pid, kill),
+        {error, ?ERROR_UNEXPECTED_WRITE_TIMEOUT}
+    end.
+
+timeout(#state{grpc_timeout = Timeout}) ->
+    Timeout + ?TIMEOUT_THRESHOLD.

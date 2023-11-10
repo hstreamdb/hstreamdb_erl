@@ -747,6 +747,21 @@ t_append_sync_timeout_while_success(Config) ->
         Res0
     ).
 
+t_append_sync_unexpected_write_timeout(Config) ->
+    ProducerOptions = producer_quick_recover_options(3),
+
+    ok = start_producer(Config, ProducerOptions),
+
+    meck:new(hstreamdb_client, [passthrough, no_history]),
+    meck:expect(hstreamdb_client, append, fun(_, _, _) -> timer:sleep(999999999) end),
+
+    ?assertMatch(
+        {error, unexpected_write_timeout},
+        hstreamdb:append_sync(producer(Config), sample_record(), 10000)
+    ),
+
+    meck:unload(hstreamdb_client).
+
 %%--------------------------------------------------------------------
 %% Helper functions
 %%--------------------------------------------------------------------
