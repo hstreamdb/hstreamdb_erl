@@ -220,18 +220,18 @@ t_response_after_deadline(Config) ->
 
     {ok, Buffer1} = append(Buffer0, from1, [<<"rec">>], 1),
     {ok, Buffer2} = append(Buffer1, from2, [<<"rec">>], 1000),
+    ok = timer:sleep(200),
     Buffer3 = hstreamdb_buffer:flush(Buffer2),
-    ok = timer:sleep(2),
     receive
         {send_batch, ReqRef, #{batch_ref := Ref, tab := _Tab}} ->
             _ = hstreamdb_buffer:handle_batch_response(
-                Buffer3, ReqRef, ok_replies_for_batch(Config, Ref), true
-            ),
-            ?refuteReceive({send_reply, from1, _}),
-            ?assertReceive({send_reply, from2, ok})
+                Buffer3, ReqRef, replies_for_batch(Config, Ref), true
+            )
     after 100 ->
         ct:fail("Did not receive send_batch message")
-    end.
+    end,
+    ?assertReceive({send_reply, from1, {error, record_timeout}}),
+    ?assertReceive({send_reply, from2, ok}).
 
 %% We send 10000 records, send occasional flushes.
 %% Client timeouts some batches.
@@ -324,6 +324,24 @@ batch(Config, Ref) ->
 ok_replies_for_batch(Config, Ref) ->
     Batch = batch(Config, Ref),
     {ok, [ok || _ <- Batch]}.
+
+replies_for_batch(Config, Ref) ->
+    Batch = batch(Config, Ref),
+    Replies = lists:map(
+        fun(#{deadline := Deadline}) ->
+            Now = erlang:monotonic_time(millisecond),
+            case Deadline of
+                infinity ->
+                    ok;
+                T when T >= Now ->
+                    ok;
+                _ ->
+                    {error, ?ERROR_RECORD_TIMEOUT}
+            end
+        end,
+        Batch
+    ),
+    {ok, Replies}.
 
 append(Buffer, From, Records, Timeout) ->
     BufferRecords = hstreamdb_buffer:to_buffer_records(Records, From, Timeout),

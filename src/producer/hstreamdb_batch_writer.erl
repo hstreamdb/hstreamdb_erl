@@ -179,7 +179,7 @@ prepare_known_resps(Records) ->
                     T when T >= Now ->
                         {undefined, hstreamdb_buffer:data(BufferRecord)};
                     _ ->
-                        {{error, ?ERROR_TIMEOUT}, undefined}
+                        {{error, ?ERROR_RECORD_TIMEOUT}, undefined}
                 end
             end,
             Records

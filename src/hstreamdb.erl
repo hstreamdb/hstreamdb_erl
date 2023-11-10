@@ -30,8 +30,11 @@
     append/4,
     flush/1,
     append_flush/2,
+    append_flush/3,
+    append_flush/4,
     append_sync/2,
-    append_sync/3
+    append_sync/3,
+    append_sync/4
 ]).
 
 -export([
@@ -147,11 +150,20 @@ flush(Producer) ->
 append_flush(Producer, Record) ->
     hstreamdb_batch_aggregator:append_flush(Producer, Record).
 
+append_flush(Producer, Record, Timeout) ->
+    hstreamdb_batch_aggregator:append_flush(Producer, Record, Timeout).
+
+append_flush(Producer, Record, RecordTimeout, WriteTimeout) ->
+    hstreamdb_batch_aggregator:append_flush(Producer, Record, RecordTimeout, WriteTimeout).
+
 append_sync(Producer, Record) ->
     hstreamdb_batch_aggregator:append_sync(Producer, Record).
 
 append_sync(Producer, Record, Timeout) ->
     hstreamdb_batch_aggregator:append_sync(Producer, Record, Timeout).
+
+append_sync(Producer, Record, RecordTimeout, WriteTimeout) ->
+    hstreamdb_batch_aggregator:append_sync(Producer, Record, RecordTimeout, WriteTimeout).
 
 %%--------------------------------------------------------------------
 %% Client Manager facade

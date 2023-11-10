@@ -701,6 +701,52 @@ t_removed_stream(Config) ->
         hstreamdb:append_sync(producer(Config), sample_record(), 1000)
     ).
 
+t_append_sync_record_timeout(Config) ->
+    ProducerOptions = producer_quick_recover_options(),
+
+    ok = start_producer(Config, ProducerOptions),
+    ?assertMatch(
+        {error, record_timeout},
+        hstreamdb:append_sync(producer(Config), sample_record(), 1, 10000)
+    ).
+
+t_append_sync_timeout_while_success(Config) ->
+    ProducerOptions = producer_quick_recover_options(),
+
+    ok = start_producer(Config, ProducerOptions),
+
+    ?assertWaitEvent(
+        ?assertMatch(
+            {error, timeout},
+            hstreamdb:append_sync(producer(Config), sample_record(), 10000, 1)
+        ),
+        #{?snk_kind := send_response_to_record},
+        5000
+    ),
+
+    ReaderOptions = #{
+        mgr_client_options => hstreamdb_test_helpers:default_client_options(),
+        stream => ?STREAM,
+        pool_size => 5
+    },
+
+    Reader = "reader_" ++ atom_to_list(?FUNCTION_NAME),
+    ok = hstreamdb:start_reader(Reader, ReaderOptions),
+
+    % Read all records
+
+    Limits = #{
+        from => #{offset => {specialOffset, 0}},
+        until => #{offset => {specialOffset, 1}}
+    },
+
+    Res0 = hstreamdb:read_stream_key(Reader, "PK", Limits),
+
+    ?assertMatch(
+        {ok, [#{payload := <<"payload">>}]},
+        Res0
+    ).
+
 %%--------------------------------------------------------------------
 %% Helper functions
 %%--------------------------------------------------------------------

@@ -19,6 +19,7 @@
 -include("hstreamdb.hrl").
 -include("errors.hrl").
 -include_lib("kernel/include/logger.hrl").
+-include_lib("snabbkaffe/include/snabbkaffe.hrl").
 
 -export([
     new/1,
@@ -363,40 +364,24 @@ send_responses(#{batch_tab := BatchTab} = Buffer, BatchRef, Response) ->
 
 send_responses_to_records(_Buffer, [], _Response, _Now) ->
     ok;
-%% nobody waits for this response
-send_responses_to_records(Buffer, [#{deadline := Deadline} | Records], {ok, [_ | Rest]}, Now) when
-    Deadline < Now
-->
-    send_responses_to_records(Buffer, Records, {ok, Rest}, Now);
-send_responses_to_records(Buffer, [#{deadline := Deadline} | Records], {error, _} = Error, Now) when
-    Deadline < Now
-->
-    send_responses_to_records(Buffer, Records, Error, Now);
 %% response to waiting clients: callback
-send_responses_to_records(Buffer, [#{from := From} | Records], {ok, [RecordResp | Rest]}, Now) when
-    is_function(From)
-->
-    _ = apply_reply_fun(From, [RecordResp]),
+send_responses_to_records(Buffer, [Record | Records], {ok, [RecordResp | Rest]}, Now) ->
+    _ = send_response_to_record(Buffer, Record, RecordResp),
     send_responses_to_records(Buffer, Records, {ok, Rest}, Now);
-send_responses_to_records(Buffer, [#{from := From} | Records], {error, _} = Error, Now) when
-    is_function(From)
-->
-    _ = apply_reply_fun(From, [Error]),
-    send_responses_to_records(Buffer, Records, Error, Now);
-%% response to waiting clients: common callback
-send_responses_to_records(
-    #{send_reply := SendReplyFun} = Buffer,
-    [#{from := From} | Records],
-    {ok, [RecordResp | Rest]},
-    Now
-) ->
-    _ = apply_reply_fun(SendReplyFun, [From, RecordResp]),
-    send_responses_to_records(Buffer, Records, {ok, Rest}, Now);
-send_responses_to_records(
-    #{send_reply := SendReplyFun} = Buffer, [#{from := From} | Records], {error, _} = Error, Now
-) ->
-    _ = apply_reply_fun(SendReplyFun, [From, Error]),
+send_responses_to_records(Buffer, [Record | Records], {error, _} = Error, Now) ->
+    _ = send_response_to_record(Buffer, Record, Error),
     send_responses_to_records(Buffer, Records, Error, Now).
+
+send_response_to_record(Buffer, #{from := From} = Record, Response) when is_function(From) ->
+    ?tp(debug, send_response_to_record, #{
+        record => Record, response => Response, retry_context => retry_context(Buffer)
+    }),
+    _ = apply_reply_fun(From, [Response]);
+send_response_to_record(#{send_reply := SendReplyFun} = Buffer, #{from := From} = Record, Response) ->
+    ?tp(debug, send_response_to_record, #{
+        record => Record, response => Response, retry_context => retry_context(Buffer)
+    }),
+    _ = apply_reply_fun(SendReplyFun, [From, Response]).
 
 estimate_batch_count(
     #{batch_size := BatchSize, batch_count := BatchCount, current_batch := CurrentBatch}, Records
