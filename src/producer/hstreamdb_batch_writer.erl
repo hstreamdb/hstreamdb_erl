@@ -216,14 +216,16 @@ do_write_with_client({ok, Version, Client}, ShardId, Batch, #state{name = Name} 
             Other
     end.
 
+-dialyzer({nowarn_function, [do_write_with_timeout/5]}).
 do_write_with_timeout(ShardId, Batch, Version, Client, State) ->
     Timeout = timeout(State),
-    safe_exec(
+    Result = safe_exec(
         fun() ->
             exit(do_write(ShardId, Batch, Version, Client, State))
         end,
         Timeout
-    ).
+    ),
+    convert_result(Result).
 
 do_write(ShardId, Batch, Version, Client, State) ->
     Records = records(Batch),
@@ -308,3 +310,8 @@ safe_exec(Fun, Timeout) ->
 
 timeout(#state{grpc_timeout = Timeout}) ->
     Timeout + ?TIMEOUT_THRESHOLD.
+
+convert_result({ok, _} = Result) -> Result;
+convert_result({error, _} = Result) -> Result;
+convert_result(Unexpected) -> {error, {unexpected_result, Unexpected}}.
+
