@@ -68,7 +68,7 @@ code_change(_OldVsn, State, _Extra) ->
 %%-------------------------------------------------------------------------------------------------
 
 do_terminate(#{producer := Producer, timeout := Timeout}) ->
-    Self = alias(),
+    Self = self(),
     Workers = ecpool:workers(Producer),
     ok = notify_stop(Self, Workers),
     NWorkers = length(Workers),
@@ -90,7 +90,7 @@ notify_stop(Self, Workers) ->
     ).
 
 %% This process is about to terminate
-%% we don't care about unalias/cleaning the process queue in this function
+%% we don't care about cleaning the process queue in this function
 wait_for_terminate(_Self, 0, _Deadline) ->
     ok;
 wait_for_terminate(Self, NWorkers, Deadline) when NWorkers > 0 ->

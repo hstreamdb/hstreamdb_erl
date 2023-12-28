@@ -21,7 +21,7 @@
 
 -include_lib("common_test/include/ct.hrl").
 -include("assert.hrl").
--include("errors.hrl").
+-include("hstreamdb_errors.hrl").
 
 -define(DEFAULT_FLUSH_INTERVAL, 100).
 -define(DEFAULT_BATCH_TIMEOUT, 100).

@@ -14,6 +14,11 @@
 %% limitations under the License.
 %%--------------------------------------------------------------------
 
+-ifndef(HSTREAMDB_HRL).
+-define(HSTREAMDB_HRL, true).
+
+-include("hstreamdb_client.hrl").
+
 -define(HSTREAMDB_GEN_CLIENT, hstream_server_h_stream_api_client).
 
 -define(DEFAULT_HSTREAMDB_PORT, 6570).
@@ -94,3 +99,5 @@
         __RES__
     end)()
 ).
+
+-endif.

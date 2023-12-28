@@ -23,7 +23,7 @@
 -include_lib("common_test/include/ct.hrl").
 -include_lib("snabbkaffe/include/snabbkaffe.hrl").
 -include("assert.hrl").
--include("errors.hrl").
+-include("hstreamdb_errors.hrl").
 
 -define(DAY, (24 * 60 * 60)).
 
