@@ -14,32 +14,14 @@
 %% limitations under the License.
 %%--------------------------------------------------------------------
 
--module(hstreamdb_error).
+-ifndef(HSTREAMDB_ERRORS_HRL).
+-define(HSTREAMDB_ERRORS_HRL, true).
 
--include("hstreamdb_errors.hrl").
+-define(ERROR_TIMEOUT, timeout).
+-define(ERROR_BATCH_TIMEOUT, batch_timeout).
+-define(ERROR_RECORD_TIMEOUT, record_timeout).
+-define(ERROR_UNEXPECTED_WRITE_TIMEOUT, unexpected_write_timeout).
+-define(ERROR_STREAM_CHANGED, stream_changed).
+-define(ERROR_TERMINATING, terminating).
 
--export([
-    is_transient/1,
-    requires_rediscovery/1
-]).
-
-%% Malformed messages, resenging them won't help
-is_transient({error, {encode_msg, _}}) ->
-    false;
-%% This is the final batch timeout, including all the retries
-is_transient({error, ?ERROR_BATCH_TIMEOUT}) ->
-    false;
-%% Bad credentials
-is_transient({error, {cancelled, _}}) ->
-    false;
-is_transient({error, _}) ->
-    true.
-
-%% Malformed messages
-requires_rediscovery({error, {encode_msg, _}}) ->
-    false;
-%% Bad credentials
-requires_rediscovery({error, {cancelled, _}}) ->
-    false;
-requires_rediscovery({error, _}) ->
-    true.
+-endif.

@@ -17,7 +17,7 @@
 -module(hstreamdb_batch_aggregator).
 
 -include("hstreamdb.hrl").
--include("errors.hrl").
+-include("hstreamdb_errors.hrl").
 -include_lib("snabbkaffe/include/snabbkaffe.hrl").
 -include_lib("kernel/include/logger.hrl").
 
@@ -95,6 +95,12 @@
     discovery_backoff_opts,
     key_manager
 }).
+
+-define(CALLER(PID, REF), {PID, REF}).
+
+%%-------------------------------------------------------------------------------------------------
+%% API
+%%-------------------------------------------------------------------------------------------------
 
 append(Producer, PKeyRecordOrRecords) ->
     RecordsByPK = records_by_pk(PKeyRecordOrRecords),
@@ -420,32 +426,28 @@ code_change(_OldVsn, State, Data, _Extra) ->
 %% internal functions
 
 sync_request(PoolAndKey, Req, Timeout) ->
-    Self = alias([reply]),
+    Ref = make_ref(),
+    Caller = ?CALLER(self(), Ref),
     case
         ecpool:pick_and_do(
             PoolAndKey,
-            {?MODULE, ecpool_action, [{sync_req, Self, Req}]},
+            {?MODULE, ecpool_action, [{sync_req, Caller, Req}]},
             no_handover
         )
     of
         {error, _} = Error ->
             Error;
         ok ->
-            wait_reply(Self, Timeout)
+            wait_reply(Ref, Timeout)
     end.
 
-wait_reply(Self, Timeout) ->
+wait_reply(Ref, Timeout) ->
     receive
-        {reply, Self, Resp} ->
+        ?HSTREAMDB_PRODUCER_REPLY(Ref, Resp) ->
             Resp
     after Timeout ->
-        unalias(Self),
-        receive
-            {reply, Self, Resp} ->
-                Resp
-        after 0 ->
-            {error, ?ERROR_TIMEOUT}
-        end
+        %% Stale replies should be drained by the caller explicitly
+        {error, ?ERROR_TIMEOUT}
     end.
 
 foreach_worker(Fun, Pool) ->
@@ -522,8 +524,8 @@ send_reply(From, Response, Callback, Stream) ->
     case From of
         undefined ->
             apply_callback(Callback, {{flush, Stream, 1}, Response});
-        AliasRef when is_reference(AliasRef) ->
-            erlang:send(AliasRef, {reply, AliasRef, Response});
+        ?CALLER(Pid, Ref) ->
+            erlang:send(Pid, ?HSTREAMDB_PRODUCER_REPLY(Ref, Response));
         _ ->
             ?LOG_WARNING("[hstreamdb] producer_batch_aggregator: unexpected From: ~p", [From])
     end.
