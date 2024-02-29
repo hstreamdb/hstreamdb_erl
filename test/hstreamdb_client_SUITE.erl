@@ -1,5 +1,5 @@
 %%--------------------------------------------------------------------
-%% Copyright (c) 2020-2022 EMQ Technologies Co., Ltd. All Rights Reserved.
+%% Copyright (c) 2020-202 EMQ Technologies Co., Ltd. All Rights Reserved.
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -121,20 +121,90 @@ t_auth(_Config) ->
         hstreamdb_client:metadata(Client1)
     ).
 
-t_reaper(_Config) ->
+t_reap_sup_died(_Config) ->
+    Name = ?FUNCTION_NAME,
+    CasePid = self(),
+    Pid = spawn(fun() ->
+        {ok, Pid} = hstreamdb_grpc_sup:start_link(Name),
+        CasePid ! {sup_ref, Pid},
+        receive
+            stop -> ok
+        end
+    end),
+
+    SupRef =
+        receive
+            {sup_ref, Ref} -> Ref
+        end,
+
     ClientConfig = #{
         url => "http://127.0.0.1:6570",
         username => <<"hstream">>,
-        password => <<"hstream">>
+        password => <<"hstream">>,
+        sup_ref => SupRef,
+        reap_channel => true
     },
 
-    {ok, Client} = hstreamdb_client:create(test_c1, ClientConfig),
+    {ok, Client} = hstreamdb_client:start(test_c1, ClientConfig),
 
-    _ = application:stop(hstreamdb_erl),
-    _ = application:start(hstreamdb_erl),
+    exit(Pid, kill),
 
-    %% Reaper should drop all channels on termination
+    ct:sleep(100),
+
     ?assertError(
         badarg,
+        hstreamdb_client:echo(Client)
+    ).
+
+t_reap_owner_died(_Config) ->
+    Name = ?FUNCTION_NAME,
+    {ok, SupRef} = hstreamdb_grpc_sup:start_link(Name),
+
+    ClientConfig = #{
+        url => "http://127.0.0.1:6570",
+        username => <<"hstream">>,
+        password => <<"hstream">>,
+        sup_ref => SupRef,
+        reap_channel => true
+    },
+
+    CasePid = self(),
+
+    Pid = spawn_link(
+        fun() ->
+            {ok, Client} = hstreamdb_client:start(test_c1, ClientConfig),
+            CasePid ! {client, Client},
+            receive
+                stop -> ok
+            end
+        end
+    ),
+
+    Client =
+        receive
+            {client, C} -> C
+        end,
+
+    ?assertMatch(
+        ok,
+        hstreamdb_client:echo(Client)
+    ),
+
+    Pid ! stop,
+
+    ct:sleep(100),
+
+    ?assertError(
+        badarg,
+        hstreamdb_client:echo(Client)
+    ),
+
+    ?assertMatch(
+        ok,
+        hstreamdb_client:reconnect(Client)
+    ),
+
+    ?assertMatch(
+        ok,
         hstreamdb_client:echo(Client)
     ).

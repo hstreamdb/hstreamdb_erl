@@ -150,7 +150,7 @@ handle_cast(
     ]),
     Result = do_write(ShardId, Batch, State),
     ?LOG_DEBUG(
-        "[hstreamdb] producer_batch_writer, handled, batch ref: ~p, req ref: ~p, result: ~p", [
+        "[hstreamdb] producer_batch_writer, handled, batch ref: ~p, req ref: ~p~nresult: ~p", [
             BatchRef, ReqRef, Result
         ]
     ),
@@ -206,7 +206,7 @@ do_write(ShardId, Batch, #state{name = Name} = State) ->
     do_write_with_client(shard_client(Name, ShardId), ShardId, Batch, State).
 
 do_write_with_client(not_found, _ShardId, _Batch, _State) ->
-    {{error, cannot_resolve_shard_id}, not_found};
+    {error, cannot_resolve_shard_id};
 do_write_with_client({ok, Version, Client}, ShardId, Batch, #state{name = Name} = State) ->
     case do_write_with_timeout(ShardId, Batch, Version, Client, State) of
         {error, ?ERROR_UNEXPECTED_WRITE_TIMEOUT} = Error ->

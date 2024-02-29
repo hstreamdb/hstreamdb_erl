@@ -65,9 +65,14 @@ init([
     Producer,
     #{
         stream := Stream,
-        client_options := ClientOptions
+        client_options := ClientOptions0
     } = Opts
 ]) ->
+    ClientOptions1 = ClientOptions0#{
+        sup_ref => hstreamdb_grpc_sup:sup_ref(Producer),
+        reap_channel => true
+    },
+
     BufferPoolSize = maps:get(buffer_pool_size, Opts, ?DEFAULT_BUFFER_POOL_SIZE),
     BufferOptions0 = maps:get(buffer_options, Opts, #{}),
     BufferOptions = BufferOptions0#{
@@ -86,7 +91,7 @@ init([
     DiscoveryOptions = DiscoveryOptions0#{
         stream => Stream,
         name => Producer,
-        client_options => ClientOptions,
+        client_options => ClientOptions1,
 
         on_init => [
             fun hstreamdb_batch_writer:on_init/1,
@@ -102,6 +107,7 @@ init([
     StopTimeout = maps:get(stop_timeout, Opts, ?DEFAULT_GRACEFUL_STOP_TIMEOUT),
 
     ChildSpecs = [
+        hstreamdb_grpc_sup:spec(Producer),
         batch_aggregator_pool_spec(Producer, BufferPoolSize, BufferOptions),
         batch_writer_pool_spec(Producer, WriterPoolSize, WriterOptions),
         discovery_spec(DiscoveryOptions),

@@ -124,13 +124,14 @@ read_key(Reader, Key, Limits, {FoldFun, InitAcc}) ->
 
 connect(Options) ->
     #{} = ReaderOptions = proplists:get_value(reader_options, Options),
-    gen_server:start_link(?MODULE, [ReaderOptions], []).
+    WorkerId = proplists:get_value(ecpool_worker_id, Options),
+    gen_server:start_link(?MODULE, [ReaderOptions, WorkerId], []).
 
 %% -------------------------------------------------------------------------------------------------
 %% gen_server part
 
-init([#{mgr_client_options := MgrClientOptions, stream := Stream} = Options]) ->
-    case hstreamdb_client:start(MgrClientOptions) of
+init([#{mgr_client_options := MgrClientOptions, stream := Stream, name := Reader} = Options, WorkerId]) ->
+    case hstreamdb_client:start({Reader, WorkerId}, MgrClientOptions) of
         {ok, MgrClient} ->
             KeyManagerOptions = maps:get(key_manager_options, Options, #{}),
             KeyManager = hstreamdb:start_key_manager(MgrClient, Stream, KeyManagerOptions),
