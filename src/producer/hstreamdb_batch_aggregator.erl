@@ -197,7 +197,7 @@ ecpool_action(Client, Req) ->
 
 report_result(BatchAggregatorPid, Batch, Result) ->
     ?LOG_DEBUG(
-        "[hstreamdb] producer_batch_aggregator: report_result, batch ref: ~p, req ref: ~p, result: ~p",
+        "[hstreamdb] producer_batch_aggregator: report_result, batch ref: ~p, req ref: ~p,~nresult: ~p",
         [Batch#batch.batch_ref, Batch#batch.req_ref, Result]
     ),
     _ = erlang:send(BatchAggregatorPid, {write_result, Batch, Result}),

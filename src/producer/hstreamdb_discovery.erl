@@ -123,9 +123,11 @@ start_link(#{name := Name} = Options) ->
 
 -spec report_shard_unavailable(name(), version(), hstreamdb_client:shard_id(), term()) -> ok.
 report_shard_unavailable(Name, Version, ShardId, Error) ->
-    ?LOG_ERROR("[hstreamdb] discovery, shard ~p is unavailable for producer ~p, version ~p,~nerror: ~p", [
-        ShardId, Name, Version, Error
-    ]),
+    ?LOG_ERROR(
+        "[hstreamdb] discovery, shard ~p is unavailable for producer ~p, version ~p,~nerror: ~p", [
+            ShardId, Name, Version, Error
+        ]
+    ),
     hstreamdb_error:requires_rediscovery(Error) andalso
         gen_statem:cast(?VIA_GPROC(?ID(Name)), {shard_unavailable, ShardId, Version}).
 
@@ -155,7 +157,7 @@ init([Options]) ->
     OnShardsUpdated = maps:get(on_shards_updated, Options),
     OnTerminate = maps:get(on_terminate, Options),
 
-    case hstreamdb_client:create(ClientOptions1) of
+    case hstreamdb_client:create({Name, ?MODULE}, ClientOptions1) of
         {ok, Client} ->
             Data = #{
                 name => Name,
@@ -203,7 +205,10 @@ handle_event(state_timeout, discover, ?discovering(Backoff0), #{stream := Stream
             ?next_state(?active, Data1);
         {error, Reason} ->
             {Delay, Backoff1} = hstreamdb_backoff:next_delay(Backoff0),
-            ?LOG_ERROR("[hstreamdb] discovery, failed to update shards for stream ~p, next retry in: ~p, error: ~p", [Stream, Delay, Reason]),
+            ?LOG_ERROR(
+                "[hstreamdb] discovery, failed to update shards for stream ~p, next retry in: ~p,~nerror: ~p",
+                [Stream, Delay, Reason]
+            ),
             ?next_state(?discovering(Backoff1), Data0, [{state_timeout, Delay, discover}])
     end;
 handle_event(cast, {shard_unavailable, _ShardId, _Version}, ?discovering(_), _Data) ->
@@ -232,7 +237,8 @@ terminate(
         name := Name,
         key_manager := KeyManager,
         shard_client_manager := ShardClientManager,
-        version := Version
+        version := Version,
+        client := Client
     } = Data
 ) ->
     ?LOG_DEBUG("[hstreamdb] discovery ~p terminating", [Name]),
@@ -240,6 +246,8 @@ terminate(
     ?LOG_DEBUG("[hstreamdb] discovery ~p, callbacks executed", [Name]),
     _Data = stop_shard_clients(Data),
     ?LOG_DEBUG("[hstreamdb] discovery ~p, shard cliends stopped", [Name]),
+    ok = hstreamdb_client:stop(Client),
+    ?LOG_DEBUG("[hstreamdb] discovery ~p, client stopped", [Name]),
     ok.
 
 code_change(_OldVsn, State, Data, _Extra) ->
@@ -273,7 +281,12 @@ list_shards([], #{client := Client, stream := Stream, name := Name} = Ctx) ->
 
 create_clients(
     [],
-    #{client := Client, new_key_manager := NewKeyManager, rpc_options := OverrideRPCOptions, name := Name} = Ctx
+    #{
+        client := Client,
+        new_key_manager := NewKeyManager,
+        rpc_options := OverrideRPCOptions,
+        name := Name
+    } = Ctx
 ) ->
     ?LOG_DEBUG("[hstreamdb] discovery, creating clients: ~p", [Name]),
     {ok, ShardIds} = hstreamdb_key_mgr:shard_ids(NewKeyManager),

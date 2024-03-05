@@ -95,6 +95,7 @@
 
 -type t() :: #{
     channel := term(),
+    sup_ref := gen_server:server_ref() | undefined,
     grpc_timeout := non_neg_integer(),
     url := binary() | string(),
     url_maps := [map()],
@@ -104,7 +105,7 @@
     metadata := map()
 }.
 
--type name() :: atom() | string() | binary().
+-type name() :: atom() | string() | binary() | tuple().
 
 -type replication_factor() :: pos_integer().
 -type backlog_duration() :: pos_integer().
@@ -184,6 +185,7 @@
 -type options() :: #{
     url := binary() | string(),
     rpc_options => rpc_options(),
+    sup_ref => gen_server:server_ref(),
     host_mapping => #{binary() => binary()},
     grpc_timeout => pos_integer(),
     reap_channel => boolean(),
@@ -236,23 +238,25 @@ create(Name, Options) ->
     HostMapping = maps:get(host_mapping, Options, #{}),
     ChannelName = to_channel_name(Name),
     GRPCTimeout = maps:get(grpc_timeout, Options, ?GRPC_TIMEOUT),
-    ReapChannel = maps:get(reap_channel, Options, true),
+    ReapChannel = maps:get(reap_channel, Options, false),
+    SupRef = maps:get(sup_ref, Options, undefined),
     Metadata = prepare_metadata(Options),
-    case validate_urls_and_opts(ServerURL, maps:get(gun_opts, RPCOptions, #{})) of
-        {ok, ServerURLMaps, GunOpts} ->
+    GunOpts0 = maps:get(gun_opts, RPCOptions, #{}),
+    validate_urls_and_opts(ServerURL, GunOpts0, fun(ServerURLMaps, GunOpts1) ->
+        validate_reap_sup_ref(ReapChannel, SupRef, fun() ->
             {ok, #{
                 channel => ChannelName,
                 url => ServerURL,
                 url_maps => ServerURLMaps,
-                rpc_options => RPCOptions#{gun_opts => GunOpts},
+                rpc_options => RPCOptions#{gun_opts => GunOpts1},
                 host_mapping => HostMapping,
                 grpc_timeout => GRPCTimeout,
                 reap_channel => ReapChannel,
-                metadata => Metadata
-            }};
-        {error, _} = Error ->
-            Error
-    end.
+                metadata => Metadata,
+                sup_ref => SupRef
+            }}
+        end)
+    end).
 
 -spec reconnect(t()) -> ok | {error, term()}.
 reconnect(Client) ->
@@ -269,12 +273,13 @@ connect(
     #{
         channel := ChannelName,
         rpc_options := RPCOptions,
-        reap_channel := ReapChannel
+        reap_channel := ReapChannel,
+        sup_ref := SupRef
     } = Client,
     [URLMap | Rest]
 ) ->
     try
-        case start_channel(ChannelName, URLMap, RPCOptions, ReapChannel) of
+        case start_channel(SupRef, ChannelName, URLMap, RPCOptions, ReapChannel) of
             ok ->
                 case echo(Client) of
                     ok ->
@@ -296,10 +301,10 @@ connect(
                 connect(Client, Rest)
         end
     catch
-        Class:CrashReason ->
+        Class:CrashReason:Stack ->
             ?LOG_ERROR(
-                "[hstreamdb] start new connection crashed: ~p:~p,~nurl: ~p,~nchannel: ~p",
-                [Class, CrashReason, uri_string:recompose(URLMap), ChannelName]
+                "[hstreamdb] start new connection crashed: ~p:~p:~p,~nurl: ~p,~nchannel: ~p",
+                [Class, CrashReason, Stack, uri_string:recompose(URLMap), ChannelName]
             ),
             _ = stop(Client),
             connect(Client, Rest)
@@ -318,7 +323,8 @@ connect(
         url_maps := [ServerURLMap | _],
         rpc_options := RPCOptions,
         reap_channel := ReapChannel,
-        grpc_timeout := GRPCTimeout
+        grpc_timeout := GRPCTimeout,
+        sup_ref := SupRef
     } = Client,
     Host0,
     Port0,
@@ -331,7 +337,7 @@ connect(
         port => Port1
     }),
     NewRPCOptions = maps:merge(RPCOptions, RPCOptionsOverrides),
-    case start_channel(NewChannelName, NewUrlMap, NewRPCOptions, ReapChannel) of
+    case start_channel(SupRef, NewChannelName, NewUrlMap, NewRPCOptions, ReapChannel) of
         ok ->
             NewClient = Client#{
                 channel => NewChannelName,
@@ -356,14 +362,22 @@ connect(
             Error
     end.
 
--spec stop(t() | name()) -> ok.
-stop(#{channel := Channel}) ->
-    grpc_client_sup:stop_channel_pool(Channel),
-    ok = unregister_channel(Channel);
-stop(Name) ->
-    Channel = to_channel_name(Name),
-    grpc_client_sup:stop_channel_pool(Channel),
-    ok = unregister_channel(Channel).
+-spec stop(t()) -> ok.
+stop(#{sup_ref := SupRef, channel := Channel}) ->
+    stop_channel(SupRef, Channel).
+
+stop_channel(SupRef, Channel) ->
+    case stop_channel_pool(SupRef, Channel) of
+        ok ->
+            ?LOG_DEBUG("[hstreamdb] stop_channel ok: ~p", [Channel]);
+        {error, _} = Error ->
+            ?LOG_ERROR("[hstreamdb] stop_channel error: ~p, ~p", [Channel, Error])
+    end.
+
+stop_channel_pool(undefined, Channel) ->
+    grpc_client_sup:stop_channel_pool(Channel);
+stop_channel_pool(SupRef, Channel) ->
+    hstreamdb_grpc_sup:stop_supervised(SupRef, Channel).
 
 -spec name(t()) -> name().
 name(#{channel := Channel}) ->
@@ -447,16 +461,27 @@ trim(Client, Stream, Offsets, Timeout) ->
 
 %% Channel creation
 
-start_channel(ChannelName, URLMap, RPCOptions, ReapChannel) ->
+start_channel(SupRef, ChannelName, URLMap, RPCOptions, ReapChannel) ->
     URL = uri_string:recompose(URLMap),
-    case grpc_client_sup:create_channel_pool(ChannelName, URL, RPCOptions) of
+    case create_channel_pool(SupRef, ReapChannel, ChannelName, URL, RPCOptions) of
         {ok, _, _} ->
-            ok = register_channel(ChannelName, ReapChannel);
+            ?LOG_DEBUG("[hstreamdb] start_channel ok: ~p, ~p", [ChannelName, URL]);
         {ok, _} ->
-            ok = register_channel(ChannelName, ReapChannel);
-        {error, Reason} ->
-            {error, Reason}
+            ?LOG_DEBUG("[hstreamdb] start_channel ok: ~p, ~p", [ChannelName, URL]);
+        {error, _} = Error ->
+            ?LOG_ERROR("[hstreamdb] start_channel error: ~p, ~p, ~p", [ChannelName, URL, Error]),
+            Error
     end.
+
+create_channel_pool(undefined, false, ChannelName, URL, RPCOptions) ->
+    grpc_client_sup:create_channel_pool(ChannelName, URL, RPCOptions);
+create_channel_pool(SupRef, ReapChannel, ChannelName, URL, RPCOptions) ->
+    Pid =
+        case ReapChannel of
+            true -> self();
+            false -> undefined
+        end,
+    hstreamdb_grpc_sup:start_supervised(SupRef, ChannelName, URL, RPCOptions, Pid).
 
 %% GRPC methods
 
@@ -661,7 +686,12 @@ do_fold_key_read_gstream(GStream, Stream, Key, Limits0, Fun, Acc) ->
 append_rec(eos, Acc) -> lists:reverse(Acc);
 append_rec(Rec, Acc) -> [Rec | Acc].
 
-validate_urls_and_opts(URLs, GunOpts0) ->
+validate_reap_sup_ref(true, undefined, _Fun) ->
+    {error, cannot_reap_channel_without_sup_ref};
+validate_reap_sup_ref(_Reap, _SupRef, Fun) ->
+    Fun().
+
+validate_urls_and_opts(URLs, GunOpts0, Fun) ->
     SplitURLs = string:split(URLs, ",", all),
     case SplitURLs of
         [""] ->
@@ -672,7 +702,7 @@ validate_urls_and_opts(URLs, GunOpts0) ->
                 {ok, URLMap, GunOpts1} ->
                     case parse_other_hosts(Other, URLMap, [URLMap]) of
                         {ok, URLMaps} ->
-                            {ok, URLMaps, GunOpts1};
+                            Fun(URLMaps, GunOpts1);
                         {error, _} = Error ->
                             Error
                     end;
@@ -759,14 +789,6 @@ new_channel_name(#{channel := ChannelName}, Host, Port) ->
         to_channel_name(erlang:unique_integer([positive]))
     ]).
 
-register_channel(ChannelName, true) ->
-    hstreamdb_channel_reaper:register_channel(ChannelName);
-register_channel(_ChannelName, false) ->
-    ok.
-
-unregister_channel(ChannelName) ->
-    hstreamdb_channel_reaper:unregister_channel(ChannelName).
-
 host_to_string(Host) when is_list(Host) ->
     Host;
 host_to_string(Host) when is_binary(Host) ->
@@ -778,6 +800,8 @@ to_channel_name(Atom) when is_atom(Atom) ->
     atom_to_list(Atom);
 to_channel_name(Binary) when is_binary(Binary) ->
     unicode:characters_to_list(Binary);
+to_channel_name(Tuple) when is_tuple(Tuple) ->
+    lists:flatten(lists:join("_", [to_channel_name(El) || El <- tuple_to_list(Tuple)]));
 to_channel_name(List) when is_list(List) ->
     List.
 

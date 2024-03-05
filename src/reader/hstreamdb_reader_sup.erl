@@ -29,11 +29,21 @@
 start_link(Reader, Opts) ->
     supervisor:start_link(?MODULE, [Reader, Opts]).
 
-init([Reader, Opts]) ->
-    PoolSize = maps:get(pool_size, Opts, ?DEFAULT_READER_POOL_SIZE),
-    AutoReconnect = maps:get(auto_reconnect, Opts, ?DEAULT_AUTO_RECONNECT),
-    EcpoolOpts = [{pool_size, PoolSize}, {reader_options, Opts}, {auto_reconnect, AutoReconnect}],
+init([Reader, Opts0]) ->
+    #{mgr_client_options := MgrClientOptions0} = Opts0,
+    MgrClientOptions1 = MgrClientOptions0#{
+        sup_ref => hstreamdb_grpc_sup:sup_ref(Reader),
+        reap_channel => true
+    },
+    Opts1 = Opts0#{
+        mgr_client_options => MgrClientOptions1,
+        name => Reader
+    },
+    PoolSize = maps:get(pool_size, Opts1, ?DEFAULT_READER_POOL_SIZE),
+    AutoReconnect = maps:get(auto_reconnect, Opts1, ?DEAULT_AUTO_RECONNECT),
+    EcpoolOpts = [{pool_size, PoolSize}, {reader_options, Opts1}, {auto_reconnect, AutoReconnect}],
     ChildSpecs = [
+        hstreamdb_grpc_sup:spec(Reader),
         pool_spec(Reader, EcpoolOpts)
     ],
     {ok, {#{strategy => one_for_one, intensity => 5, period => 30}, ChildSpecs}}.
