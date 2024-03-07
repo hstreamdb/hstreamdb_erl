@@ -451,6 +451,34 @@ t_append_unavailable_from_start(Config) ->
     timer:sleep(2000),
     assert_ok_flush_result(5).
 
+t_cleanup_while_discovering(Config) ->
+    CntRef = counters:new(1, [atomics]),
+    meck:new(hstreamdb_client, [passthrough, no_history]),
+    meck:expect(
+        hstreamdb_client,
+        lookup_resource,
+        fun(Client, ResId, ShardId) ->
+            ok = counters:add(CntRef, 1, 1),
+            Val = counters:get(CntRef, 1),
+            case Val rem 2 of
+                1 ->
+                    meck:passthrough([Client, ResId, ShardId]);
+                0 ->
+                    {error, opps}
+            end
+        end
+    ),
+    ok = start_producer(Config, producer_quick_recover_options()),
+    Producer = producer(Config),
+
+    timer:sleep(10000),
+
+    PoolSup = hstreamdb_grpc_sup:sup_ref(Producer),
+    ChildrenCount = length(supervisor:which_children(PoolSup)),
+    ct:pal("Children count: ~p~n", [ChildrenCount]),
+    %% discovery client + 2 clients to 2 HStreamDB servers
+    ?assert(ChildrenCount =< 3).
+
 t_append_sync_unavailable_from_start(Config) ->
     Caller = self(),
     hstreamdb_test_helpers:with_failures(

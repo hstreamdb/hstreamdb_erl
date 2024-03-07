@@ -465,11 +465,13 @@ start_channel(SupRef, ChannelName, URLMap, RPCOptions, ReapChannel) ->
     URL = uri_string:recompose(URLMap),
     case create_channel_pool(SupRef, ReapChannel, ChannelName, URL, RPCOptions) of
         {ok, _, _} ->
-            ?LOG_DEBUG("[hstreamdb] start_channel ok: ~p, ~p", [ChannelName, URL]);
+            ?LOG_DEBUG("[hstreamdb] start_channel ok: channel=~p, url=~p", [ChannelName, URL]);
         {ok, _} ->
-            ?LOG_DEBUG("[hstreamdb] start_channel ok: ~p, ~p", [ChannelName, URL]);
+            ?LOG_DEBUG("[hstreamdb] start_channel ok: channel=~p, url=~p", [ChannelName, URL]);
         {error, _} = Error ->
-            ?LOG_ERROR("[hstreamdb] start_channel error: ~p, ~p, ~p", [ChannelName, URL, Error]),
+            ?LOG_ERROR("[hstreamdb] start_channel error: channel=~p, url=~p, ~p", [
+                ChannelName, URL, Error
+            ]),
             Error
     end.
 

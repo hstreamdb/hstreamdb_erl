@@ -203,7 +203,7 @@ handle_event(state_timeout, discover, ?discovering(Backoff0), #{stream := Stream
                 version => Version
             },
             ?next_state(?active, Data1);
-        {error, Reason} ->
+        {error, _Ctx, Reason} ->
             {Delay, Backoff1} = hstreamdb_backoff:next_delay(Backoff0),
             ?LOG_ERROR(
                 "[hstreamdb] discovery, failed to update shards for stream ~p, next retry in: ~p,~nerror: ~p",
@@ -286,7 +286,7 @@ create_clients(
         new_key_manager := NewKeyManager,
         rpc_options := OverrideRPCOptions,
         name := Name
-    } = Ctx
+    } = Ctx0
 ) ->
     ?LOG_DEBUG("[hstreamdb] discovery, creating clients: ~p", [Name]),
     {ok, ShardIds} = hstreamdb_key_mgr:shard_ids(NewKeyManager),
@@ -300,7 +300,13 @@ create_clients(
         end,
         ShardIds
     ),
-    pipeline(Pipeline, Ctx#{new_shard_client_manager => NewShardClientManager}).
+    case pipeline(Pipeline, Ctx0#{new_shard_client_manager => NewShardClientManager}) of
+        {ok, Ctx1} ->
+            {ok, Ctx1};
+        {error, Ctx1, Reason} ->
+            ok = stop_new_shard_clients(Ctx1),
+            {error, Ctx1, Reason}
+    end.
 
 cache_shard_client(
     ShardId, #{new_shard_client_manager := NewShardClientManager0} = Ctx
@@ -351,19 +357,26 @@ stop_shard_clients(#{shard_client_manager := ShardClientManager} = Data) ->
     ok = hstreamdb_shard_client_mgr:stop(ShardClientManager),
     Data#{shard_client_manager => undefined}.
 
-pipeline([], Result) ->
-    {ok, Result};
-pipeline([{Fun, Arg} | Rest], Result0) ->
-    try ?MODULE:Fun(Arg, Result0) of
+stop_new_shard_clients(#{new_shard_client_manager := ShardClientManager}) when ShardClientManager =/= undefined ->
+    ok = hstreamdb_shard_client_mgr:stop(ShardClientManager);
+stop_new_shard_clients(_) ->
+    ok.
+
+pipeline([], Ctx) ->
+    {ok, Ctx};
+pipeline([{Fun, Arg} | Rest], Ctx0) ->
+    try ?MODULE:Fun(Arg, Ctx0) of
         ok ->
-            pipeline(Rest, Result0);
-        {ok, Resuslt1} ->
-            pipeline(Rest, Resuslt1);
+            pipeline(Rest, Ctx0);
+        {ok, Ctx1} ->
+            pipeline(Rest, Ctx1);
         {error, Reason} ->
-            {error, {{Fun, Arg}, Reason}}
+            {error, Ctx0, {{Fun, Arg}, Reason}};
+        {error, Ctx1, Reason} ->
+            {error, Ctx1, {{Fun, Arg}, Reason}}
     catch
         Error:Reason:Stacktrace ->
-            {error, {{Fun, Arg}, {Error, Reason, Stacktrace}}}
+            {error, Ctx0, {{Fun, Arg}, {Error, Reason, Stacktrace}}}
     end.
 
 run_callbacks(CallbackName, Args, #{name := Name} = Data) ->

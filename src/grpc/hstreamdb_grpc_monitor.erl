@@ -63,7 +63,7 @@ handle_cast(_Msg, State) ->
     {noreply, State}.
 
 handle_info({'DOWN', MRef, process, Pid, _Reason}, #{mref := MRef, pid := Pid, info := Info} = State) ->
-    {stop, {error, {gproc_pool_owner_died, Info#{pid => Pid}}}, State};
+    {stop, {error, {grpc_pool_owner_died, Info#{pid => Pid}}}, State};
 
 handle_info(_Msg, State) ->
     {noreply, State}.
