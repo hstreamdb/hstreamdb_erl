@@ -74,14 +74,13 @@ start_supervised(SupRef, ChanName, URL, Opts, Pid) ->
         SupRef,
         hstreamdb_grpc_chan_sup:spec(ChanName, URL, Opts, Pid)
     ).
+
 stop_supervised(SupRef, ChanName) ->
     ChildId = hstreamdb_grpc_chan_sup:child_id(ChanName),
-    case supervisor:terminate_child(SupRef, ChildId) of
-        ok ->
-            supervisor:delete_child(SupRef, ChildId);
-        {error, Reason} ->
-            {error, Reason}
-    end.
+    %% The child is temporary, so no need to delete it from the supervisor
+    %% after termination.
+    supervisor:terminate_child(SupRef, ChildId).
+
 
 %%--------------------------------------------------------------------
 %% Supervisor callbacks
