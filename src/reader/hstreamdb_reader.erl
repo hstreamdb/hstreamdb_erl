@@ -69,14 +69,7 @@ read_key_shard(Reader, Key, Limits) ->
 }) ->
     {ok, [hstreamdb:hrecord()]} | {error, term()}.
 read_key_shard(Reader, Key, Limits, {FoldFun, InitAcc}) ->
-    case
-        ecpool:with_client(
-            Reader,
-            fun(Pid) ->
-                gen_server:call(Pid, {get_shard_gstream, Key, Limits})
-            end
-        )
-    of
+    case ecpool_request(Reader, {get_shard_gstream, Key, Limits}) of
         {ok, GStream} ->
             hstreamdb_client:fold_shard_read_gstream(GStream, FoldFun, InitAcc);
         {error, _} = Error ->
@@ -92,29 +85,10 @@ read_key(Reader, Key, Limits) ->
     hsteamdb:reader_fold_fun(), hsteamdb:reader_fold_acc()
 }) ->
     {ok, [hstreamdb:hrecord()]} | {error, term()}.
-read_key(Reader, Key, Limits, {FoldFun, InitAcc}) ->
-    LookupClient = ecpool:with_client(
-        Reader,
-        fun(Pid) -> gen_server:call(Pid, get_lookup_client) end
-    ),
-    case ?MEASURE({lookup_key, self(), Key}, hstreamdb_client:lookup_key(LookupClient, Key)) of
-        {ok, {_Host, _Port} = Addr} ->
-            case
-                ecpool:with_client(
-                    Reader,
-                    fun(Pid) -> gen_server:call(Pid, {get_key_gstream, Key, Addr}) end
-                )
-            of
-                {ok, Stream, GStream} ->
-                    ?MEASURE(
-                        {fold_key_read_gstream, Stream, Key},
-                        hstreamdb_client:fold_key_read_gstream(
-                            GStream, Stream, Key, Limits, FoldFun, InitAcc
-                        )
-                    );
-                {error, _} = Error ->
-                    Error
-            end;
+read_key(Reader, Key, Limits, Fold) ->
+    case check_limits(Reader, Key, Limits) of
+        ok ->
+            do_read_key(Reader, Key, Limits, Fold);
         {error, _} = Error ->
             Error
     end.
@@ -130,7 +104,9 @@ connect(Options) ->
 %% -------------------------------------------------------------------------------------------------
 %% gen_server part
 
-init([#{mgr_client_options := MgrClientOptions, stream := Stream, name := Reader} = Options, WorkerId]) ->
+init([
+    #{mgr_client_options := MgrClientOptions, stream := Stream, name := Reader} = Options, WorkerId
+]) ->
     case hstreamdb_client:start({Reader, WorkerId}, MgrClientOptions) of
         {ok, MgrClient} ->
             KeyManagerOptions = maps:get(key_manager_options, Options, #{}),
@@ -165,6 +141,13 @@ handle_call({get_key_gstream, Key, Addr}, _From, State) ->
             {reply, {ok, Stream, GStream}, NewState};
         {error, Reason, NewState} ->
             {reply, {error, Reason}, NewState}
+    end;
+handle_call({get_key_shard, Key}, _From, #{key_manager := KeyManager} = State) ->
+    case hstreamdb_auto_key_mgr:choose_shard(KeyManager, Key) of
+        {ok, ShardId, NewKeyManager} ->
+            {reply, {ok, ShardId}, State#{key_manager => NewKeyManager}};
+        {error, Reason} ->
+            {reply, {error, Reason}, State}
     end;
 handle_call(get_lookup_client, _From, #{client := Client} = State) ->
     {reply, Client, State};
@@ -218,6 +201,33 @@ do_get_shard_gstream(
             {error, Reason, State}
     end.
 
+do_read_key(Reader, Key, Limits, {FoldFun, InitAcc}) ->
+    LookupClient = ecpool_request(Reader, get_lookup_client),
+    case ?MEASURE({lookup_key, self(), Key}, hstreamdb_client:lookup_key(LookupClient, Key)) of
+        {ok, {_Host, _Port} = Addr} ->
+            case ecpool_request(Reader, {get_key_gstream, Key, Addr}) of
+                {ok, Stream, GStream} ->
+                    ?MEASURE(
+                        {fold_key_read_gstream, Stream, Key},
+                        hstreamdb_client:fold_key_read_gstream(
+                            GStream, Stream, Key, Limits, FoldFun, InitAcc
+                        )
+                    );
+                {error, _} = Error ->
+                    Error
+            end;
+        {error, _} = Error ->
+            Error
+    end.
+
+check_limits(Reader, Key, Limits) ->
+    case ecpool_request(Reader, {get_key_shard, Key}) of
+        {ok, ShardId} ->
+            check_key_limits(ShardId, Limits);
+        {error, _} = Error ->
+            Error
+    end.
+
 do_get_key_gstream(
     #{shard_client_manager := ShardClientManager, stream := Stream} = State,
     _Key,
@@ -256,3 +266,25 @@ fold_stream_key_fun(Key) ->
         (#{header := #{key := _OtherPK}}, Acc) -> Acc;
         (eos, Acc) -> lists:reverse(Acc)
     end.
+
+check_key_limits(ShardId, Limits) ->
+    check_key_limits([from, until], ShardId, Limits).
+
+check_key_limits([], _ShardId, _Limits) ->
+    ok;
+check_key_limits([Key | Rest], ActualShardId, Limits) ->
+    case Limits of
+        #{Key := #{offset := {recordOffset, #{shardId := ShardId}}}} ->
+            case ActualShardId =:= ShardId of
+                true -> check_key_limits(Rest, ActualShardId, Limits);
+                false -> {error, {shard_mismatch, ActualShardId, ShardId}}
+            end;
+        _ ->
+            check_key_limits(Rest, ActualShardId, Limits)
+    end.
+
+ecpool_request(Reader, Request) ->
+    ecpool:with_client(
+        Reader,
+        fun(Pid) -> gen_server:call(Pid, Request) end
+    ).

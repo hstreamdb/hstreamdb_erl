@@ -271,6 +271,19 @@ t_read_stream_key(Config) ->
     Reader = "reader_" ++ atom_to_list(?FUNCTION_NAME),
     ok = hstreamdb:start_reader(Reader, ReaderOptions),
 
+    % Try to read with invalid limits
+
+    InvalidLimits = #{
+        from => #{offset => {specialOffset, 0}},
+        until => #{offset => {recordOffset, #{batchId => 0, recordId => 0, shardId => 123}}},
+        maxReadBatches => 100000
+    },
+
+    ?assertMatch(
+        {error, {shard_mismatch, _, 123}},
+        hstreamdb:read_stream_key(Reader, "PK1", InvalidLimits)
+    ),
+
     % Read all records
 
     Limits0 = #{
