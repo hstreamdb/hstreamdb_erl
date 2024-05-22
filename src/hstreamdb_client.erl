@@ -928,7 +928,7 @@ fold_key_read_gstream_rounds(GStream, Req0, 0, Fun, Acc) ->
     %% We received all records we need, but not eos.
     %% So we need to send a new request to get the eos.
     case grpc_client:recv(GStream) of
-        {ok, [{eos, _Trails}]} -> ok;
+        {ok, [{eos, _Trailers}]} -> ok;
         %% this is probably a server error, but we do not care,
         %% we received all records we need anyway.
         {error, not_found} -> ok
@@ -957,6 +957,8 @@ fold_key_read_gstream_round(GStream, Count, Fun, Acc) ->
             case fold_key_read_gstream_round_sub_results(0, RoundSubResults, Fun, Acc) of
                 {stop, NewAcc} ->
                     {stop, NewAcc};
+                {error, _} = Error ->
+                    Error;
                 {N, NewAcc} ->
                     fold_key_read_gstream_round(GStream, Count - N, Fun, NewAcc)
             end;
@@ -967,12 +969,22 @@ fold_key_read_gstream_round(GStream, Count, Fun, Acc) ->
 
 fold_key_read_gstream_round_sub_results(N, [], _Fun, Acc) ->
     {N, Acc};
-fold_key_read_gstream_round_sub_results(_N, [{eos, _} | _Rest], Fun, Acc) ->
-    {stop, Fun(eos, Acc)};
+fold_key_read_gstream_round_sub_results(_N, [{eos, Trailers} | _Rest], Fun, Acc) ->
+    case check_status(Trailers) of
+        ok -> {stop, Fun(eos, Acc)};
+        {error, _} = Error -> Error
+    end;
 fold_key_read_gstream_round_sub_results(N, [RoundSubResult | Rest], Fun, Acc) ->
     Recs = merge_round_sub_res(RoundSubResult),
     NewAcc = lists:foldl(Fun, Acc, Recs),
     fold_key_read_gstream_round_sub_results(N + length(Recs), Rest, Fun, NewAcc).
+
+check_status(Trailers) when is_list(Trailers) ->
+    case proplists:get_value(<<"grpc-status">>, Trailers) of
+        <<"0">> -> ok;
+        undefined -> ok;
+        Status -> format_grpc_error(Status, proplists:get_value(<<"grpc-message">>, Trailers))
+    end.
 
 merge_round_sub_res(#{receivedRecords := Recs, recordIds := RecIds}) ->
     lists:zipwith(
@@ -1049,3 +1061,28 @@ authorization(Username, Password) ->
 
 str_to_bin(B) when is_binary(B) -> B;
 str_to_bin(L) when is_list(L) -> unicode:characters_to_binary(L).
+
+format_grpc_error(StatusBin, MessageBin) ->
+    do_format_grpc_error(try_parse_int(StatusBin), try_parse_json(MessageBin)).
+
+try_parse_int(Bin) ->
+    case string:to_integer(Bin) of
+        {Int, <<>>} -> Int;
+        _ -> Bin
+    end.
+
+try_parse_json(Bin) ->
+    try
+        jiffy:decode(Bin, [return_maps])
+    catch
+        error:_ -> Bin
+    end.
+
+do_format_grpc_error(3, #{<<"error">> := 901, <<"extra">> := Extra}) ->
+    {error, {shard_mismatch, Extra}};
+do_format_grpc_error(Status, Message) ->
+    {error,
+        {grpc_error, #{
+            status => Status,
+            message => Message
+        }}}.

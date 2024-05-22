@@ -227,38 +227,7 @@ t_read_stream_key_with_shard_reader(Config) ->
 t_read_stream_key(Config) ->
     %% Prepare records
 
-    Producer = ?FUNCTION_NAME,
-    ProducerOptions = #{
-        buffer_pool_size => 10,
-        writer_pool_size => 20,
-        stream => ?config(stream_name, Config),
-        client_options => hstreamdb_test_helpers:default_client_options(),
-        buffer_options => #{
-            max_records => 10,
-            max_time => 10000
-        }
-    },
-
-    ok = hstreamdb:start_producer(Producer, ProducerOptions),
-
-    ok = lists:foreach(
-        fun(PartitioningKey) ->
-            ok = lists:foreach(
-                fun(N) ->
-                    Payload = term_to_binary({item, N}),
-                    Record = hstreamdb:to_record(PartitioningKey, raw, Payload),
-                    ok = hstreamdb:append(Producer, Record)
-                end,
-                lists:seq(1, 999)
-            )
-        end,
-        ["PK0", "PK1", "PK2", "PK3"]
-    ),
-
-    Record = hstreamdb:to_record("PK", raw, <<>>),
-    {ok, _} = hstreamdb:append_flush(Producer, Record),
-
-    ok = hstreamdb:stop_producer(Producer),
+    ok = fill_records(?config(stream_name, Config), 999),
 
     %% Read records
 
@@ -280,7 +249,7 @@ t_read_stream_key(Config) ->
     },
 
     ?assertMatch(
-        {error, {shard_mismatch, _, 123}},
+        {error, {shard_mismatch, {_, 123}}},
         hstreamdb:read_stream_key(Reader, "PK1", InvalidLimits)
     ),
 
@@ -344,6 +313,48 @@ t_read_stream_key(Config) ->
     ok = assert_recs_in_order(Recs2),
 
     ok = hstreamdb:stop_reader(Reader).
+
+t_read_stream_recreated_key(Config) ->
+    StreamName = ?config(stream_name, Config),
+
+    ReaderOptions = #{
+        mgr_client_options => hstreamdb_test_helpers:default_client_options(),
+        stream => StreamName,
+        pool_size => 1
+    },
+
+    Reader = "reader_" ++ atom_to_list(?FUNCTION_NAME),
+    ok = hstreamdb:start_reader(Reader, ReaderOptions),
+
+    Limits = #{
+        from => #{offset => {specialOffset, 0}},
+        until => #{offset => {specialOffset, 1}}
+    },
+    _ = hstreamdb:read_stream_key(Reader, "PK1", Limits),
+
+    Client = ?config(client, Config),
+
+    {ok, KeyManager} = hstreamdb_key_mgr:update_shards(
+        Client, hstreamdb_key_mgr:create(StreamName)
+    ),
+    {ok, ShardId} = hstreamdb_key_mgr:choose_shard(KeyManager, <<"PK1">>),
+
+    _ = hstreamdb_client:delete_stream(Client, StreamName),
+    ok = hstreamdb_client:create_stream(Client, StreamName, 2, ?DAY, shard_count(?FUNCTION_NAME)),
+
+    % Try to read with invalid limits
+
+    InvalidLimits = #{
+        from => #{offset => {specialOffset, 0}},
+        until => #{offset => {recordOffset, #{batchId => 0, recordId => 0, shardId => ShardId}}},
+        maxReadBatches => 100000
+    },
+
+    %% Error from GRPC
+    ?assertMatch(
+        {error, {shard_mismatch, Bin}} when is_binary(Bin),
+        hstreamdb:read_stream_key(Reader, "PK1", InvalidLimits)
+    ).
 
 t_trim(Config) ->
     StreamName = ?config(stream_name, Config),
@@ -425,3 +436,37 @@ shard_count(t_read_single_shard_stream) ->
     1;
 shard_count(_) ->
     2.
+
+fill_records(StreamName, N) ->
+    Producer = ?FUNCTION_NAME,
+    ProducerOptions = #{
+        buffer_pool_size => 10,
+        writer_pool_size => 20,
+        stream => StreamName,
+        client_options => hstreamdb_test_helpers:default_client_options(),
+        buffer_options => #{
+            max_records => 10,
+            max_time => 10000
+        }
+    },
+
+    ok = hstreamdb:start_producer(Producer, ProducerOptions),
+
+    ok = lists:foreach(
+        fun(PartitioningKey) ->
+            ok = lists:foreach(
+                fun(I) ->
+                    Payload = term_to_binary({item, I}),
+                    Record = hstreamdb:to_record(PartitioningKey, raw, Payload),
+                    ok = hstreamdb:append(Producer, Record)
+                end,
+                lists:seq(1, N)
+            )
+        end,
+        ["PK0", "PK1", "PK2", "PK3"]
+    ),
+
+    Record = hstreamdb:to_record("PK", raw, <<>>),
+    {ok, _} = hstreamdb:append_flush(Producer, Record),
+
+    ok = hstreamdb:stop_producer(Producer).

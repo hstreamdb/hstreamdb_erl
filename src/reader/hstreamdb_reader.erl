@@ -17,6 +17,7 @@
 -module(hstreamdb_reader).
 
 -include("hstreamdb.hrl").
+-include_lib("kernel/include/logger.hrl").
 
 -behaviour(gen_server).
 
@@ -223,6 +224,7 @@ do_read_key(Reader, Key, Limits, {FoldFun, InitAcc}) ->
 check_limits(Reader, Key, Limits) ->
     case ecpool_request(Reader, {get_key_shard, Key}) of
         {ok, ShardId} ->
+            ?LOG_DEBUG("[hstreamdb] shard for ~p, id: ~p~n", [{get_key_shard, Key}, ShardId]),
             check_key_limits(ShardId, Limits);
         {error, _} = Error ->
             Error
@@ -277,7 +279,7 @@ check_key_limits([Key | Rest], ActualShardId, Limits) ->
         #{Key := #{offset := {recordOffset, #{shardId := ShardId}}}} ->
             case ActualShardId =:= ShardId of
                 true -> check_key_limits(Rest, ActualShardId, Limits);
-                false -> {error, {shard_mismatch, ActualShardId, ShardId}}
+                false -> {error, {shard_mismatch, {ActualShardId, ShardId}}}
             end;
         _ ->
             check_key_limits(Rest, ActualShardId, Limits)
