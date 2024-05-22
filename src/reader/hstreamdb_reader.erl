@@ -22,8 +22,6 @@
 -behaviour(gen_server).
 
 -export([
-    read_key_shard/3,
-    read_key_shard/4,
     read_key/3,
     read_key/4
 ]).
@@ -56,26 +54,6 @@
     shard_client_manager_options => hstreamdb_shard_client_mgr:options()
 }.
 
-%% @doc Identify the shard that a key belongs to and fold all read records.
-%% by default, the fold function will filter all records that have
-%% exactly the same key as the one provided.
-
--spec read_key_shard(ecpool:pool_name(), hstreamdb:partitioning_key(), hstreamdb:limits()) ->
-    {ok, [hstreamdb:hrecord()]} | {error, term()}.
-read_key_shard(Reader, Key, Limits) ->
-    read_key_shard(Reader, Key, Limits, {fold_stream_key_fun(Key), []}).
-
--spec read_key_shard(ecpool:pool_name(), hstreamdb:partitioning_key(), hstreamdb:limits(), {
-    hsteamdb:reader_fold_fun(), hsteamdb:reader_fold_acc()
-}) ->
-    {ok, [hstreamdb:hrecord()]} | {error, term()}.
-read_key_shard(Reader, Key, Limits, {FoldFun, InitAcc}) ->
-    case ecpool_request(Reader, {get_shard_gstream, Key, Limits}) of
-        {ok, GStream} ->
-            hstreamdb_client:fold_shard_read_gstream(GStream, FoldFun, InitAcc);
-        {error, _} = Error ->
-            Error
-    end.
 
 -spec read_key(ecpool:pool_name(), hstreamdb:partitioning_key(), hstreamdb:limits()) ->
     {ok, [hstreamdb:hrecord()]} | {error, term()}.
@@ -129,13 +107,6 @@ init([
             Error
     end.
 
-handle_call({get_shard_gstream, Key, Limits}, _From, State) ->
-    case do_get_shard_gstream(State, Key, Limits) of
-        {ok, GStream, NewState} ->
-            {reply, {ok, GStream}, NewState};
-        {error, Reason, NewState} ->
-            {reply, {error, Reason}, NewState}
-    end;
 handle_call({get_key_gstream, Key, Addr}, _From, State) ->
     case do_get_key_gstream(State, Key, Addr) of
         {ok, Stream, GStream, NewState} ->
@@ -175,32 +146,6 @@ code_change(_OldVsn, State, _Extra) ->
 %%-------------------------------------------------------------------------------------------------
 %% internal functions
 %%-------------------------------------------------------------------------------------------------
-
-do_get_shard_gstream(
-    #{key_manager := KeyManager, shard_client_manager := ShardClientManager} = State, Key, Limits
-) ->
-    case hstreamdb_auto_key_mgr:choose_shard(KeyManager, Key) of
-        {ok, ShardId, NewKeyManager} ->
-            case hstreamdb_shard_client_mgr:lookup_shard_client(ShardClientManager, ShardId) of
-                {ok, ShardClient, NewClientManager} ->
-                    case hstreamdb_client:read_shard_gstream(ShardClient, ShardId, Limits) of
-                        {ok, GStream} ->
-                            {ok, GStream, State#{
-                                key_manager => NewKeyManager,
-                                shard_client_manager => NewClientManager
-                            }};
-                        {error, Reason} ->
-                            {error, Reason, State#{
-                                key_manager => NewKeyManager,
-                                shard_client_manager => NewClientManager
-                            }}
-                    end;
-                {error, _} = Error ->
-                    {error, Error, State#{key_manager => NewKeyManager}}
-            end;
-        {error, Reason} ->
-            {error, Reason, State}
-    end.
 
 do_read_key(Reader, Key, Limits, {FoldFun, InitAcc}) ->
     LookupClient = ecpool_request(Reader, get_lookup_client),

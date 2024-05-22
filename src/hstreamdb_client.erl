@@ -49,11 +49,6 @@
     lookup_resource/3,
     lookup_key/2,
 
-    read_single_shard_stream/3,
-
-    read_shard_gstream/3,
-    fold_shard_read_gstream/3,
-
     read_key_gstream/1,
     fold_key_read_gstream/6,
 
@@ -83,7 +78,6 @@
     hrecord_req/0,
 
     offset/0,
-    limits_shard/0,
     limits_key/0
 ]).
 
@@ -154,7 +148,6 @@
 
 -type offset() :: #{offset => special_offset() | timestamp_offset() | record_offset()}.
 
--type limits_shard() :: #{from => offset(), until => offset(), maxReadBatches => non_neg_integer()}.
 -type limits_key() :: #{from => offset(), until => offset(), readRecordCount => non_neg_integer()}.
 
 -type reader_fold_acc() :: term().
@@ -424,21 +417,9 @@ lookup_resource(Client, ResourceType, ResourceId) ->
 lookup_key(Client, Key) ->
     do_lookup_key(Client, Key).
 
--spec read_single_shard_stream(t(), stream(), limits_shard()) -> {ok, gstream()} | {error, term()}.
-read_single_shard_stream(Client, StreamName, Limits) ->
-    do_read_single_shard_stream(Client, StreamName, Limits).
-
--spec read_shard_gstream(t(), shard_id(), limits_shard()) -> {ok, gstream()} | {error, term()}.
-read_shard_gstream(Client, ShardId, Limits) ->
-    do_read_shard_gstream(Client, ShardId, Limits).
-
 -spec read_key_gstream(t()) -> {ok, gstream()} | {error, term()}.
 read_key_gstream(Client) ->
     do_read_key_gstream(Client).
-
--spec fold_shard_read_gstream(gstream(), reader_fold_fun(), reader_fold_acc()) -> reader_fold_acc().
-fold_shard_read_gstream(GStream, Fun, Acc) ->
-    do_fold_shard_read_gstream(GStream, Fun, Acc).
 
 -spec fold_key_read_gstream(
     gstream(), stream(), partitioning_key(), limits_key(), reader_fold_fun(), reader_fold_acc()
@@ -619,46 +600,6 @@ do_lookup_key(
             {error, Error}
     end.
 
-do_read_single_shard_stream(
-    Client,
-    StreamName,
-    Opts
-) ->
-    Req0 = #{
-        streamName => StreamName,
-        readerId => integer_to_binary(erlang:unique_integer([positive]))
-    },
-    Limits = maps:get(limits, Opts, #{}),
-    Req = maps:merge(Req0, Limits),
-    Options = options(Client),
-    ?LOG_DEBUG("[hstreamdb] read_single_shard: Req: ~p~nOptions: ~p~n", [Req, Options]),
-    case ?HSTREAMDB_GEN_CLIENT:read_single_shard_stream(metadata(Client), Options) of
-        {ok, GStream} ->
-            ok = grpc_client:send(GStream, Req, fin),
-            {FoldFun, Acc} = maps:get(fold, Opts, {fun append_rec/2, []}),
-            do_fold_shard_read_gstream(GStream, FoldFun, Acc);
-        {error, _} = Error ->
-            Error
-    end.
-
-do_read_shard_gstream(
-    Client,
-    ShardId,
-    Limits
-) ->
-    Req0 = #{
-        shardId => ShardId,
-        readerId => integer_to_binary(erlang:unique_integer([positive]))
-    },
-    Req = maps:merge(Req0, Limits),
-    case ?HSTREAMDB_GEN_CLIENT:read_shard_stream(metadata(Client), options(Client)) of
-        {ok, GStream} ->
-            ok = grpc_client:send(GStream, Req, fin),
-            {ok, GStream};
-        {error, _} = Error ->
-            Error
-    end.
-
 do_read_key_gstream(Client) ->
     case ?HSTREAMDB_GEN_CLIENT:read_stream_by_key(metadata(Client), options(Client)) of
         {ok, GStream} ->
@@ -684,9 +625,6 @@ do_fold_key_read_gstream(GStream, Stream, Key, Limits0, Fun, Acc) ->
     fold_key_read_gstream_rounds(GStream, Req1, TotalLeft, Fun, Acc).
 
 %% Helper functions
-
-append_rec(eos, Acc) -> lists:reverse(Acc);
-append_rec(Rec, Acc) -> [Rec | Acc].
 
 validate_reap_sup_ref(true, undefined, _Fun) ->
     {error, cannot_reap_channel_without_sup_ref};
@@ -849,72 +787,6 @@ zstd(Payload) ->
     case ezstd:compress(Payload) of
         {error, R} -> {error, {zstd, R}};
         R -> {ok, R}
-    end.
-
-do_fold_shard_read_gstream(GStream, Fun, Acc) ->
-    case grpc_client:recv(GStream) of
-        {ok, Results} ->
-            case fold_results(Results, Fun, Acc) of
-                {ok, NewAcc} ->
-                    do_fold_shard_read_gstream(GStream, Fun, NewAcc);
-                {stop, NewAcc} ->
-                    {ok, NewAcc}
-            end;
-        {error, _} = Error ->
-            Error
-    end.
-
-fold_results([], _Fun, Acc) ->
-    {ok, Acc};
-fold_results([Result | Rest], Fun, Acc) ->
-    case fold_result(Result, Fun, Acc) of
-        {ok, NewAcc} ->
-            fold_results(Rest, Fun, NewAcc);
-        {stop, NewAcc} ->
-            {stop, NewAcc}
-    end.
-
-fold_result(#{receivedRecords := Records}, Fun, Acc) ->
-    {ok, fold_batch_records(Records, Fun, Acc)};
-fold_result({eos, _}, Fun, Acc) ->
-    {stop, Fun(eos, Acc)}.
-
-fold_batch_records([], _Fun, Acc) ->
-    Acc;
-fold_batch_records([Record | Rest], Fun, Acc) ->
-    NewAcc = fold_batch_record(Record, Fun, Acc),
-    fold_batch_records(Rest, Fun, NewAcc).
-
-fold_batch_record(#{record := _, recordIds := [#{batchId := BatchId} | _]} = BatchRecord, Fun, Acc) ->
-    Records = decode_batch(BatchRecord),
-    ?LOG_DEBUG("[hstreamdb] fold_batch_record, id: ~p,~nrecords: ~p~n", [BatchId, length(Records)]),
-    fold_hstream_records(Records, Fun, Acc).
-
-fold_hstream_records(Records, Fun, Acc) ->
-    lists:foldl(Fun, Acc, Records).
-
-decode_batch(#{
-    record := #{payload := Payload0, compressionType := CompressionType} = _BatchRecord,
-    recordIds := RecordIds
-}) ->
-    Payload1 = decode_payload(Payload0, CompressionType),
-    #{records := Records} = hstreamdb_api:decode_msg(Payload1, batch_h_stream_records, []),
-    lists:zipwith(
-        fun(RecordId, Record) ->
-            Record#{recordId => RecordId}
-        end,
-        RecordIds,
-        Records
-    ).
-
-decode_payload(Payload, 'None') ->
-    Payload;
-decode_payload(Payload, 'Gzip') ->
-    zlib:gunzip(Payload);
-decode_payload(Payload, 'Zstd') ->
-    case ezstd:decompress(Payload) of
-        {error, Error} -> error({zstd, Error});
-        Bin when is_binary(Bin) -> Bin
     end.
 
 random_name() ->

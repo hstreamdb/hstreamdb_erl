@@ -50,15 +50,8 @@
 ]).
 
 -export([
-    read_single_shard_stream/2,
-    read_single_shard_stream/3
-]).
-
--export([
     start_reader/2,
     stop_reader/1,
-    read_stream_key_shard/3,
-    read_stream_key_shard/4,
     read_stream_key/3,
     read_stream_key/4
 ]).
@@ -192,37 +185,7 @@ stop_key_manager(KeyManager) ->
     hstreamdb_auto_key_mgr:stop(KeyManager).
 
 %%--------------------------------------------------------------------
-%% Reader single shard stream facade (simple, no pool)
-%%--------------------------------------------------------------------
-
-read_single_shard_stream(ClientManager, StreamName) ->
-    read_single_shard_stream(ClientManager, StreamName, ?DEFAULT_READ_SINGLE_SHARD_STREAM_OPTS).
-
-read_single_shard_stream(ClientManager, StreamName, Limits) ->
-    Client = hstreamdb_shard_client_mgr:client(ClientManager),
-    case hstreamdb_client:list_shards(Client, StreamName) of
-        {ok, [#{shardId := ShardId}]} ->
-            case hstreamdb_shard_client_mgr:lookup_shard_client(ClientManager, ShardId) of
-                {ok, ShardClient, NewClientManager} ->
-                    case
-                        hstreamdb_client:read_single_shard_stream(ShardClient, StreamName, Limits)
-                    of
-                        {ok, Result} ->
-                            {ok, Result, NewClientManager};
-                        {error, Reason} ->
-                            {error, Reason, NewClientManager}
-                    end;
-                {error, _} = Error ->
-                    Error
-            end;
-        {ok, L} when is_list(L) andalso length(L) > 1 ->
-            {error, {multiple_shards, L}};
-        {error, _} = Error ->
-            Error
-    end.
-
-%%--------------------------------------------------------------------
-%% Read multiple shard stream key facade
+%% Start/stop key readers
 %%--------------------------------------------------------------------
 
 -spec start_reader(ecpool:pool_name(), hstreamdb_reader:options()) -> ok | {error, term()}.
@@ -237,22 +200,6 @@ start_reader(Name, ReaderOptions) ->
 -spec stop_reader(ecpool:pool_name()) -> ok.
 stop_reader(Name) ->
     hstreamdb_readers_sup:stop(Name).
-
-%% @doc Identify the shard that a key belongs to and fold all read records.
-%% by default, the fold function will filter all records that have
-%% exactly the same key as the one provided.
-
--spec read_stream_key_shard(ecpool:pool_name(), partitioning_key(), limits_shard()) ->
-    {ok, [hstreamdb:hrecord()]} | {error, term()}.
-read_stream_key_shard(Name, Key, Limits) ->
-    hstreamdb_reader:read_key_shard(Name, Key, Limits).
-
--spec read_stream_key_shard(ecpool:pool_name(), partitioning_key(), limits_shard(), {
-    reader_fold_fun(), reader_fold_acc()
-}) ->
-    {ok, [hstreamdb:hrecord()]} | {error, term()}.
-read_stream_key_shard(Name, Key, Limits, Fold) ->
-    hstreamdb_reader:read_key_shard(Name, Key, Limits, Fold).
 
 %% @doc fetch only records that have the same key as the one provided, using
 %% server-side filtering.
