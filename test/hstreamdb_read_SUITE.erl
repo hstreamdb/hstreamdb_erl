@@ -49,216 +49,10 @@ end_per_testcase(_Case, Config) ->
     _ = hstreamdb_client:stop(Client),
     ok.
 
-t_read_single_shard_stream(Config) ->
-    Client = ?config(client, Config),
-    StreamName = ?config(stream_name, Config),
-
-    Producer = ?FUNCTION_NAME,
-    ProducerOptions = #{
-        buffer_pool_size => 1,
-        writer_pool_size => 1,
-        stream => StreamName,
-        client_options => hstreamdb_test_helpers:default_client_options(),
-        buffer_options => #{
-            max_records => 100,
-            max_time => 10000
-        }
-    },
-    ok = hstreamdb:start_producer(Producer, ProducerOptions),
-
-    PartitioningKey = "PK",
-
-    ok = lists:foreach(
-        fun(N) ->
-            Payload = term_to_binary({item, N}),
-            Record = hstreamdb:to_record(PartitioningKey, raw, Payload),
-            ok = hstreamdb:append(Producer, Record)
-        end,
-        lists:seq(1, 10000)
-    ),
-
-    Payload = term_to_binary({item, 10001}),
-    Record = hstreamdb:to_record(PartitioningKey, raw, Payload),
-    {ok, _} = hstreamdb:append_flush(Producer, Record),
-
-    CM0 = hstreamdb:start_client_manager(Client),
-    Res0 = hstreamdb:read_single_shard_stream(CM0, ?config(stream_name, Config), #{
-        limits => #{
-            from => #{offset => {specialOffset, 0}},
-            until => #{offset => {specialOffset, 1}},
-            maxReadBatches => 100000
-        }
-    }),
-
-    ?assertMatch(
-        {ok, _, _},
-        Res0
-    ),
-
-    {ok, Recs, CM1} = Res0,
-
-    ?assertEqual(10001, length(Recs)),
-
-    CountsByBatchId = lists:foldl(
-        fun(#{recordId := #{batchId := BatchId}}, Counts) ->
-            maps:update_with(
-                BatchId,
-                fun(N) -> N + 1 end,
-                1,
-                Counts
-            )
-        end,
-        #{},
-        Recs
-    ),
-
-    ?assertEqual(
-        [1 | [100 || _ <- lists:seq(1, 100)]],
-        lists:sort(maps:values(CountsByBatchId))
-    ),
-
-    {value, #{recordId := MidRecordId}} = lists:search(
-        fun(#{payload := P}) ->
-            term_to_binary({item, 5001}) =:= P
-        end,
-        Recs
-    ),
-
-    MidRecordOffset = {recordOffset, MidRecordId},
-
-    Res1 = hstreamdb:read_single_shard_stream(CM0, ?config(stream_name, Config), #{
-        limits => #{
-            from => #{offset => {specialOffset, 0}},
-            until => #{offset => MidRecordOffset},
-            maxReadBatches => 100000
-        }
-    }),
-    Res2 = hstreamdb:read_single_shard_stream(CM0, ?config(stream_name, Config), #{
-        limits => #{
-            from => #{offset => MidRecordOffset},
-            until => #{offset => {specialOffset, 1}},
-            maxReadBatches => 100000
-        }
-    }),
-
-    ?assertMatch(
-        {ok, _, _},
-        Res1
-    ),
-
-    ?assertMatch(
-        {ok, _, _},
-        Res2
-    ),
-
-    {ok, Recs1, _} = Res1,
-    {ok, Recs2, _} = Res2,
-
-    ?assertEqual(10101, length(Recs1) + length(Recs2)),
-
-    ok = hstreamdb:stop_client_manager(CM1),
-    ok = hstreamdb:stop_producer(Producer).
-
-t_read_stream_key_with_shard_reader(Config) ->
-    %% Prepare records
-
-    Producer = ?FUNCTION_NAME,
-    ProducerOptions = #{
-        buffer_pool_size => 1,
-        writer_pool_size => 1,
-        stream => ?config(stream_name, Config),
-        client_options => hstreamdb_test_helpers:default_client_options(),
-        buffer_options => #{
-            max_records => 10,
-            max_time => 10000
-        }
-    },
-
-    ok = hstreamdb:start_producer(Producer, ProducerOptions),
-
-    ok = lists:foreach(
-        fun(PartitioningKey) ->
-            ok = lists:foreach(
-                fun(N) ->
-                    Payload = term_to_binary({item, N}),
-                    Record = hstreamdb:to_record(PartitioningKey, raw, Payload),
-                    ok = hstreamdb:append(Producer, Record)
-                end,
-                lists:seq(1, 100)
-            )
-        end,
-        ["PK0", "PK1", "PK2", "PK3"]
-    ),
-
-    Record = hstreamdb:to_record("PK", raw, <<>>),
-    {ok, _} = hstreamdb:append_flush(Producer, Record),
-
-    %% Read records
-
-    ReaderOptions = #{
-        mgr_client_options => hstreamdb_test_helpers:default_client_options(),
-        stream => ?config(stream_name, Config),
-        pool_size => 5
-    },
-
-    Reader = "reader_" ++ atom_to_list(?FUNCTION_NAME),
-    ok = hstreamdb:start_reader(Reader, ReaderOptions),
-
-    Limits = #{
-        from => #{offset => {specialOffset, 0}},
-        until => #{offset => {specialOffset, 1}},
-        maxReadBatches => 100000
-    },
-
-    Res0 = hstreamdb:read_stream_key_shard(Reader, "PK1", Limits),
-
-    ?assertMatch(
-        {ok, _},
-        Res0
-    ),
-
-    {ok, Recs} = Res0,
-
-    ?assertEqual(100, length(Recs)),
-    assert_recs_in_order(Recs),
-
-    ok = hstreamdb:stop_reader(Reader).
-
 t_read_stream_key(Config) ->
     %% Prepare records
 
-    Producer = ?FUNCTION_NAME,
-    ProducerOptions = #{
-        buffer_pool_size => 10,
-        writer_pool_size => 20,
-        stream => ?config(stream_name, Config),
-        client_options => hstreamdb_test_helpers:default_client_options(),
-        buffer_options => #{
-            max_records => 10,
-            max_time => 10000
-        }
-    },
-
-    ok = hstreamdb:start_producer(Producer, ProducerOptions),
-
-    ok = lists:foreach(
-        fun(PartitioningKey) ->
-            ok = lists:foreach(
-                fun(N) ->
-                    Payload = term_to_binary({item, N}),
-                    Record = hstreamdb:to_record(PartitioningKey, raw, Payload),
-                    ok = hstreamdb:append(Producer, Record)
-                end,
-                lists:seq(1, 999)
-            )
-        end,
-        ["PK0", "PK1", "PK2", "PK3"]
-    ),
-
-    Record = hstreamdb:to_record("PK", raw, <<>>),
-    {ok, _} = hstreamdb:append_flush(Producer, Record),
-
-    ok = hstreamdb:stop_producer(Producer),
+    ok = fill_records(?config(stream_name, Config), 999),
 
     %% Read records
 
@@ -270,6 +64,19 @@ t_read_stream_key(Config) ->
 
     Reader = "reader_" ++ atom_to_list(?FUNCTION_NAME),
     ok = hstreamdb:start_reader(Reader, ReaderOptions),
+
+    % Try to read with invalid limits
+
+    InvalidLimits = #{
+        from => #{offset => {specialOffset, 0}},
+        until => #{offset => {recordOffset, #{batchId => 0, recordId => 0, shardId => 123}}},
+        maxReadBatches => 100000
+    },
+
+    ?assertMatch(
+        {error, {shard_mismatch, {_, 123}}},
+        hstreamdb:read_stream_key(Reader, "PK1", InvalidLimits)
+    ),
 
     % Read all records
 
@@ -331,6 +138,48 @@ t_read_stream_key(Config) ->
     ok = assert_recs_in_order(Recs2),
 
     ok = hstreamdb:stop_reader(Reader).
+
+t_read_stream_recreated_key(Config) ->
+    StreamName = ?config(stream_name, Config),
+
+    ReaderOptions = #{
+        mgr_client_options => hstreamdb_test_helpers:default_client_options(),
+        stream => StreamName,
+        pool_size => 1
+    },
+
+    Reader = "reader_" ++ atom_to_list(?FUNCTION_NAME),
+    ok = hstreamdb:start_reader(Reader, ReaderOptions),
+
+    Limits = #{
+        from => #{offset => {specialOffset, 0}},
+        until => #{offset => {specialOffset, 1}}
+    },
+    _ = hstreamdb:read_stream_key(Reader, "PK1", Limits),
+
+    Client = ?config(client, Config),
+
+    {ok, KeyManager} = hstreamdb_key_mgr:update_shards(
+        Client, hstreamdb_key_mgr:create(StreamName)
+    ),
+    {ok, ShardId} = hstreamdb_key_mgr:choose_shard(KeyManager, <<"PK1">>),
+
+    _ = hstreamdb_client:delete_stream(Client, StreamName),
+    ok = hstreamdb_client:create_stream(Client, StreamName, 2, ?DAY, shard_count(?FUNCTION_NAME)),
+
+    % Try to read with invalid limits
+
+    InvalidLimits = #{
+        from => #{offset => {specialOffset, 0}},
+        until => #{offset => {recordOffset, #{batchId => 0, recordId => 0, shardId => ShardId}}},
+        maxReadBatches => 100000
+    },
+
+    %% Error from GRPC
+    ?assertMatch(
+        {error, {shard_mismatch, Bin}} when is_binary(Bin),
+        hstreamdb:read_stream_key(Reader, "PK1", InvalidLimits)
+    ).
 
 t_trim(Config) ->
     StreamName = ?config(stream_name, Config),
@@ -412,3 +261,37 @@ shard_count(t_read_single_shard_stream) ->
     1;
 shard_count(_) ->
     2.
+
+fill_records(StreamName, N) ->
+    Producer = ?FUNCTION_NAME,
+    ProducerOptions = #{
+        buffer_pool_size => 10,
+        writer_pool_size => 20,
+        stream => StreamName,
+        client_options => hstreamdb_test_helpers:default_client_options(),
+        buffer_options => #{
+            max_records => 10,
+            max_time => 10000
+        }
+    },
+
+    ok = hstreamdb:start_producer(Producer, ProducerOptions),
+
+    ok = lists:foreach(
+        fun(PartitioningKey) ->
+            ok = lists:foreach(
+                fun(I) ->
+                    Payload = term_to_binary({item, I}),
+                    Record = hstreamdb:to_record(PartitioningKey, raw, Payload),
+                    ok = hstreamdb:append(Producer, Record)
+                end,
+                lists:seq(1, N)
+            )
+        end,
+        ["PK0", "PK1", "PK2", "PK3"]
+    ),
+
+    Record = hstreamdb:to_record("PK", raw, <<>>),
+    {ok, _} = hstreamdb:append_flush(Producer, Record),
+
+    ok = hstreamdb:stop_producer(Producer).
