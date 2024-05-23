@@ -65,12 +65,7 @@ read_key(Reader, Key, Limits) ->
 }) ->
     {ok, [hstreamdb:hrecord()]} | {error, term()}.
 read_key(Reader, Key, Limits, Fold) ->
-    case check_limits(Reader, Key, Limits) of
-        ok ->
-            do_read_key(Reader, Key, Limits, Fold);
-        {error, _} = Error ->
-            Error
-    end.
+    do_read_key(Reader, Key, Limits, Fold).
 
 %%-------------------------------------------------------------------------------------------------
 %% ecpool part
@@ -113,13 +108,6 @@ handle_call({get_key_gstream, Key, Addr}, _From, State) ->
             {reply, {ok, Stream, GStream}, NewState};
         {error, Reason, NewState} ->
             {reply, {error, Reason}, NewState}
-    end;
-handle_call({get_key_shard, Key}, _From, #{key_manager := KeyManager} = State) ->
-    case hstreamdb_auto_key_mgr:choose_shard(KeyManager, Key) of
-        {ok, ShardId, NewKeyManager} ->
-            {reply, {ok, ShardId}, State#{key_manager => NewKeyManager}};
-        {error, Reason} ->
-            {reply, {error, Reason}, State}
     end;
 handle_call(get_lookup_client, _From, #{client := Client} = State) ->
     {reply, Client, State};
@@ -166,15 +154,6 @@ do_read_key(Reader, Key, Limits, {FoldFun, InitAcc}) ->
             Error
     end.
 
-check_limits(Reader, Key, Limits) ->
-    case ecpool_request(Reader, {get_key_shard, Key}) of
-        {ok, ShardId} ->
-            ?LOG_DEBUG("[hstreamdb] shard for ~p, id: ~p~n", [{get_key_shard, Key}, ShardId]),
-            check_key_limits(ShardId, Limits);
-        {error, _} = Error ->
-            Error
-    end.
-
 do_get_key_gstream(
     #{shard_client_manager := ShardClientManager, stream := Stream} = State,
     _Key,
@@ -212,22 +191,6 @@ fold_stream_key_fun(Key) ->
         (#{header := #{key := PK}} = Record, Acc) when BinKey =:= PK -> [Record | Acc];
         (#{header := #{key := _OtherPK}}, Acc) -> Acc;
         (eos, Acc) -> lists:reverse(Acc)
-    end.
-
-check_key_limits(ShardId, Limits) ->
-    check_key_limits([from, until], ShardId, Limits).
-
-check_key_limits([], _ShardId, _Limits) ->
-    ok;
-check_key_limits([Key | Rest], ActualShardId, Limits) ->
-    case Limits of
-        #{Key := #{offset := {recordOffset, #{shardId := ShardId}}}} ->
-            case ActualShardId =:= ShardId of
-                true -> check_key_limits(Rest, ActualShardId, Limits);
-                false -> {error, {shard_mismatch, {ActualShardId, ShardId}}}
-            end;
-        _ ->
-            check_key_limits(Rest, ActualShardId, Limits)
     end.
 
 ecpool_request(Reader, Request) ->

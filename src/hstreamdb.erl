@@ -70,19 +70,10 @@
 -type shard_id() :: hstreamdb_client:shard_id().
 -type hrecord() :: hstreamdb_client:hrecord().
 
--type limits_shard() :: hstreamdb_client:limits_shard().
 -type limits_key() :: hstreamdb_client:limits_key().
 
 -type reader_fold_acc() :: hstreamdb_client:reader_fold_acc().
 -type reader_fold_fun() :: hstreamdb_client:reader_fold_fun().
-
--define(DEFAULT_READ_SINGLE_SHARD_STREAM_OPTS, #{
-    limits => #{
-        from => #{offset => {specialOffset, 0}},
-        until => #{offset => {specialOffset, 1}},
-        maxReadBatches => 0
-    }
-}).
 
 %%--------------------------------------------------------------------
 %% Client facade
