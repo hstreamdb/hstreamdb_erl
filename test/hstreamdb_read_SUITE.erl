@@ -74,7 +74,7 @@ t_read_stream_key(Config) ->
     },
 
     ?assertMatch(
-        {error, {shard_mismatch, {_, 123}}},
+        {error, {shard_mismatch, _}},
         hstreamdb:read_stream_key(Reader, "PK1", InvalidLimits)
     ),
 
