@@ -25,6 +25,7 @@
 
 -export([
     append/2,
+    append_async/2,
     flush/1,
     append_flush/2,
     append_flush/3,
@@ -36,7 +37,8 @@
 
 -export([
     connect/1,
-    ecpool_action/2,
+    ecpool_action_call/2,
+    ecpool_action_cast/2,
     writer_name/1
 ]).
 
@@ -102,6 +104,22 @@
 %% API
 %%-------------------------------------------------------------------------------------------------
 
+append_async(Producer, PKeyRecordOrRecords) ->
+    RecordsByPK = records_by_pk(PKeyRecordOrRecords),
+    do_while_ok(
+        fun({PartitioningKey, Records}) ->
+            append_async(Producer, PartitioningKey, Records)
+        end,
+        maps:to_list(RecordsByPK)
+    ).
+
+append_async(Producer, PartitioningKey, Records) ->
+    ecpool:pick_and_do(
+        {Producer, bin(PartitioningKey)},
+        {?MODULE, ecpool_action_cast, [{append, PartitioningKey, Records}]},
+        no_handover
+    ).
+
 append(Producer, PKeyRecordOrRecords) ->
     RecordsByPK = records_by_pk(PKeyRecordOrRecords),
     do_while_ok(
@@ -114,7 +132,7 @@ append(Producer, PKeyRecordOrRecords) ->
 append(Producer, PartitioningKey, Records) ->
     ecpool:pick_and_do(
         {Producer, bin(PartitioningKey)},
-        {?MODULE, ecpool_action, [{append, PartitioningKey, Records}]},
+        {?MODULE, ecpool_action_call, [{append, PartitioningKey, Records}]},
         no_handover
     ).
 
@@ -188,8 +206,11 @@ connect(PoolOptions) ->
     Options = proplists:get_value(opts, PoolOptions),
     gen_statem:start_link(?MODULE, [Options], []).
 
-ecpool_action(Client, Req) ->
+ecpool_action_call(Client, Req) ->
     gen_statem:call(Client, Req).
+
+ecpool_action_cast(Client, Req) ->
+    gen_statem:cast(Client, Req).
 
 %%-------------------------------------------------------------------------------------------------
 %% Writer API
@@ -309,10 +330,16 @@ handle_event(
     Data
 ) ->
     enqueue_and_reply(Data, Req, From);
+handle_event(
+    cast, {append, _PartitioningKey, _Records} = Req, ?discovering(_Backoff), Data
+) ->
+    enqueue(Data, Req);
 %% Terminating
 
 handle_event({call, From}, _Req, ?terminating(_Terminator), _Data) ->
     {keep_state_and_data, [{reply, From, {error, ?ERROR_TERMINATING}}]};
+handle_event(cast, {append, _PartitioningKey, _Records}, ?terminating(_Terminator), _Data) ->
+    keep_state_and_data;
 handle_event(
     info,
     {write_result, #batch{shard_id = ShardId} = Batch, Result},
@@ -348,6 +375,8 @@ handle_event(info, {shard_buffer_event, ShardId, Message}, ?invalidating, Data) 
     ]};
 handle_event(cast, stream_updated, ?invalidating, _Data) ->
     keep_state_and_data;
+handle_event(cast, {append, _PartitioningKey, _Records}, ?invalidating, _Data) ->
+    keep_state_and_data;
 handle_event(cast, {stop, _Terminator}, ?invalidating, _Data) ->
     {keep_state_and_data, postpone};
 handle_event(
@@ -369,6 +398,10 @@ handle_event({call, From}, {append, _PartitioningKey, _Records} = Req, ?active, 
     {PartitioningKey, BufferRecords} = buffer_records(Req),
     {Resp, NData} = do_append(PartitioningKey, BufferRecords, false, Data),
     {keep_state, NData, [{reply, From, Resp}]};
+handle_event(cast, {append, _PartitioningKey, _Records} = Req, ?active, Data) ->
+    {PartitioningKey, BufferRecords} = buffer_records(Req),
+    {_Resp, NData} = do_append(PartitioningKey, BufferRecords, false, Data),
+    {keep_state, NData};
 handle_event({call, From}, flush, ?active, Data) ->
     {keep_state, flush_buffers(Data), [{reply, From, ok}]};
 handle_event(
@@ -431,7 +464,7 @@ sync_request(PoolAndKey, Req, Timeout) ->
     case
         ecpool:pick_and_do(
             PoolAndKey,
-            {?MODULE, ecpool_action, [{sync_req, Caller, Req}]},
+            {?MODULE, ecpool_action_call, [{sync_req, Caller, Req}]},
             no_handover
         )
     of
@@ -714,13 +747,15 @@ enqueue_and_reply(Data, Req, From) ->
         From
     ).
 
+enqueue(Data, Req) ->
+    keep_state(append_to_queue(Data, Req)).
+
 request_record_count({sync_req, _Caller, _Req}) -> 1;
 request_record_count({append, _PartitioningKey, Records}) -> length(Records).
 
 buffer_records({append, PartitioningKey, Records}) ->
     BufferRecords = hstreamdb_buffer:to_buffer_records(Records),
     {PartitioningKey, BufferRecords};
-
 buffer_records({sync_req, Caller, {_AppendKind, {PartitioningKey, Record}, Timeout}}) ->
     BufferRecords = hstreamdb_buffer:to_buffer_records([Record], Caller, Timeout),
     {PartitioningKey, BufferRecords}.
@@ -729,3 +764,8 @@ keep_state_and_reply({ok, Data}, From) ->
     {keep_state, Data, [{reply, From, ok}]};
 keep_state_and_reply({error, _} = Error, From) ->
     {keep_state_and_data, [{reply, From, Error}]}.
+
+keep_state({ok, Data}) ->
+    {keep_state, Data};
+keep_state({error, _}) ->
+    keep_state_and_data.
