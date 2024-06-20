@@ -203,6 +203,45 @@ t_append_many(Config) ->
     ok = hstreamdb:flush(producer(Config)),
     ok = assert_ok_flush_result(100).
 
+t_append_async(Config) ->
+    ProducerOptions = #{
+        buffer_pool_size => 1,
+        buffer_options => #{
+            max_records => 10000,
+            interval => 10000
+        }
+    },
+
+    ok = start_producer(Config, ProducerOptions),
+
+    lists:foreach(
+        fun(_) ->
+            ok = hstreamdb:append_async(producer(Config), sample_record())
+        end,
+        lists:seq(1, 100)
+    ),
+
+    ok = hstreamdb:flush(producer(Config)),
+
+    ok = assert_ok_flush_result(100).
+
+t_append_async_many(Config) ->
+    ProducerOptions = #{
+        buffer_pool_size => 1,
+        buffer_options => #{
+            max_records => 10000,
+            interval => 10000
+        }
+    },
+
+    ok = start_producer(Config, ProducerOptions),
+
+    Records = [sample_record() || _ <- lists:seq(1, 100)],
+    ok = hstreamdb:append_async(producer(Config), Records),
+
+    ok = hstreamdb:flush(producer(Config)),
+    ok = assert_ok_flush_result(100).
+
 t_overflooded_queue(Config) ->
     ProducerOptions = #{
         buffer_pool_size => 1,

@@ -28,6 +28,8 @@
     to_record/3,
     append/2,
     append/4,
+    append_async/2,
+    append_async/4,
     flush/1,
     append_flush/2,
     append_flush/3,
@@ -127,6 +129,13 @@ append(Producer, PartitioningKey, PayloadType, Payload) ->
 
 append(Producer, Record) ->
     hstreamdb_batch_aggregator:append(Producer, Record).
+
+append_async(Producer, PartitioningKey, PayloadType, Payload) ->
+    Record = to_record(PartitioningKey, PayloadType, Payload),
+    append_async(Producer, Record).
+
+append_async(Producer, Record) ->
+    hstreamdb_batch_aggregator:append_async(Producer, Record).
 
 flush(Producer) ->
     hstreamdb_batch_aggregator:flush(Producer).
