@@ -11,15 +11,13 @@ jobs:
     strategy:
       matrix:
         include:
-          - runs_on: ubuntu-20.04
-            otp_release: 24.1.6
+          - otp_release: 26
             send_coveralls: false
-          - runs_on: ubuntu-20.04
-            otp_release: 25.1.1
+          - otp_release: 27
             send_coveralls: true
-    runs-on: ${{ matrix.runs_on }}
+    runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
     - uses: erlef/setup-beam@v1
       with:
         otp-version: ${{ matrix.otp_release }}
@@ -51,4 +49,3 @@ jobs:
         COVERALLS_REPO_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
         make coveralls
-
