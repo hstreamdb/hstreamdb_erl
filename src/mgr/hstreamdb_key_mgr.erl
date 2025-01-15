@@ -32,7 +32,7 @@
     index_shards/1
 ]).
 
--export_type([t/0]).
+-export_type([t/0, shard_info/0]).
 
 -type t() :: #{
     shards := compiled_shards() | undefined,

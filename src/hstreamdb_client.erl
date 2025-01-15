@@ -78,7 +78,14 @@
     hrecord_req/0,
 
     offset/0,
-    limits_key/0
+    limits_key/0,
+
+    compression_type/0,
+
+    reader_fold_acc/0,
+    reader_fold_fun/0,
+
+    options/0
 ]).
 
 -define(READ_KEY_STEP_COUNT, 200).

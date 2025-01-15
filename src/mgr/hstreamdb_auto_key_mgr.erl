@@ -26,7 +26,7 @@
     set_shards/2
 ]).
 
--export_type([t/0]).
+-export_type([t/0, options/0]).
 
 -define(DEFAULT_SHARD_UPDATE_INTERVAL, 3000000).
 

@@ -42,7 +42,7 @@
 -export_type([options/0]).
 
 -type options() :: #{
-    mgr_client_options := hsteamdb_client:options(),
+    mgr_client_options := hstreamdb_client:options(),
     stream := hstreamdb:stream(),
 
     pool_size => non_neg_integer(),
@@ -54,15 +54,17 @@
     shard_client_manager_options => hstreamdb_shard_client_mgr:options()
 }.
 
-
--spec read_key(ecpool:pool_name(), hstreamdb:partitioning_key(), hstreamdb:limits()) ->
+-spec read_key(ecpool:pool_name(), hstreamdb:partitioning_key(), hstreamdb_client:limits_key()) ->
     {ok, [hstreamdb:hrecord()]} | {error, term()}.
 read_key(Reader, Key, Limits) ->
     read_key(Reader, Key, Limits, {fold_stream_key_fun(Key), []}).
 
--spec read_key(ecpool:pool_name(), hstreamdb:partitioning_key(), hstreamdb:limits(), {
-    hsteamdb:reader_fold_fun(), hsteamdb:reader_fold_acc()
-}) ->
+-spec read_key(
+    ecpool:pool_name(),
+    hstreamdb:partitioning_key(),
+    hstreamdb_client:limits_key(),
+    {hstreamdb_client:reader_fold_fun(), hstreamdb_client:reader_fold_acc()}
+) ->
     {ok, [hstreamdb:hrecord()]} | {error, term()}.
 read_key(Reader, Key, Limits, Fold) ->
     do_read_key(Reader, Key, Limits, Fold).

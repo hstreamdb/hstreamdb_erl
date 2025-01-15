@@ -1,19 +1,18 @@
-{application, hstreamdb_erl,
- [{description, "An OTP application"},
-  {vsn, git},
-  {registered, []},
-  {mod, {hstreamdb_erl_app, []}},
-  {applications,
-   [kernel,
-    stdlib,
-    grpc,
-    ecpool,
-    ezstd
-   ]},
-  {env,[]},
-  {modules, []},
-
-  {licenses, ["Apache-2.0"]},
-
-  {links, ["https://github.com/DDDHuang/hstreamdb_erl.git"]}
- ]}.
+{application, hstreamdb_erl, [
+    {description, "An OTP application"},
+    {vsn, git},
+    {registered, []},
+    {mod, {hstreamdb_erl_app, []}},
+    {applications, [
+        kernel,
+        stdlib,
+        grpc,
+        ecpool,
+        ezstd,
+        jiffy
+    ]},
+    {env, []},
+    {modules, []},
+    {licenses, ["Apache-2.0"]},
+    {links, ["https://github.com/hstream/hstreamdb_erl"]}
+]}.

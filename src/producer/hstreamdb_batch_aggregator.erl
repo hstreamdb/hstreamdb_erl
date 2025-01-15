@@ -201,7 +201,7 @@ set_key_manager(Name, Vsn, KeyManager) ->
 %%-------------------------------------------------------------------------------------------------
 
 -type pool_opts() :: list(any() | {opts, options()}).
--spec connect(pool_opts()) -> get_server:start_ret().
+-spec connect(pool_opts()) -> gen_server:start_ret().
 connect(PoolOptions) ->
     Options = proplists:get_value(opts, PoolOptions),
     gen_statem:start_link(?MODULE, [Options], []).
