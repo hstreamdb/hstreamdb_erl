@@ -54,6 +54,7 @@
 -export([
     start_reader/2,
     stop_reader/1,
+    wait_for_reader/1,
     read_stream_key/3,
     read_stream_key/4
 ]).
@@ -200,6 +201,10 @@ start_reader(Name, ReaderOptions) ->
 -spec stop_reader(ecpool:pool_name()) -> ok.
 stop_reader(Name) ->
     hstreamdb_readers_sup:stop(Name).
+
+-spec wait_for_reader(ecpool:pool_name()) -> ok | no_such_reader.
+wait_for_reader(Name) ->
+    hstreamdb_reader:wait_for_start(Name).
 
 %% @doc fetch only records that have the same key as the one provided, using
 %% server-side filtering.

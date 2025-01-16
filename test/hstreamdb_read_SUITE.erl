@@ -27,6 +27,8 @@
 all() ->
     hstreamdb_test_helpers:test_cases(?MODULE).
 
+suite() -> [{timetrap, {minutes, 5}}].
+
 init_per_suite(Config) ->
     _ = application:ensure_all_started(hstreamdb_erl),
     Config.
@@ -64,6 +66,7 @@ t_read_stream_key(Config) ->
 
     Reader = "reader_" ++ atom_to_list(?FUNCTION_NAME),
     ok = hstreamdb:start_reader(Reader, ReaderOptions),
+    ok = hstreamdb:wait_for_reader(Reader),
 
     % Try to read with invalid limits
 
@@ -150,6 +153,7 @@ t_read_stream_recreated_key(Config) ->
 
     Reader = "reader_" ++ atom_to_list(?FUNCTION_NAME),
     ok = hstreamdb:start_reader(Reader, ReaderOptions),
+    ok = hstreamdb:wait_for_reader(Reader),
 
     Limits = #{
         from => #{offset => {specialOffset, 0}},
@@ -221,6 +225,7 @@ t_trim(Config) ->
 
     Reader = "reader_" ++ atom_to_list(?FUNCTION_NAME),
     ok = hstreamdb:start_reader(Reader, ReaderOptions),
+    ok = hstreamdb:wait_for_reader(Reader),
 
     Limits = #{
         from => #{offset => {specialOffset, 0}},

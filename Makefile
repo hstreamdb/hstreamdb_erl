@@ -46,6 +46,8 @@ coveralls: $(REBAR)
 clean:
 	@rm -rf _build
 	@rm -rf rebar3
+	@rm -rf rebar.lock
+	@rm -rf *.crashdump
 	@rm -rf *_crash.dump
 	@rm -rf hstreamdb_erl_*_plt
 

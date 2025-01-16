@@ -370,6 +370,8 @@ stop_channel(SupRef, Channel) ->
     case stop_channel_pool(SupRef, Channel) of
         ok ->
             ?LOG_DEBUG("[hstreamdb] stop_channel ok: ~p", [Channel]);
+        {error, not_found} ->
+            ?LOG_DEBUG("[hstreamdb] stop_channel not_found: ~p", [Channel]);
         {error, _} = Error ->
             ?LOG_ERROR("[hstreamdb] stop_channel error: ~p, ~p", [Channel, Error])
     end.
