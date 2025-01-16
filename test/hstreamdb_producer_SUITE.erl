@@ -43,6 +43,8 @@ end).
 all() ->
     hstreamdb_test_helpers:test_cases(?MODULE).
 
+suite() -> [{timetrap, {minutes, 5}}].
+
 init_per_suite(Config) ->
     _ = application:ensure_all_started(hstreamdb_erl),
     Config.
@@ -799,6 +801,7 @@ t_append_sync_timeout_while_success(Config) ->
 
     Reader = "reader_" ++ atom_to_list(?FUNCTION_NAME),
     ok = hstreamdb:start_reader(Reader, ReaderOptions),
+    ok = hstreamdb:wait_for_reader(Reader),
 
     % Read all records
 

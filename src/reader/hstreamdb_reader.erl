@@ -23,7 +23,8 @@
 
 -export([
     read_key/3,
-    read_key/4
+    read_key/4,
+    wait_for_start/1
 ]).
 
 -export([
@@ -68,6 +69,17 @@ read_key(Reader, Key, Limits) ->
     {ok, [hstreamdb:hrecord()]} | {error, term()}.
 read_key(Reader, Key, Limits, Fold) ->
     do_read_key(Reader, Key, Limits, Fold).
+
+-spec wait_for_start(ecpool:pool_name()) -> ok | no_such_reader.
+wait_for_start(Reader) ->
+    case ecpool:get_client(Reader) of
+        Pid when is_pid(Pid) -> ok;
+        false ->
+            timer:sleep(100),
+            wait_for_start(Reader);
+        no_such_pool ->
+            no_such_reader
+    end.
 
 %%-------------------------------------------------------------------------------------------------
 %% ecpool part
@@ -138,22 +150,26 @@ code_change(_OldVsn, State, _Extra) ->
 %%-------------------------------------------------------------------------------------------------
 
 do_read_key(Reader, Key, Limits, {FoldFun, InitAcc}) ->
-    LookupClient = ecpool_request(Reader, get_lookup_client),
-    case ?MEASURE({lookup_key, self(), Key}, hstreamdb_client:lookup_key(LookupClient, Key)) of
-        {ok, {_Host, _Port} = Addr} ->
-            case ecpool_request(Reader, {get_key_gstream, Key, Addr}) of
-                {ok, Stream, GStream} ->
-                    ?MEASURE(
-                        {fold_key_read_gstream, Stream, Key},
-                        hstreamdb_client:fold_key_read_gstream(
-                            GStream, Stream, Key, Limits, FoldFun, InitAcc
-                        )
-                    );
+    case ecpool_request(Reader, get_lookup_client) of
+        {error, _} = Error ->
+            Error;
+        LookupClient ->
+            case ?MEASURE({lookup_key, self(), Key}, hstreamdb_client:lookup_key(LookupClient, Key)) of
+                {ok, {_Host, _Port} = Addr} ->
+                    case ecpool_request(Reader, {get_key_gstream, Key, Addr}) of
+                        {ok, Stream, GStream} ->
+                            ?MEASURE(
+                                {fold_key_read_gstream, Stream, Key},
+                                hstreamdb_client:fold_key_read_gstream(
+                                    GStream, Stream, Key, Limits, FoldFun, InitAcc
+                                )
+                            );
+                        {error, _} = Error ->
+                            Error
+                    end;
                 {error, _} = Error ->
                     Error
-            end;
-        {error, _} = Error ->
-            Error
+            end
     end.
 
 do_get_key_gstream(
@@ -198,5 +214,7 @@ fold_stream_key_fun(Key) ->
 ecpool_request(Reader, Request) ->
     ecpool:with_client(
         Reader,
-        fun(Pid) -> gen_server:call(Pid, Request) end
+        fun(Pid) ->
+            gen_server:call(Pid, Request)
+        end
     ).
